@@ -77,9 +77,12 @@ EXPECTED_KB = {
 EXPECTED_TIERS = {"confirmed": 349, "strong_novel": 23, "candidate": 947,
                   "weak": 1915, "none": 337}
 
-N_FIGURES = 42                  # 38 data + 2 schematics (37 pipeline, 38 KB schema)
+N_FIGURES = 41                  # 37 data + 2 schematics (37 pipeline, 38 KB schema)
                                 # + 39 evidence combinations, 40 structure vs inflation
-                                # + 07 external concordance
+                                # + 07 external concordance.
+                                # 03_cross_organism was retired 2026-09-02: its content is
+                                # Table 4.6 / cross_organism_families.csv. The files live in
+                                # results/_retired_figures/, outside this glob.
 MIN_PNG_BYTES = 20_000          # a blank matplotlib canvas lands far below this
 
 

@@ -6,7 +6,17 @@ kb_tables.py exports (+ raw 12b null CSVs for the permutation histogram).
 
 Run kb_tables.py FIRST, then:
     python scripts/kb_figures.py --tables results/tables --results results \
-        --out figures [--only performance,cpss_pfer,cross_org,mechanism,null_hist,combos]
+        --out results/figures
+        [--only overview,performance,cpss_pfer,mechanism,evidence,combos,
+                significance,null_hist,external]
+
+`--out` defaults to `figures`, NOT `results/figures`: pass it explicitly or a
+regeneration writes beside the real set instead of into it.
+
+`03_cross_organism` (thesis figure 4.18) was retired on 2026-09-02 — the panel was
+rows of text on an empty canvas, and its content is now Table 4.6 and
+results/tables/cross_organism_families.csv. The PNG/PDF are kept under
+results/_retired_figures/.
 
 Each figure is saved as PNG (200 dpi) + PDF. Colours come from PALETTE (registry slugs); any organism not listed there gets an
 auto-assigned colour, and display names come from the registry. Edit CLASS_ORDER /
@@ -307,50 +317,6 @@ def fig_overview(tables, out, db):
     a1.invert_yaxis(); a1.set_xlabel("models"); a1.legend(fontsize=9, loc="lower right")
     a1.set_title("Models per drug class")
     _save(fig, out, "00_kb_overview")
-
-
-def fig_cross_org(tables, out):
-    """Drugs assayed in ≥2 organisms → SHARED (concordant) gene family highlighted."""
-    mech = pd.read_csv(tables / "mechanisms.csv")
-    ot = mech[mech["on_target"] == True]  # noqa: E712
-    abs_ = sorted(ab for ab, g in ot.groupby("antibiotic") if g["organism"].nunique() >= 2)
-    if not abs_:
-        print("  (cross_org: no drug shared across organisms yet — skipped)")
-        return
-    fig, ax = plt.subplots(figsize=(13, 1.0 + 1.0 * len(abs_)))
-    ax.axis("off")
-    for i, ab in enumerate(abs_):
-        yy = len(abs_) - 1 - i
-        sub = ot[ot.antibiotic == ab]
-        # {gene family -> organisms that recovered it}. This used to intersect two
-        # hardcoded organisms (ecoli/kpneumoniae) and label everything else "-only",
-        # which silently ignored the other four organisms of the panel: a drug like
-        # ciprofloxacin is assayed in five.
-        fam_orgs = {}
-        for o, g in sub.groupby("organism"):
-            for f in {_fam(x) for x in g["aro_gene_family"].dropna()}:
-                fam_orgs.setdefault(f, set()).add(o)
-        shared = sorted((f for f, o in fam_orgs.items() if len(o) >= 2),
-                        key=lambda f: (-len(fam_orgs[f]), f))
-        single = sorted((f for f, o in fam_orgs.items() if len(o) == 1), key=str)
-        ax.text(0.0, yy, _short(ab), fontsize=12, fontweight="bold", va="center")
-        txt = "   ".join(f"{f} ({','.join(sorted(_abbr(o) for o in fam_orgs[f]))})"
-                         for f in shared) or "—"
-        ax.text(0.26, yy, txt, fontsize=12, fontweight="bold", color="#2ca25f", va="center")
-        if single:
-            per = ", ".join(f"{_abbr(next(iter(fam_orgs[f])))}: {f}" for f in single[:6])
-            if len(single) > 6:
-                per += f", +{len(single) - 6} more"
-            ax.text(0.26, yy - 0.30, "single-organism — " + per,
-                    fontsize=8.5, color="#888", va="center")
-    n_org = ot.groupby("antibiotic")["organism"].nunique().reindex(abs_)
-    ax.text(0.26, len(abs_) - 0.30,
-            f"SHARED gene family — recovered in ≥2 organisms (concordant); "
-            f"drugs span up to {int(n_org.max())} organisms",
-            fontsize=9.5, color="#2ca25f", fontweight="bold", va="center")
-    ax.set_xlim(-0.02, 1.0); ax.set_ylim(-0.6, len(abs_) - 0.05)
-    ax.set_title("Cross-organism concordance: same drug → same resistance gene family", fontsize=12.5)
-    _save(fig, out, "03_cross_organism")
 
 
 def fig_mechanism(tables, out):
@@ -765,7 +731,6 @@ FIGS = {"overview": lambda t, r, o, db: fig_overview(t, o, db),
         "external": lambda t, r, o, db: fig_external_concordance(t, o, db),
         "performance": lambda t, r, o, db: fig_performance(t, o),
         "cpss_pfer": lambda t, r, o, db: fig_cpss_pfer(t, o),
-        "cross_org": lambda t, r, o, db: fig_cross_org(t, o),
         "mechanism": lambda t, r, o, db: fig_mechanism(t, o),
         "evidence": lambda t, r, o, db: fig_evidence_layers(t, o, db),
         "combos": lambda t, r, o, db: fig_evidence_combinations(t, o, db),
