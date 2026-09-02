@@ -47,33 +47,36 @@ EXPECTED_TABLES = {
     "novel_ncbi_hits.csv": None,
     "fair_mapping.csv": 15,          # the 15 FAIR principles, one row each
     # kb_tables_thesis.py. The counts below are structural, not sample-dependent:
-    # 6 organisms, 7 evidence layers, 9+2+4 provenance items, 45 models, 9 limitations.
+    # 6 organisms, 7 evidence layers, 9+2+4 provenance items, 45 models, 10 limitations.
     # headline_biomarkers is left unpinned for the same reason as mechanisms.csv --
     # it moves with the CARD snapshot.
     "lineage_summary.csv": 6,
     "evidence_accounting.csv": 7,
     "provenance_tools.csv": 15,
     "hyperparameters.csv": 45,
-    "limitations.csv": 9,
+    "limitations.csv": 10,
     "headline_biomarkers.csv": None,
 }
 
-# KB table -> expected row count. None = "must exist, count not pinned";
-# 0 = "expected to be EMPTY" (see METHODOLOGY §5.2 — these are documented gaps,
-# so a sudden non-zero count is as much a surprise as a sudden zero).
+# KB table -> expected row count. None = "must exist, count not pinned".
+# All fourteen tables now carry data: external_concordance and unitig_antibiotic_
+# overlap were filled after the schema was fixed (steps 16 and 15), and `unitigs`,
+# `validation_evidence` and the candidate/weak tiers moved when the `snp` loader
+# defect was repaired — see CHANGELOG [Unreleased].
 EXPECTED_KB = {
     "models": 45, "pipeline_runs": 45, "organisms": 7, "antibiotics": 22,
-    "unitigs": 3844, "unitig_model_scores": 3613, "unitig_evidence_tier": 3571,
+    "unitigs": 3509, "unitig_model_scores": 3613, "unitig_evidence_tier": 3571,
     "blast_annotations": 3611, "unitig_background_frequency": 2409,
-    "variant_snp_check": 953, "validation_evidence": 10530, "kb_metadata": 1,
-    "external_concordance": 0, "unitig_antibiotic_overlap": 0,
+    "variant_snp_check": 953, "validation_evidence": 10659, "kb_metadata": 1,
+    "external_concordance": 83, "unitig_antibiotic_overlap": 29,
 }
 
-EXPECTED_TIERS = {"confirmed": 349, "strong_novel": 23, "candidate": 942,
-                  "weak": 1920, "none": 337}
+EXPECTED_TIERS = {"confirmed": 349, "strong_novel": 23, "candidate": 947,
+                  "weak": 1915, "none": 337}
 
-N_FIGURES = 41                  # 37 data + 2 schematics (37 pipeline, 38 KB schema)
+N_FIGURES = 42                  # 38 data + 2 schematics (37 pipeline, 38 KB schema)
                                 # + 39 evidence combinations, 40 structure vs inflation
+                                # + 07 external concordance
 MIN_PNG_BYTES = 20_000          # a blank matplotlib canvas lands far below this
 
 
@@ -133,9 +136,11 @@ def verify_kb(root, rep):
         if dirty:
             rep.warn("git_dirty on every run",
                      f"{dirty}/45 — known, documented in METHODOLOGY §5.3")
-        # The two empty tables are expected; say so out loud so nobody "fixes" it.
-        print("       (external_concordance and unitig_antibiotic_overlap are "
-              "expected to be empty — METHODOLOGY §5.2)")
+        n_ec, n_ov = (con.execute("SELECT (SELECT COUNT(*) FROM external_concordance), "
+                                  "(SELECT COUNT(*) FROM unitig_antibiotic_overlap)")
+                      .fetchone())
+        print(f"       (external_concordance {n_ec} rows, unitig_antibiotic_overlap "
+              f"{n_ov} rows — all 14 tables carry data)")
     finally:
         con.close()
 
