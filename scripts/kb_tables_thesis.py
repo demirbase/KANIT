@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Six thesis tables that the delivered artefacts imply but do not contain.
+Seven thesis tables that the delivered artefacts imply but do not contain.
 
     lineage_summary        population structure per organism, next to the CV inflation
                            it explains -- lineage counts and singletons exist nowhere else
-    evidence_accounting    the seven-produced / six-counted / four-firing ledger, as rows
+    evidence_accounting    the seven-produced / six-counted / five-firing ledger, as rows
     headline_biomarkers    biomarkers.csv (3,571 rows) reduced to what a results chapter
                            can print, under the mandatory CARD tier filter
     provenance_tools       what actually ran: nine tool versions, seed, config hashes
     hyperparameters        the Optuna choice per model, joined to the delivered model
-    limitations            METHODOLOGY 5.3's nine limitations with the numbers re-measured
+    limitations            METHODOLOGY 5.3's limitations with the numbers re-measured
+    cross_organism_families  which gene families an agent recovers in more than one
+                           organism -- figure 4.18's content, as a table
 
 Two rules this script follows deliberately.
 
@@ -149,11 +151,13 @@ def t_evidence_accounting(ctx):
                 "select count(*) from unitig_evidence_tier "
                 "where ','||evidence_layers||',' like ?", (f"%,{token},%",)).fetchone()[0]
             if graded == 0 and token == "snp":
+                # Dead since the 2026-09-01 loader fix (snp now grades 18), and the
+                # diagnosis it carried was refuted: the two candidate sets DO intersect.
+                # Step 11 reports its hits by FASTA header and the loader took that header
+                # for a sequence. Kept as a guard, with the wrong explanation removed.
                 verdict, note = "produced, never fires", (
-                    "wiring fault: step 11 scans step 07's FASTA while the graded universe "
-                    "comes from steps 10+13, so the two sets do not intersect. 21 "
-                    "resistant_allele findings are attached to no tier. Fixable, but the fix "
-                    "changes the KB and therefore needs a new Zenodo version")
+                    "regression: snp graded 18 pairs after the loader fix, so a zero here "
+                    "means the header-to-k-mer resolution in populate_snp has broken again")
             elif graded == 0 and token == "mda":
                 verdict, note = "produced, never fires", (
                     "real negative, not a fault: the candidate sets overlap fully (2409/2409) "
@@ -286,6 +290,30 @@ def t_hyperparameters(ctx):
     return out[front + rest + ["run_id"]].sort_values(["organism", "antibiotic"])
 
 
+def _mda_stats(ctx, r_perm=100):
+    """Permutation-importance shape, read from the 45 step-12 tables.
+
+    `used_by_model = 0` rows carry no q and are excluded from the BH correction, so a
+    model can hold 70 rows and correct over 69. Counting the rows instead of the
+    corrected set is an off-by-one that makes the attainable floor look lower than it is.
+    """
+    fs = sorted(glob.glob(f"{ctx.get('results', 'results')}/*/*/05_explainability/"
+                          "12_permutation_test_*.csv"))
+    if not fs:
+        return (0, 0, 0, 0, 0, float("nan"), float("nan"), float("nan"))
+    n_rows, per_rows, ms, qmins = 0, [], [], []
+    for f in fs:
+        d = pd.read_csv(f)
+        q = pd.to_numeric(d.get("perm_q"), errors="coerce")
+        n_rows += len(d)
+        per_rows.append(len(d))
+        ms.append(int(q.notna().sum()))
+        if q.notna().any():
+            qmins.append(float(q.min()))
+    return (n_rows, max(per_rows), len(fs), min(ms), max(ms),
+            min(ms) / (r_perm + 1), max(ms) / (r_perm + 1), min(qmins))
+
+
 # ------------------------------------------------------------- B6 limitations
 def t_limitations(ctx):
     c, k, ms = ctx["conn"], ctx["kb_overview"], ctx["models_summary"]
@@ -303,6 +331,14 @@ def t_limitations(ctx):
     snp_rows = q("select count(*) from variant_snp_check")
     snp_graded = q("select count(*) from unitig_evidence_tier"
                    " where evidence_layers like '%snp%'")
+    # Limitation 10's numbers come from the 45 step-12 permutation tables, not the KB:
+    # validation_evidence stores the MDA score, never the BH q that the limitation is about.
+    # This row lived only in the delivered CSV until 2026-09-02, so a full regeneration of
+    # this script silently dropped it. It is computed here now.
+    mda = _mda_stats(ctx)
+    (mda_rows, mda_rows_hi, mda_models, mda_m_lo, mda_m_hi,
+     mda_floor_lo, mda_floor_hi, mda_qmin) = mda
+
     nov = ctx["novel_ctx"]
     plasmid = int((nov.replicon_call == "plasmid").sum()) if nov is not None else None
     mixed = int((nov.replicon_call == "mixed").sum()) if nov is not None else None
@@ -375,9 +411,97 @@ def t_limitations(ctx):
          f"{snp_graded} reach a tier since the 2026-09-01 loader fix, and "
          f"unitig_antibiotic_overlap holds {n_overlap} rows.",
          "from METHODOLOGY 5.3 + figure 29", "4.4 significance + 5.x"),
+        (10, "One evidence layer contributes nothing, by design not by result",
+         "Permutation importance (MDA) passed no unitig at BH-FDR q < 0.05 in any of the 45 "
+         "models. The design could not have produced a discovery: with R = 100 permutations the "
+         "smallest attainable permutation p is 1/(R+1) = 0.0099, and after BH correction across "
+         "the candidates each model carries the smallest q a rank-1 feature could reach is m/101 "
+         f"— from {mda_floor_lo:.3f} to {mda_floor_hi:.3f}. Both exceed 0.05, so no outcome of "
+         "the permutations could have crossed the threshold. This is a limit of the test as "
+         "configured, NOT a finding that no feature matters.",
+         f"recomputed: {mda_rows} (unitig, model) pairs over {mda_models} models, "
+         f"{mda_m_lo}-{mda_m_hi} entering BH per model, 0 at q < 0.05, smallest q observed "
+         f"anywhere {mda_qmin:.4f}. Rows with used_by_model = 0 carry no q and are excluded "
+         f"from m, which is why a model can hold {mda_rows_hi} rows and correct over "
+         f"{mda_m_hi}.",
+         "recomputed", "4.4.3 significance + 5.5 limitations"),
     ]
     return pd.DataFrame(L, columns=["n", "limitation", "detail", "evidence",
                                     "evidence_source", "affects"])
+
+
+# ------------------------------------------------- B7 cross-organism families
+def t_cross_organism_families(ctx):
+    """Which gene families the same agent recovers in more than one organism.
+
+    Section 4.5.4's whole point is the contrast between an agent whose determinant
+    travels (tetracycline's MFS efflux pumps, in all five of its organisms) and one
+    whose determinants are organism-established (the carbapenems: OXA-23-like in
+    A. baumannii, KPC and NDM in K. pneumoniae, VIM in P. aeruginosa, three families
+    with no overlap). Figure 4.18 carried that as rows of text, which is a table
+    drawn with a plotting library.
+
+    Grain is one row per (antibiotic, ARO gene family) among the ON-TARGET
+    annotations of the agents assayed in at least two organisms. The short family
+    label comes from kb_figures._fam, the same shortener the figure uses, so the two
+    cannot drift apart.
+    """
+    m = ctx.get("mechanisms")
+    if m is None:
+        print("  (cross_organism_families: mechanisms.csv missing — skipped)")
+        return None
+    _fam, _display = _figure_labellers()
+    ot = m[m["on_target"] == True]                                      # noqa: E712
+    n_org = ot.groupby("antibiotic")["organism"].nunique()
+    shared_abs = sorted(n_org[n_org >= 2].index)
+    if not shared_abs:
+        print("  (cross_organism_families: no agent spans two organisms — skipped)")
+        return None
+
+    rows = []
+    for ab in shared_abs:
+        sub = ot[ot.antibiotic == ab]
+        # A family is "recovered in organism O" if any on-target hit in O maps to it.
+        # Deduplicate per organism first: several unitigs routinely hit one family, and
+        # counting rows would report the depth of the annotation, not its spread.
+        fam_orgs, fam_rows = {}, {}
+        for o, g in sub.groupby("organism"):
+            for f in sorted({str(x) for x in g["aro_gene_family"].dropna()}):
+                fam_orgs.setdefault(f, set()).add(o)
+                fam_rows.setdefault(f, []).append(g[g.aro_gene_family == f])
+        ab_shared = sum(1 for o in fam_orgs.values() if len(o) >= 2)
+        for f, orgs in fam_orgs.items():
+            d = pd.concat(fam_rows[f])
+            rows.append({
+                "antibiotic": ab,
+                "drug_class": sub["drug_class"].iloc[0],
+                "n_organisms_assayed": int(n_org[ab]),
+                "antibiotic_recovers_shared_family": "yes" if ab_shared else "no",
+                "aro_gene_family": f,
+                "family_label": _fam(f),
+                "shared": "yes" if len(orgs) >= 2 else "no",
+                "n_organisms_recovered": len(orgs),
+                # Sort the DISPLAY names, not the slugs: `ecoli` sorts before
+                # `enterococcus_faecium` while "Escherichia" sorts after "Enterococcus".
+                "organisms": "; ".join(sorted(_display(o) for o in orgs)),
+                "n_models": int(d["model_id"].nunique()),
+                "n_unitigs": int(pd.to_numeric(d["n_unitigs"], errors="coerce").sum()),
+                "genes": "; ".join(sorted({str(x) for x in d["gene_symbol"].dropna()})),
+                "mechanism": "; ".join(sorted({str(x) for x in d["mechanism"].dropna()})),
+            })
+    out = pd.DataFrame(rows).sort_values(
+        ["antibiotic", "shared", "n_organisms_recovered", "family_label"],
+        ascending=[True, False, False, True])
+    return out.reset_index(drop=True)
+
+
+def _figure_labellers():
+    """kb_figures' family shortener and display name, imported the same way
+    kb_figures_data.py does it, so a table label always equals the figure label."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from kb_figures import _display, _fam                        # noqa: E402
+    return _fam, _display
 
 
 BUILDERS = {
@@ -387,6 +511,7 @@ BUILDERS = {
     "provenance_tools": t_provenance_tools,
     "hyperparameters": t_hyperparameters,
     "limitations": t_limitations,
+    "cross_organism_families": t_cross_organism_families,
 }
 
 
@@ -397,6 +522,7 @@ def main():
     ap.add_argument("--tables", required=True, help="tidy tables dir (read and write)")
     ap.add_argument("--data", default="data/processed", help="for the PopPUNK cluster CSVs")
     ap.add_argument("--runs", default="runs", help="for run_metadata.json hyperparameters")
+    ap.add_argument("--results", default="results", help="for the step-12 permutation tables")
     ap.add_argument("--out", help="output dir (default: --tables)")
     ap.add_argument("--only", help="comma list: " + ",".join(BUILDERS))
     a = ap.parse_args()
@@ -414,12 +540,13 @@ def main():
     # exactly, on any machine, by any pandas.
     read = (lambda n: pd.read_csv(tdir / n, float_precision="round_trip")
             if (tdir / n).exists() else None)
-    ctx = {"conn": conn, "data": a.data, "runs": a.runs,
+    ctx = {"conn": conn, "data": a.data, "runs": a.runs, "results": a.results,
            "biomarkers": read("biomarkers.csv"),
            "models_summary": read("models_summary.csv"),
            "cv_comparison": read("cv_comparison.csv"),
            "kb_overview": read("kb_overview.csv"),
-           "novel_ctx": read("novel_ncbi_context.csv")}
+           "novel_ctx": read("novel_ncbi_context.csv"),
+           "mechanisms": read("mechanisms.csv")}
 
     want = [s.strip() for s in a.only.split(",")] if a.only else list(BUILDERS)
     for name in want:

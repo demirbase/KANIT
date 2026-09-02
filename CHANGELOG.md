@@ -81,6 +81,30 @@ All notable changes to this project are documented here. The format is based on
     labelled three), `38_kb_schema` (two tables no longer empty),
     `26_auc_forest` ("the gap **is** leakage" → the interval's actual scope).
 
+- **`cross_organism_families` — figure 4.18's content as a table.**
+  `kb_tables_thesis.py` gains a seventh builder. Grain is (antibiotic, ARO gene
+  family) over the eight agents carrying an on-target CARD annotation in at least
+  two organisms: **22 rows**, with the organisms that recovered each family, the
+  gene symbols behind it, and whether it is shared. The short family label is
+  imported from `kb_figures._fam`, the same shortener the figure uses, so the
+  table and the figure cannot drift apart — the pattern `lineage_summary` already
+  uses for figure 40. Eight families are shared; seven of the eight stay inside
+  one Gram group and only the MFS efflux pumps cross it.
+
+- **`limitations.csv`'s tenth row existed only in the delivered file.** The MDA
+  limitation was written straight into the CSV; `t_limitations` still built nine,
+  so a full run of `kb_tables_thesis.py` silently dropped it — the table
+  equivalent of the figure-regeneration failure that cost figures 15 and 16 a
+  review round. The row is now built by the script, from the 45 step-12
+  permutation tables rather than from the KB (`validation_evidence` stores the
+  MDA score, never the BH q the limitation is about). `_mda_stats()` excludes the
+  `used_by_model = 0` rows, which carry no q: a model can hold 70 rows and correct
+  over 69, and counting rows instead of the corrected set understates the
+  attainable floor.
+- **`t_evidence_accounting`'s zero-`snp` branch still carried the refuted
+  diagnosis** ("the two sets do not intersect"). Dead since the loader fix, but
+  wrong; it is now a regression warning.
+
 ### Added
 - **Step 18 — genomic context for `strong_novel` biomarkers.**
   `scripts/18_novel_ncbi_context.py` joins the KB's novel set to the

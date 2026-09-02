@@ -56,6 +56,9 @@ EXPECTED_TABLES = {
     "hyperparameters.csv": 45,
     "limitations.csv": 10,
     "headline_biomarkers.csv": None,
+    # Row count moves with the CARD snapshot, exactly as mechanisms.csv does: the grain
+    # is (antibiotic, ARO gene family) over the agents assayed in >=2 organisms.
+    "cross_organism_families.csv": None,
 }
 
 # KB table -> expected row count. None = "must exist, count not pinned".
