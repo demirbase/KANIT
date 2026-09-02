@@ -158,7 +158,12 @@ def fig_novel_context(tables, out):
             color=[cols.get(c, "#888888") for c in d.replicon_call],
             edgecolor="k", lw=0.35)
     a2.axvline(80, ls="--", c="grey", lw=0.9)
-    a2.text(80, -0.9, " 80% call threshold", fontsize=7.5, color="grey", va="bottom")
+    # Left-aligned at x=80 this ran into the right spine and over the bottom bar. Reserve
+    # a strip under the bars and hang the label off the line's left side instead.
+    a2.set_ylim(-1.9, len(d) - 0.4)
+    a2.text(79, -1.5, "80% call threshold ", fontsize=7.5, color="grey",
+            ha="right", va="center", zorder=5,
+            bbox=dict(boxstyle="square,pad=0.15", fc="white", ec="none", alpha=0.85))
     a2.set_yticks(y)
     a2.set_yticklabels([f"{_short(r.antibiotic)} ({_abbr(r.organism)})  {r.unitig_len} bp"
                         for r in d.itertuples()], fontsize=7)
@@ -252,17 +257,25 @@ def fig_funnel(bio, db, out):
     named = bio["gene_symbol"].notna()
     n_named = int(named.sum())
     n_card = int(bio["tier"].isin(["confirmed", "candidate"]).sum())
-    n_stable = int(pd.to_numeric(bio.get("stable"), errors="coerce").fillna(0).sum())
+    # biomarkers.csv'nin `stable` sütunu HER İKİ seçim yolunu (gain_seed + cpss) kapsar
+    # ve 2.045 verir; Bölüm 4.4 boyunca kullanılan CPSS rakamı 1.204'tür. Aynı kusur
+    # kb_overview.cpss_n_stable'da da vardı ve düzeltildi — burada da CPSS'e özgü sayılır.
+    n_stable_any = int(pd.to_numeric(bio.get("stable"), errors="coerce").fillna(0).sum())
+    n_stable = n_stable_any
     if Path(db).exists():
         with sqlite3.connect(db) as c:
             n_models = c.execute("SELECT COUNT(*) FROM models").fetchone()[0] or n_models
+            n_stable = c.execute(
+                "SELECT COUNT(*) FROM (SELECT DISTINCT unitig_id, model_id "
+                "FROM unitig_model_scores WHERE stable=1 AND selection_method='cpss')"
+            ).fetchone()[0] or n_stable_any
 
     # NOT a nested funnel: 'CARD gene hit' and 'CPSS-stable' are cross-cutting attributes
     # (2,045 stable > 480 with a CARD gene hit), so tapering the bars by position would
     # assert a subset relation that does not hold. Bar width encodes the COUNT.
     stages = [
         (n_bio, "biomarkers graded", "#41ab5d"),
-        (n_stable, "CPSS-stable", "#756bb1"),
+        (n_stable, "CPSS-stable (\u03c0 \u2265 0.6)", "#756bb1"),
         (n_named, "any named CARD alignment", "#fee0b6"),
         (n_card, "CARD gene hit (confirmed/candidate)", "#fdae61"),
         (int(counts.get("confirmed", 0)), "confirmed", "#238b45"),
@@ -309,7 +322,7 @@ def fig_funnel(bio, db, out):
     a2.set_xticklabels(tiers, rotation=20, ha="right", fontsize=9)
     a2.set_ylabel("biomarkers")
     a2.set_title("Evidence tiers\n"
-                  "7 analyses produced, 4 grade a biomarker (METHODOLOGY §5.2)",
+                  "7 analyses produced, 6 eligible, 5 grade a biomarker",
                   fontsize=10.5)
     fig.tight_layout()
     _save(fig, out, "35_evidence_funnel")

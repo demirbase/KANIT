@@ -54,6 +54,17 @@ def _qc_dir(results, org):
     return Path(results) / org / "global_exploration" / "genome_qc"
 
 
+def _qc_n_genomes(results, org):
+    """How many genomes step 02d actually assessed — the denominator figure 3.5 uses."""
+    f = _qc_dir(results, org) / f"02d_genome_qc_summary_{org}.json"
+    if not f.exists():
+        return None
+    try:
+        return int(json.loads(f.read_text())["n_genomes"])
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
 def _grid(n, ncols=3, w=4.3, h=3.4):
     nrows = int(np.ceil(n / ncols))
     fig, axes = plt.subplots(nrows, ncols, figsize=(w * ncols, h * nrows))
@@ -113,7 +124,15 @@ def fig_contiguity(results, orgs, out):
         ax.axhline(50000, ls="--", c="grey", lw=0.8)
         ax.set_xscale("log"); ax.set_yscale("log")
         ax.set_xlabel("# contigs"); ax.set_ylabel("N50 (bp)")
-        ax.set_title(f"{_display(org)}  (n={len(df)})", fontsize=10, style="italic")
+        # QUAST does not always cover every genome the QC step saw: A. baumannii has
+        # 1171 in 02d_genome_qc_summary but 1169 QUAST rows. Printing the QUAST count
+        # alone made the panel disagree with figure 3.5 with no way to tell why, so
+        # name the denominator whenever the two differ.
+        note = ""
+        qc = _qc_n_genomes(results, org)
+        if qc and qc != len(df):
+            note = f"\n{qc - len(df)} of {qc} genomes have no QUAST report"
+        ax.set_title(f"{_display(org)}  (n={len(df)}){note}", fontsize=10, style="italic")
     fig.suptitle("Assembly contiguity (QUAST) — advisory, NOT an exclusion gate", fontsize=12)
     fig.tight_layout()
     _save(fig, out, "11_assembly_contiguity")
@@ -333,8 +352,17 @@ def fig_lineage_resistance(data, ms, orgs, out):
         ax.bar(xs, rate, color=_colour(org), edgecolor="k", lw=0.4)
         ax.axhline(100 * d["y"].mean(), ls="--", c="grey", lw=1,
                    label=f"organism-wide {100*d['y'].mean():.0f}%")
-        for xi, c in zip(xs, top.values):
-            ax.text(xi, 2, f"n={c}", ha="center", fontsize=6.5, rotation=90, color="white")
+        # The n label was always white at y=2. On S. aureus ciprofloxacin lineage 6
+        # (n=94, 0.0 % resistant) there is no bar behind it, so both the bar and its
+        # label vanished and the panel read as missing data rather than as a large
+        # fully-susceptible clone. Put the label inside the bar only when the bar is
+        # tall enough to hold it; otherwise above it, in ink.
+        for xi, c, rt in zip(xs, top.values, rate):
+            inside = rt >= 20
+            ax.text(xi, 2 if inside else rt + 2,
+                    f"n={c}" if rt > 0 else f"n={c} · 0%",
+                    ha="center", va="bottom", fontsize=6.5, rotation=90,
+                    color="white" if inside else "#333333")
         ax.set_xticks(xs); ax.set_xticklabels([str(c) for c in top.index], fontsize=7)
         ax.set_ylim(0, 105); ax.set_ylabel("% resistant")
         ax.set_xlabel("lineage (10 largest)")
@@ -377,11 +405,22 @@ def fig_clonality_vs_inflation(data, tables, orgs, out):
     ax.margins(x=0.16)          # the right-most label ran into the axis edge
     ax.set_xlabel("largest lineage (% of the organism's genomes)")
     ax.set_ylabel("mean AUC inflation when the lineage grouping is removed")
-    ax.set_title("The more clonal the organism, the more a random split flatters it\n"
+    # The title used to read "The more clonal the organism, the more a random split
+    # flatters it" — a general law drawn from six points, on the one measure of the five
+    # in figure 40 that fails the rank test. Figure 40 says so in as many words, so the
+    # two figures contradicted each other. State the direction and the caveat, not a law.
+    ax.set_title("Clonal dominance vs how much a lineage-blind split inflates the AUC\n"
                  f"Pearson r = {r:.3f} (p = {p:.3f}) · Spearman ρ = {rho:.3f} (p = {ps:.3f}) · n = {len(df)}",
                  fontsize=10.5)
-    ax.text(0.02, 0.02, "n = 6 organisms: treat as a trend, not an estimate",
-            transform=ax.transAxes, fontsize=8, color="#777")
+    rank = ("survives" if ps < 0.05 else "does not survive")
+    # Upper left, not lower left: the points run bottom-left to top-right, so the note
+    # ran straight through the E. coli label down there.
+    ax.text(0.02, 0.97,
+            f"n = {len(df)} organisms · largest-lineage share is one of five\n"
+            f"structure measures tested (figure 40) and {rank}\n"
+            f"a rank test (ρ p = {ps:.3f}). The direction is the finding;\n"
+            "the coefficient is not an estimate.",
+            transform=ax.transAxes, fontsize=8, color="#777", va="top", ha="left")
     fig.tight_layout()
     _save(fig, out, "17_clonality_vs_inflation")
 
@@ -500,7 +539,22 @@ def fig_feature_counts(db, ms, out):
     _save(fig, out, "18_feature_counts")
 
 
-def fig_unitig_lengths(data, ms, out, sample=40000, stride=25):
+def _kb_unitig_lengths(db):
+    """The graded unitigs in the KB — read from the database so the figure and section
+    3.3 can never drift apart."""
+    if not db or not Path(db).exists():
+        return None
+    try:
+        with sqlite3.connect(db) as c:
+            n, mn, mx, avg = c.execute(
+                "SELECT COUNT(*), MIN(LENGTH(sequence)), MAX(LENGTH(sequence)), "
+                "AVG(LENGTH(sequence)) FROM unitigs").fetchone()
+        return None if not n else {"n": n, "mn": mn, "mx": mx, "avg": avg}
+    except sqlite3.Error:
+        return None
+
+
+def fig_unitig_lengths(data, ms, out, db=None, sample=40000, stride=25):
     """Unitig length distribution — why 'blastn-short' is the right BLAST task.
 
     Prefers the full features.txt. Where only ``features_sample.txt`` is present
@@ -542,10 +596,27 @@ def fig_unitig_lengths(data, ms, out, sample=40000, stride=25):
         plt.close(fig); print("  (lengths: no features.txt/features_sample.txt — skipped)"); return
     hi = float(np.percentile(all_lens, 99.5)) if all_lens else 120
     ax.set_xlim(min(all_lens) - 2, max(35, hi) + 5)
+    # The axis stops at the 99.5th percentile so the bulk is legible. Unsaid, that reads
+    # as the maximum candidate length, which it is not — the sampled tail runs an order
+    # of magnitude further. Say where the axis ends and where the data does.
+    ax.text(0.99, 0.97,
+            f"x-axis clipped at the 99.5th percentile ({hi:,.0f} bp);\n"
+            f"the sampled candidates reach {max(all_lens):,} bp",
+            transform=ax.transAxes, ha="right", va="top", fontsize=8, color="#777")
     ax.set_xlabel("unitig length (bp)"); ax.set_ylabel("density")
     src = "systematic 1-in-25 sample" if from_sample else "1-in-%d sample" % stride
-    ax.set_title(f"Unitig length distribution ({src})\n"
-                 "short unitigs are why BLAST runs in 'blastn-short' mode", fontsize=10.5)
+    # This is the CANDIDATE feature space that went into selection, not the graded
+    # unitigs that came out of it. Section 3.3 quotes 31-1,424 bp for the knowledge
+    # base's set, which is a different and much smaller population; without the
+    # distinction on the figure the two look like a contradiction.
+    kb = _kb_unitig_lengths(db)
+    tail = ("" if not kb else
+            f"\nnot the knowledge base's {kb['n']:,} graded unitigs "
+            f"({kb['mn']}-{kb['mx']:,} bp, mean {kb['avg']:.1f}) — that set is what "
+            "survived selection")
+    ax.set_title(f"Candidate unitig length distribution before selection ({src})\n"
+                 "short unitigs are why BLAST runs in 'blastn-short' mode" + tail,
+                 fontsize=10.5)
     ax.legend(fontsize=8, frameon=False)
     fig.tight_layout()
     _save(fig, out, "19_unitig_lengths")
@@ -577,7 +648,7 @@ def main():
         ("clonality",   lambda: fig_clonality_vs_inflation(args.data, args.tables, orgs, out)),
         ("structure",   lambda: fig_structure_vs_inflation(args.tables, out)),
         ("features",    lambda: fig_feature_counts(args.db, ms, out)),
-        ("lengths",     lambda: fig_unitig_lengths(args.data, ms, out)),
+        ("lengths",     lambda: fig_unitig_lengths(args.data, ms, out, args.db)),
     ]
     for name, fn in todo:
         if only and name not in only:

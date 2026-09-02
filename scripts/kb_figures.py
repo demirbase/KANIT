@@ -145,8 +145,12 @@ def fig_performance(tables, out):
     ax.axhline(0.5, ls="--", c="grey", lw=0.8)
     # Park the chance label in clear air on the right; at x=0.3 it sat behind the first
     # bar and was unreadable.
-    ax.text(len(df) - 1.2, 0.505, "chance", fontsize=8, color="grey",
-            va="bottom", ha="right")
+    # Right-aligning at x=n-1.2 put the word ON the last five bars: grey on saturated
+    # fill, unreadable. Park it past the final bar and give it an opaque backing so it
+    # stays legible whatever ends up underneath.
+    ax.text(len(df) - 0.35, 0.505, "chance", fontsize=8, color="grey",
+            va="bottom", ha="right", zorder=5,
+            bbox=dict(boxstyle="square,pad=0.15", fc="white", ec="none", alpha=0.85))
     # Floor below the weakest model (0.429 for A. baumannii ceftazidime): a 0.4 floor
     # clipped that bar to an invisible sliver, hiding the panel's most informative
     # result — the clonally-confounded model lineage-CV is supposed to expose.
@@ -193,8 +197,11 @@ def fig_cpss_pfer(tables, out):
     a2.bar(x, df["pfer_bound"], color=col, edgecolor="k", lw=0.4, alpha=0.9)
     a2.set_yscale("log")
     a2.axhline(1, ls="--", c="grey", lw=0.8)
-    a2.text(len(df) - 0.5, 1.06, "PFER = 1", fontsize=7.5, color="grey",
-            ha="right", va="bottom")
+    # Same collision as the "chance" label in fig_performance: this sat over the Ec and
+    # Kp bars. Opaque backing, and clear of the last bar.
+    a2.text(len(df) - 0.35, 1.06, "PFER = 1", fontsize=7.5, color="grey",
+            ha="right", va="bottom", zorder=5,
+            bbox=dict(boxstyle="square,pad=0.15", fc="white", ec="none", alpha=0.85))
     a2.set_ylabel("PFER bound (E[false positives], log)")
     a2.set_xticks(x)
     a2.set_xticklabels([f"{_short(a)} ({_abbr(o)})" for a, o in zip(df.antibiotic, df.organism)], rotation=90, fontsize=7.5)
@@ -399,6 +406,11 @@ def fig_null_hist(tables, results, out):
     fig, axes = plt.subplots(nrow, ncol, figsize=(3 * ncol, 2.2 * nrow))
     axes = np.atleast_1d(axes).ravel()
     n_perm = 0
+    # The old suptitle asserted "every real AUC sits outside its own null ... for all of
+    # them". It is 44 of 45: A. baumannii tetracycline fails (nine nulls reach the real
+    # value, p = 10/51). Section 4.4.2 says so, and the Ab-tetracycline panel shows it,
+    # so the title contradicted both. Count it from the summaries instead of asserting it.
+    n_sig, fails = 0, []
     for ax, f in zip(axes, files):
         ab = os.path.basename(f).replace("12b_label_permutation_nulls_", "").replace(".csv", "")
         # The organism is in the path, not the filename. Without it four panels were
@@ -417,6 +429,11 @@ def fig_null_hist(tables, results, out):
             continue
         summ = json.load(open(f.replace("_nulls_", "_summary_").replace(".csv", ".json"))) if os.path.exists(f.replace("_nulls_", "_summary_").replace(".csv", ".json")) else {}
         real = summ.get("real_roc_auc") or summ.get("real_test_roc_auc")
+        ok = bool(summ.get("significant")) if "significant" in summ else None
+        if ok is True:
+            n_sig += 1
+        elif ok is False:
+            fails.append((org, ab, summ.get("empirical_p")))
         n_perm = max(n_perm, len(nulls))
         # Two reasons this panel used to render as an empty box with one red line:
         # a white edgecolor on bars only ~2 px wide at this panel size painted over the
@@ -430,14 +447,24 @@ def fig_null_hist(tables, results, out):
         hi = float(max(nulls.max(), real if real else nulls.max()))
         pad = max(0.02, 0.08 * (hi - lo))
         ax.set_xlim(lo - pad, hi + pad)
-        ax.set_title(f"{_short(ab)} ({_abbr(org)})" if org else _short(ab), fontsize=7.5)
+        ax.set_title((f"{_short(ab)} ({_abbr(org)})" if org else _short(ab))
+                     + ("" if ok is not False else
+                        f"\nn.s.  p = {summ.get('empirical_p', float('nan')):.3f}"),
+                     fontsize=7.5,
+                     color="#444444" if ok is not False else "#b2182b",
+                     fontweight="normal" if ok is not False else "bold")
         ax.tick_params(labelsize=6)
         ax.set_yticks([])
     for ax in axes[n:]:
         ax.axis("off")
+    floor = f"1/(N+1) = {1 / (n_perm + 1):.3f}" if n_perm else "1/(N+1)"
+    exc = ("" if not fails else
+           " · the exception" + ("s are " if len(fails) > 1 else " is ")
+           + ", ".join(f"{_display(o)} {_short(a)} (p = {pv:.3f}, marked red)"
+                       for o, a, pv in fails))
     fig.suptitle("Label-permutation null (purple) vs the model's REAL ROC-AUC (red line)\n"
-                 f"{n} models · N={n_perm} shuffles each — every real AUC sits outside its "
-                 "own null, so p is at the 1/(N+1) floor for all of them\n"
+                 f"{n} models · N={n_perm} shuffles each — {n_sig} of {n} real AUCs sit "
+                 f"outside their own null, at the {floor} floor{exc}\n"
                  "each panel is scaled to its own null: the nulls differ in location and "
                  "width, which a shared axis hid", fontsize=10)
     fig.tight_layout(rect=[0, 0, 1, 0.97])
@@ -580,7 +607,7 @@ def fig_evidence_combinations(tables, out, db):
             ax.add_patch(Rectangle((x - 0.46, 0.7), 0.92, n / 0.7, fill=False,
                                    ec=TIER_COLOURS["strong_novel"], lw=1.4, ls="--",
                                    zorder=5, clip_on=False))
-            ax.annotate("three statistical layers,\nno CARD hit = novel",
+            ax.annotate("cpss + pyseer + \u22651 more,\nno CARD hit = novel",
                         (x, n), textcoords="offset points", xytext=(0, 52),
                         ha="center", fontsize=8, color=TIER_COLOURS["strong_novel"],
                         arrowprops=dict(arrowstyle="->", lw=1.0, shrinkB=16,
@@ -693,6 +720,12 @@ def fig_external_concordance(tables, out, db):
         "SELECT p.organism, m.antibiotic, e.caller, e.balanced_accuracy "
         "FROM external_concordance e JOIN models m USING(model_id) "
         "JOIN pipeline_runs p USING(run_id)").fetchall()
+    # The model's own bACC lives in `models`, not in external_concordance; without
+    # this the figure plotted two series under a three-series title.
+    rows += [(o, a, "model", b) for o, a, b in conn.execute(
+        "SELECT p.organism, m.antibiotic, m.balanced_accuracy "
+        "FROM models m JOIN pipeline_runs p USING(run_id) "
+        "WHERE m.model_id IN (SELECT DISTINCT model_id FROM external_concordance)")]
     conn.close()
     if not rows:
         print("  (external_concordance: no rows — skipped)")
@@ -702,7 +735,8 @@ def fig_external_concordance(tables, out, db):
     keys = sorted(df["key"].unique())
     callers = [c for c in ("model", "amrfinderplus", "resfinder") if c in set(df.caller)]
     cmap = {"model": "#31a354", "amrfinderplus": "#e6550d", "resfinder": "#756bb1"}
-    nice = {"model": "our model", "amrfinderplus": "AMRFinderPlus", "resfinder": "ResFinder"}
+    nice = {"model": "unitig model", "amrfinderplus": "AMRFinderPlus",
+            "resfinder": "ResFinder"}
     x = np.arange(len(keys)); w = 0.8 / max(1, len(callers))
     fig, ax = plt.subplots(figsize=(0.62 * len(keys) + 3, 5))
     for i, cl in enumerate(callers):
@@ -712,8 +746,17 @@ def fig_external_concordance(tables, out, db):
     ax.set_xticklabels([f"{_short(a)}\n({_abbr(o)})" for o, a in keys], rotation=90, fontsize=7.5)
     ax.set_ylim(0.45, 1.03); ax.axhline(0.5, ls="--", c="grey", lw=0.8)
     ax.set_ylabel("Balanced accuracy vs EUCAST/CLSI phenotype")
-    ax.set_title("External concordance (M13, leakage-free held-out test): "
-                 "our model vs AMRFinderPlus vs ResFinder", fontsize=10.5)
+    ax.set_title("External concordance against the EUCAST/CLSI phenotype: "
+                 "unitig model, AMRFinderPlus and ResFinder", fontsize=10.5)
+    # The comparison is not symmetric and the figure must not be read as if it were.
+    ax.text(0.005, 0.985,
+            "The model is scored on its own held-out split, which is a chunk split rather "
+            "than a lineage-aware one; the two callers are rule-based and no split can "
+            "advantage them.\nThe margins are therefore an upper bound. A missing bar means "
+            "the caller cannot address that antibiotic and is recorded as not assessable, "
+            "not as 0.5.",
+            transform=ax.transAxes, fontsize=7.2, va="top", ha="left", color="#444444",
+            linespacing=1.5)
     ax.legend(fontsize=9, loc="lower right")
     _save(fig, out, "07_external_concordance")
 

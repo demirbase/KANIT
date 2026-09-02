@@ -240,7 +240,8 @@ def fig_forest(results, ms, out):
                        fontsize=7)
     ax.invert_yaxis(); ax.set_xlabel("ROC-AUC")
     ax.set_title("Single-split AUC with 95 % bootstrap CI (dot+bar)\n"
-                 "black tick = lineage-CV AUC — the gap is leakage, not sampling noise",
+                 "black tick = lineage-CV AUC — the interval covers sampling noise in one "
+                 "split; it does not cover the lineage-aware value",
                  fontsize=10.5)
     fig.tight_layout()
     _save(fig, out, "26_auc_forest")

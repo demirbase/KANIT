@@ -48,6 +48,39 @@ All notable changes to this project are documented here. The format is based on
   (`10.5281/zenodo.21789464`) identifies an archive that no longer holds this
   content, so it must be repopulated when the new version is minted.
 
+- **All 42 thesis figures audited against the artefacts that produced them; 13
+  claims in 11 figures were wrong or unverifiable.** Every fix is in the
+  generator, not the image, and every regenerated figure was re-checked against
+  the CSV/JSON it reads.
+  - `05_label_permutation_nulls` asserted that **every** real AUC clears its own
+    null. It is **44 of 45**: *A. baumannii* tetracycline has nine nulls at the
+    real value (`empirical_p` 0.196). The count now comes from the 45
+    `12b_label_permutation_summary` JSONs and the failing panel is marked.
+  - `17_clonality_vs_inflation` titled a general law ("the more clonal the
+    organism, the more a random split flatters it") from n = 6, on the one
+    structure measure of five that fails a rank test (ρ 0.771, p 0.072) — which
+    `40_structure_vs_inflation` states in as many words, so the two figures
+    contradicted each other. Title is now descriptive; the caveat is computed.
+  - `19_unitig_lengths` plotted the **candidate feature space** while §3.3 quotes
+    the knowledge base's graded set, and its x-axis stopped at the 99.5th
+    percentile without saying so — the sampled candidates reach **6,305 bp**.
+    Both are now stated, and the KB's numbers are read from `unitigs` so the
+    figure and the text cannot drift apart.
+  - `11_assembly_contiguity` printed n = 1169 for *A. baumannii* where figure 3.5
+    and the QC summary say 1171; QUAST has no report for two genomes. The panel
+    now names the denominator whenever the two differ.
+  - `16_lineage_resistance` rendered *S. aureus* lineage 6 (n = 94, **0.0 %**
+    resistant) as neither a bar nor a label, because every count label was white
+    at y = 2 with no bar behind it — it read as missing data. Labels adapt to bar
+    height; zero-height bars carry the rate explicitly.
+  - `01_performance_lineageCV`, `02_cpss_pfer` and `36_novel_genomic_context` drew
+    their reference-line labels over the bars in grey, unreadable.
+  - Earlier in the same pass: `37_pipeline_overview` (10/6/4 → **7/6/5**, refuted
+    SNP footnote, `Zenodo None`), `35_evidence_funnel` (2,045 → **1,204**
+    CPSS-stable, "4 grade" → 5), `39_evidence_combinations` (a four-layer cell
+    labelled three), `38_kb_schema` (two tables no longer empty),
+    `26_auc_forest` ("the gap **is** leakage" → the interval's actual scope).
+
 ### Added
 - **Step 18 — genomic context for `strong_novel` biomarkers.**
   `scripts/18_novel_ncbi_context.py` joins the KB's novel set to the
@@ -68,7 +101,11 @@ All notable changes to this project are documented here. The format is based on
   0.4.0 → 0.7.1. Added **§5 "What the delivered run actually did"** — panel and
   parameters as executed, the evidence ladder as executed, and the limitations
   that must be stated.
-- **Evidence-layer count pinned.** The project produces **7** orthogonal
+- **Evidence-layer count pinned.** ⚠️ **Superseded by the `snp` loader-defect
+  entry above** — the `snp` diagnosis in this entry ("the two sets are
+  disjoint") was refuted; the sets overlap and the delivered accounting is
+  **7 produced / 6 counted / 5 firing**. Kept for the record of what was
+  corrected in the docs at the time. The project produces **7** orthogonal
   analyses, `classify_evidence_tier()` counts **6**, and **4** actually fired in
   the delivered KB (max observed `n_evidence_layers` = 4, reached by 7
   biomarkers). Two designed layers contributed nothing, for different reasons:

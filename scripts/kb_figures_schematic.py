@@ -154,7 +154,21 @@ def read_facts(db):
         f["fired"][key] = c.execute(
             "select count(*) from unitig_evidence_tier "
             "where ','||evidence_layers||',' like ?", (f"%,{key},%",)).fetchone()[0]
-    f["n_evidence_types"] = q("select count(distinct evidence_type) from validation_evidence")
+    # Biyobelirteç katmanları: concordance/head-to-head satırları step 16 ile geldi ve
+    # bunlar model düzeyi dış karşılaştırma, kanıt katmanı değil.
+    f["n_evidence_types"] = q(
+        "select count(distinct evidence_type) from validation_evidence "
+        "where evidence_type not like 'concordance%' and evidence_type != 'head_to_head_model'"
+    )  # label_permutation bu kümede zaten var (model düzeyi, ayrı çiziliyor)
+    f["n_firing"] = q(
+        "select count(*) from (select distinct evidence_type from ("
+        "  select 'blast' evidence_type from unitig_evidence_tier where evidence_layers like '%blast%'"
+        "  union all select 'prevalence' from unitig_evidence_tier where evidence_layers like '%prevalence%'"
+        "  union all select 'snp' from unitig_evidence_tier where evidence_layers like '%snp%'"
+        "  union all select 'cpss' from unitig_evidence_tier where evidence_layers like '%cpss%'"
+        "  union all select 'pyseer' from unitig_evidence_tier where evidence_layers like '%pyseer%'"
+        "  union all select 'mda' from unitig_evidence_tier where evidence_layers like '%mda%'))"
+    )
     c.close()
     return f
 
@@ -224,7 +238,8 @@ def fig_pipeline(f, out, n_fig, n_tab):
     ax.text(ex + ew / 2, ey + eh - 0.010, "Orthogonal evidence layers", ha="center",
             va="top", fontsize=9, fontweight="bold", color=INK, zorder=3)
     ax.text(ex + ew / 2, ey + eh - 0.040,
-            f"{f['n_evidence_types']} produced · 6 counted into the grade · 4 ever fire",
+            f"{f['n_evidence_types']} produced · 6 counted into the grade · "
+            f"{f['n_firing']} ever fire",
             ha="center", va="top", fontsize=7.3, color=MUTED, style="italic", zorder=3)
     yy = ey + eh - 0.075
     for key, label, script in LAYERS:
@@ -246,9 +261,9 @@ def fig_pipeline(f, out, n_fig, n_tab):
             "it validates a model, it grades no biomarker.",
             ha="left", va="top", fontsize=6.6, color=MUTED, style="italic", zorder=3)
     ax.text(ex + 0.012, ey + 0.014,
-            "\u2717 = produced but never fires (METHODOLOGY \u00a75.3):\n"
-            "SNP = candidate-set mismatch, a wiring fault\n"
-            "MDA = real negative, but R=100 is underpowered",
+            "\u2717 = produced but never fires:\n"
+            "MDA = a real negative, but R = 100 is underpowered\n"
+            "(the SNP layer's earlier zero was a loader defect, since repaired)",
             ha="left", va="bottom", fontsize=6.5, color=RED, style="italic",
             zorder=3, linespacing=1.45)
 
@@ -263,7 +278,8 @@ def fig_pipeline(f, out, n_fig, n_tab):
               FILL_KB, title_size=9.4)
     OUT = _box(ax, 0.735, 0.150, 0.250, box_height(["", "", ""]), "Delivered artefacts",
                [f"{n_tab} tidy tables · {n_fig} figures",
-                f"Zenodo {f['doi']}", f"{f['licence']}"], FILL_KB)
+                f"Zenodo {f['doi'] or 'DOI pending new release'}",
+                f"{f['licence']}"], FILL_KB)
     PROV = _box(ax, 0.015, 0.150, 0.225, box_height(["", "", ""]), "Provenance capture",
                 ["run_metadata.json per stage: commit,",
                  "seed, tool versions, data sha256",
@@ -354,12 +370,12 @@ def fig_schema(db, f, out):
         entry("variant_snp_check", 2) + (FILL_EVID,),
         entry("validation_evidence", 3) + (FILL_EVID,),
     ], title_size=8.0, line_size=6.5)
-    dead = stack(ax, 0.735, 0.245, 0.405, [
-        entry("external_concordance", 1, dead=True) + (FILL_DEAD,),
-        entry("unitig_antibiotic_overlap", 2, dead=True) + (FILL_DEAD,),
-    ], ls="dashed", title_size=8.0, line_size=6.5, title_colour=RED)
+    cmp_ = stack(ax, 0.735, 0.245, 0.405, [
+        entry("external_concordance", 1) + (FILL_DATA,),
+        entry("unitig_antibiotic_overlap", 2) + (FILL_DATA,),
+    ], title_size=8.0, line_size=6.5)
 
-    boxes = {**ref, **hubs, **c3, **c4, **dead}
+    boxes = {**ref, **hubs, **c3, **c4, **cmp_}
     by_name = {k.split("  ")[0]: v for k, v in boxes.items()}
 
     C_MODEL, C_UNITIG, C_RUN, C_REF = "#7b52ab", "#2c7fb8", "#8c6d1f", "#777777"
@@ -394,13 +410,14 @@ def fig_schema(db, f, out):
         ax.text(0.285, y, lab, fontsize=7.2, color=MUTED, va="center")
 
     ax.text(0.245, 0.300,
-            "TWO TABLES ARE EMPTY BY RECORD, NOT BY ACCIDENT\n"
-            "external_concordance \u2014 step 16 was not run in this clean pass,\n"
-            "so figure 07 does not exist either.\n"
-            "unitig_antibiotic_overlap \u2014 step 15 ran but was never loaded.\n"
-            "verify_artefacts.py asserts both stay empty: a silent fill is a\n"
-            "regression exactly as a silent emptying would be.",
-            fontsize=6.9, color=RED, va="top", linespacing=1.5,
+            "TWO TABLES WERE FILLED AFTER THE SCHEMA WAS FIXED\n"
+            "external_concordance \u2014 step 16; AMRFinderPlus and ResFinder\n"
+            "against the phenotype. A caller that cannot address an antibiotic\n"
+            "is stored as not assessable, never as a balanced accuracy of 0.5.\n"
+            "unitig_antibiotic_overlap \u2014 step 15, loaded without its optional\n"
+            "significance test, so it describes sharing and does not test it.\n"
+            "Neither feeds an evidence tier; both were added without a schema change.",
+            fontsize=6.9, color=MUTED, va="top", linespacing=1.5,
             bbox=dict(fc="white", ec="none", alpha=0.9, pad=2.5), zorder=4)
 
     ax.text(0.735, 0.135,
