@@ -90,11 +90,17 @@ All notable changes to this project are documented here. The format is based on
   table and the figure cannot drift apart — the pattern `lineage_summary` already
   uses for figure 40. Eight families are shared; seven of the eight stay inside
   one Gram group and only the MFS efflux pumps cross it.
-  **`03_cross_organism` (thesis figure 4.18) is retired** now that the table
-  carries its content: `fig_cross_org` is removed from `kb_figures.py`, the
-  PNG/PDF are kept under `results/_retired_figures/` with a note on how to get
-  the figure back, thesis figures 4.19-4.27 shift to 4.18-4.26, and `N_FIGURES`
-  goes 42 -> 41.
+  **`03_cross_organism` is retired and redrawn as
+  `03_cross_organism_families`.** The old panel was rows of text on an empty
+  canvas; the new one is a presence grid — one row per (agent, ARO family), a
+  marker in each organism that recovered it, and a rule spanning the markers, so
+  a family's spread is a length instead of a list. Columns run Gram-negative then
+  Gram-positive with the division ruled, which is what makes "seven of the eight
+  shared families stay inside one Gram group" checkable by eye. It reads
+  `cross_organism_families.csv`, not `mechanisms.csv`, so the figure and the tidy
+  table cannot disagree. Section 4.5.4 presents it as Figure 4.18 and points to
+  the CSV for the gene symbols; the old PNG/PDF are kept under
+  `results/_retired_figures/`.
 
 - **`limitations.csv`'s tenth row existed only in the delivered file.** The MDA
   limitation was written straight into the CSV; `t_limitations` still built nine,

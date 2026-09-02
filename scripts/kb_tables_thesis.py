@@ -438,8 +438,8 @@ def t_cross_organism_families(ctx):
     travels (tetracycline's MFS efflux pumps, in all five of its organisms) and one
     whose determinants are organism-established (the carbapenems: OXA-23-like in
     A. baumannii, KPC and NDM in K. pneumoniae, VIM in P. aeruginosa, three families
-    with no overlap). Thesis figure 4.18 carried that as rows of text, which is a table
-    drawn with a plotting library; it was retired on 2026-09-02 in favour of this.
+    with no overlap). This table is the tidy form; kb_figures.fig_cross_organism_families
+    reads IT, not mechanisms.csv, and draws thesis figure 4.18 from it.
 
     Grain is one row per (antibiotic, ARO gene family) among the ON-TARGET
     annotations of the agents assayed in at least two organisms. The short family

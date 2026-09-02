@@ -13,10 +13,11 @@ Run kb_tables.py FIRST, then:
 `--out` defaults to `figures`, NOT `results/figures`: pass it explicitly or a
 regeneration writes beside the real set instead of into it.
 
-`03_cross_organism` (thesis figure 4.18) was retired on 2026-09-02 — the panel was
-rows of text on an empty canvas, and its content is now Table 4.6 and
-results/tables/cross_organism_families.csv. The PNG/PDF are kept under
-results/_retired_figures/.
+`03_cross_organism` was retired on 2026-09-02: the panel was rows of text on an empty
+canvas. Thesis figure 4.18 is now `03_cross_organism_families`, a presence grid over the
+same data, drawn from results/tables/cross_organism_families.csv rather than from
+mechanisms.csv so the figure and the tidy table cannot disagree. The old PNG/PDF are
+kept under results/_retired_figures/.
 
 Each figure is saved as PNG (200 dpi) + PDF. Colours come from PALETTE (registry slugs); any organism not listed there gets an
 auto-assigned colour, and display names come from the registry. Edit CLASS_ORDER /
@@ -317,6 +318,132 @@ def fig_overview(tables, out, db):
     a1.invert_yaxis(); a1.set_xlabel("models"); a1.legend(fontsize=9, loc="lower right")
     a1.set_title("Models per drug class")
     _save(fig, out, "00_kb_overview")
+
+
+# Gram grouping is not cosmetic here: seven of the eight shared families stay inside
+# one group, so putting the division on the axis is what makes that readable at a glance.
+GRAM = {"acinetobacter_baumannii": "-", "ecoli": "-", "kpneumoniae": "-",
+        "pseudomonas_aeruginosa": "-", "enterococcus_faecium": "+",
+        "staphylococcus_aureus": "+"}
+
+
+def fig_cross_organism_families(tables, out):
+    """Which gene families an agent recovers in more than one organism.
+
+    Reads cross_organism_families.csv rather than mechanisms.csv, so the figure and the
+    tidy table cannot disagree; kb_tables_thesis.py builds that table.
+
+    This replaced 03_cross_organism, which printed the same content as rows of text on an
+    empty canvas. The encoding here is a presence grid: one row per (agent, ARO family),
+    a marker in each organism that recovered it, and a rule spanning the markers so the
+    spread of a family is a length rather than a list to be read. Tetracycline's MFS
+    efflux then shows as a bar across the whole panel and each carbapenem enzyme as a
+    single dot, which is the contrast section 4.5.4 is about.
+    """
+    f = Path(tables) / "cross_organism_families.csv"
+    if not f.exists():
+        print("  (cross_org_families: run kb_tables_thesis.py first — skipped)")
+        return
+    d = pd.read_csv(f)
+    if d.empty:
+        print("  (cross_org_families: no rows — skipped)")
+        return
+
+    # Columns: Gram-negatives, then Gram-positives, so the division is one vertical rule.
+    orgs = [o for o in GRAM if o in set(
+        x for cell in d.organisms for x in _slugs(cell))]
+    orgs = sorted(orgs, key=lambda o: (GRAM[o] == "+", _display(o)))
+    split = sum(1 for o in orgs if GRAM[o] == "-")
+    xpos = {o: i for i, o in enumerate(orgs)}
+
+    # Shared rows first inside each agent, widest first: the eye should meet the long
+    # bars before the dots.
+    d = d.sort_values(["antibiotic", "shared", "n_organisms_recovered", "family_label"],
+                      ascending=[True, False, False, True]).reset_index(drop=True)
+
+    rows, ylab, seps, agent_at = [], [], [], []
+    y = 0
+    for ab, g in d.groupby("antibiotic", sort=True):
+        agent_at.append((y + len(g) / 2 - 0.5, _short(ab), g["shared"].eq("yes").any()))
+        for r in g.itertuples():
+            rows.append((y, r, _slugs(r.organisms))); ylab.append(r.family_label); y += 1
+        seps.append(y - 0.5)
+    seps.pop()
+
+    fig, ax = plt.subplots(figsize=(11.5, 0.42 * len(rows) + 2.4))
+    for yy, r, os_ in rows:
+        xs = sorted(xpos[o] for o in os_ if o in xpos)
+        if len(xs) > 1:
+            ax.plot([min(xs), max(xs)], [yy, yy], lw=5.5, solid_capstyle="round",
+                    color="#c7e9c0", zorder=1)
+        for o in os_:
+            if o in xpos:
+                ax.scatter(xpos[o], yy, s=105, color=_colour(o), edgecolor="k",
+                           lw=0.5, zorder=3)
+        ax.text(len(orgs) - 0.55, yy, f"{len(xs)}", fontsize=8.5, va="center",
+                ha="left", color="#238b45" if len(xs) > 1 else "#999999",
+                fontweight="bold" if len(xs) > 1 else "normal")
+
+    for sy in seps:
+        ax.axhline(sy, color="#dddddd", lw=0.8, zorder=0)
+    ax.axvline(split - 0.5, color="#999999", lw=1.1, ls=(0, (4, 3)), zorder=0)
+
+    # Agent labels sit LEFT of the family tick labels, in axes-fraction x so they cannot
+    # land on them: at a data-coordinate x they overlapped every one-row agent.
+    for yy, lab, has_shared in agent_at:
+        ax.text(-0.235, yy, lab, transform=ax.get_yaxis_transform(), fontsize=10,
+                fontweight="bold", va="center", ha="right",
+                color="#238b45" if has_shared else "#b2182b")
+
+    ax.set_yticks(range(len(ylab)))
+    # Bold the shared families by styling the tick labels themselves. Wrapping them in
+    # mathtext instead cost AAC(3) and ANT(3'') their parentheses and quotes -- a label
+    # that no longer names the family it points at.
+    ax.set_yticklabels(ylab, fontsize=8.5)
+    for t, (_, _, os_) in zip(ax.get_yticklabels(), rows):
+        if len([o for o in os_ if o in xpos]) > 1:
+            t.set_fontweight("bold")
+    ax.set_xticks(range(len(orgs)))
+    ax.set_xticklabels([_display(o) for o in orgs], fontsize=9, style="italic",
+                       rotation=20, ha="right")
+    ax.set_xlim(-0.6, len(orgs) - 0.2)
+    ax.set_ylim(len(rows) - 0.5, -0.5)
+    for side in ("top", "right", "left"):
+        ax.spines[side].set_visible(False)
+    ax.tick_params(axis="y", length=0)
+
+    n_ab = d.antibiotic.nunique()
+    n_sh_ab = d.loc[d.shared == "yes", "antibiotic"].nunique()
+    sh = d[d.shared == "yes"]
+    gram_pure = sum(1 for c in sh.organisms
+                    if len({GRAM.get(o) for o in _slugs(c)}) == 1)
+    # Above the columns each one labels. Under the rotated organism names it drifted so
+    # far from the divider that it read as a stray caption.
+    # The count column needs a header, or the trailing numbers read as data.
+    ax.text(len(orgs) - 0.5, 1.004, "organisms", transform=ax.get_xaxis_transform(),
+            fontsize=8.5, color="#777", ha="center", va="bottom")
+    for lo, hi, lab in [(0, split, "Gram −"), (split, len(orgs), "Gram +")]:
+        ax.text((lo + hi - 1) / 2, 1.004, lab, transform=ax.get_xaxis_transform(),
+                fontsize=9, color="#777", ha="center", va="bottom")
+    # A figure-level title, not an axes title: the Gram and count headers sit just above
+    # the axes, and an axes title anchors to exactly the same place.
+    fig.suptitle(
+        "Gene families each agent recovers, by organism\n"
+        f"{n_ab} agents carry an on-target CARD annotation in ≥ 2 organisms; {n_sh_ab} "
+        "of them recover a family in more than one\norganism (green agent label, bold "
+        f"family, green rule). {len(sh) - gram_pure} of the {len(sh)} shared families "
+        "crosses the Gram division.",
+        fontsize=10.5, y=0.988, va="top")
+    # tight_layout cannot see the agent labels (they are drawn outside the axes), so the
+    # margins are set explicitly.
+    fig.subplots_adjust(left=0.34, right=0.965, top=0.878, bottom=0.135)
+    _save(fig, out, "03_cross_organism_families")
+
+
+def _slugs(cell):
+    """'Escherichia coli; Klebsiella pneumoniae' -> the registry slugs behind them."""
+    want = [x.strip() for x in str(cell).split(";") if x.strip()]
+    return [o for o in GRAM if _display(o) in want]
 
 
 def fig_mechanism(tables, out):
@@ -731,6 +858,7 @@ FIGS = {"overview": lambda t, r, o, db: fig_overview(t, o, db),
         "external": lambda t, r, o, db: fig_external_concordance(t, o, db),
         "performance": lambda t, r, o, db: fig_performance(t, o),
         "cpss_pfer": lambda t, r, o, db: fig_cpss_pfer(t, o),
+        "cross_org_families": lambda t, r, o, db: fig_cross_organism_families(t, o),
         "mechanism": lambda t, r, o, db: fig_mechanism(t, o),
         "evidence": lambda t, r, o, db: fig_evidence_layers(t, o, db),
         "combos": lambda t, r, o, db: fig_evidence_combinations(t, o, db),
