@@ -77,7 +77,11 @@ def _colour(org, _cache={}):
 
 
 def _short(ab):
-    return ab.replace("_", "/")[:18]
+    """18 characters, with an ellipsis when it actually cut something. Truncating
+    silently produced axis labels like `ampicillin/sulbact` and `trimethoprim/sulfa`,
+    which read as a mangled drug name rather than as an abbreviation."""
+    t = ab.replace("_", "/")
+    return t if len(t) <= 18 else t[:17] + "\u2026"
 
 
 def _display(org, _cache={}):

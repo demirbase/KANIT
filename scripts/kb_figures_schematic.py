@@ -48,7 +48,7 @@ RED = "#b2182b"
 # The six layers classify_evidence_tier() folds into a grade, in its order, keyed by
 # the token written into unitig_evidence_tier.evidence_layers. label_permutation is
 # the seventh produced layer but it is model-level and grades no biomarker, so it is
-# drawn apart -- the "seven produced / six counted / four firing" distinction is the
+# drawn apart -- the "seven produced / six counted / five firing" distinction is the
 # point of this panel, not a footnote to it.
 LAYERS = [
     ("blast",      "BLAST vs CARD",          "08_blast_annotation"),
@@ -209,7 +209,7 @@ def fig_pipeline(f, out, n_fig, n_tab):
                                  "01 · label validation"], FILL_DATA),
         ("Genome QC — the only gate", ["02d · CheckM2: completeness \u2265 95 %,",
                                        "contamination \u2264 5 %",
-                                       "02b · QUAST contiguity is ADVISORY,",
+                                       "02d · QUAST contiguity is ADVISORY,",
                                        "never an exclusion criterion"], FILL_DATA),
     ])
     L2 = stack(ax, 0.262, 0.215, Y0, [
@@ -222,7 +222,10 @@ def fig_pipeline(f, out, n_fig, n_tab):
     ])
     cv = ", ".join(f"{k} ({v})" for k, v in f["cv"].items())
     L3 = stack(ax, 0.509, 0.215, Y0, [
-        ("Hyperparameter search", ["04 · Optuna, 30 trials per model"], FILL_MODEL),
+        # 30 is the configured CEILING, not the count: config.yaml calls it an upper bound
+        # and early stopping cut 15 of the 47 recorded runs short (one to 10 trials).
+        ("Hyperparameter search", ["04 · Optuna, \u2264 30 trials per model",
+                                   "(early-stopped)"], FILL_MODEL),
         ("Model training", [f"05 · XGBoost {f['tools']['xgboost']}, seed {f['seed']}"], FILL_MODEL),
         ("Evaluation", ["06 · lineage-grouped 5-fold CV",
                         f"{f['n_models']}/{f['n_models']} models, no fallback",
@@ -263,7 +266,8 @@ def fig_pipeline(f, out, n_fig, n_tab):
     ax.text(ex + 0.012, ey + 0.014,
             "\u2717 = produced but never fires:\n"
             "MDA = a real negative, but R = 100 is underpowered\n"
-            "(the SNP layer's earlier zero was a loader defect, since repaired)",
+            "(the SNP layer's earlier zero was a loader\n"
+            "defect, since repaired)",
             ha="left", va="bottom", fontsize=6.5, color=RED, style="italic",
             zorder=3, linespacing=1.45)
 
@@ -303,9 +307,12 @@ def fig_pipeline(f, out, n_fig, n_tab):
     # the lineage groups feed the CV split -- the mechanism behind the whole thesis
     _arrow(ax, _right(L2["PopPUNK lineages"]), _left(L3["Evaluation"]), rad=0.22,
            colour="#8c6d1f", lw=1.5)
-    ax.text(0.4935, 0.735, "lineage groups define the folds", fontsize=6.2,
+    # The opaque backing used to sit ON the arrows (zorder 4 over their 1) and cut a
+    # visible gap in the Unitig-features -> Model-training connector. Nudged clear of the
+    # arrow path and made light enough to read through.
+    ax.text(0.4885, 0.735, "lineage groups define the folds", fontsize=6.2,
             color="#8c6d1f", ha="center", va="center", style="italic", rotation=90,
-            bbox=dict(fc="white", ec="none", alpha=0.85, pad=1.2), zorder=4)
+            bbox=dict(fc="white", ec="none", alpha=0.55, pad=1.0), zorder=4)
 
     ax.text(0.5, 0.115,
             "Step numbers are the repository's own. CheckM2 is the only exclusion gate; QUAST is reported but never filters. "
@@ -418,7 +425,10 @@ def fig_schema(db, f, out):
             "significance test, so it describes sharing and does not test it.\n"
             "Neither feeds an evidence tier; both were added without a schema change.",
             fontsize=6.9, color=MUTED, va="top", linespacing=1.5,
-            bbox=dict(fc="white", ec="none", alpha=0.9, pad=2.5), zorder=4)
+            # zorder 4 put this white panel OVER the foreign-key arrows (drawn lower),
+            # blanking the validation_evidence -> pipeline_runs connector for about a
+            # third of the figure's width. Sit under the arrows instead.
+            bbox=dict(fc="white", ec="none", alpha=0.9, pad=2.5), zorder=0)
 
     ax.text(0.735, 0.135,
             "Query rules the schema cannot enforce\n"

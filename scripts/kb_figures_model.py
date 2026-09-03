@@ -44,7 +44,8 @@ import pandas as pd  # noqa: E402
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from kb_figures import _abbr, _colour, _display, _save, _short, _sortkey  # noqa: E402
+from kb_figures import (_abbr, _colour, _display, _legend, _save, _short,  # noqa: E402
+                        _sortkey)
 
 ORG_ORDER = ["ecoli", "kpneumoniae", "staphylococcus_aureus",
              "acinetobacter_baumannii", "pseudomonas_aeruginosa", "enterococcus_faecium"]
@@ -76,7 +77,7 @@ def _grid(n, ncols=3, w=4.3, h=3.5):
 def fig_optuna(results, ms, out):
     """Search convergence: best-so-far objective per trial, one line per model."""
     fig, ax = plt.subplots(figsize=(9, 5))
-    n = 0
+    n, seen, short = 0, [], 0
     for r in ms.itertuples():
         df = _read(_p(results, r.organism, r.antibiotic, "03_model_optimization",
                       f"01_optuna_history_{r.antibiotic}.csv"))
@@ -87,15 +88,27 @@ def fig_optuna(results, ms, out):
             continue
         ax.plot(np.arange(1, v.size + 1), np.maximum.accumulate(v), lw=1,
                 alpha=0.55, color=_colour(r.organism))
+        if r.organism not in seen:
+            seen.append(r.organism)
+        short += int(v.size < 30)
         n += 1
     ax.set_xlabel("Optuna trial"); ax.set_ylabel("best objective so far (validation AUC)")
     # Describe what the curves show, not what the config allows: patience=15 exists, but
     # most searches keep finding small improvements and run the full 30 trials, so the
     # earlier caption ("early stopping is why runs end before trial 30") contradicted
     # the very lines it labelled.
+    # A line's colour was the ONLY thing identifying its organism, and there was no key
+    # anywhere on the panel — unlike the other figures, the x labels carry no abbreviation
+    # to fall back on, so the encoding was simply unreadable.
+    _legend(ax, seen, outside=True)
+    # Lines that stop before 30 are early stopping, not missing data. Unsaid, a reader
+    # takes the ragged right edge for truncated output.
     ax.set_title(f"Hyperparameter search plateaus within a few trials ({n} models)\n"
                  "most of the achievable objective is reached by trial ~5; "
-                 "the remainder are marginal gains", fontsize=10.5)
+                 "the remainder are marginal gains\n"
+                 f"30 trials is the configured ceiling, not the count: {short} of {n} "
+                 "searches stop earlier (patience 15), which is why lines end short",
+                 fontsize=10.5)
     fig.tight_layout()
     _save(fig, out, "20_optuna_convergence")
 

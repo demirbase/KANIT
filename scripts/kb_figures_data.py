@@ -54,6 +54,18 @@ def _qc_dir(results, org):
     return Path(results) / org / "global_exploration" / "genome_qc"
 
 
+def _quast_n(results, org):
+    """How many genomes QUAST actually reported on — the denominator for the N50 and
+    contig counts, which is not always the number 02d assessed."""
+    f = _qc_dir(results, org) / "quast" / "transposed_report.tsv"
+    if not f.exists():
+        return None
+    try:
+        return sum(1 for _ in open(f, encoding="utf-8", errors="replace")) - 1
+    except OSError:
+        return None
+
+
 def _qc_n_genomes(results, org):
     """How many genomes step 02d actually assessed — the denominator figure 3.5 uses."""
     f = _qc_dir(results, org) / f"02d_genome_qc_summary_{org}.json"
@@ -121,7 +133,13 @@ def fig_contiguity(results, orgs, out):
         if not n50 or not nct:
             ax.set_title(f"{_abbr(org)} — columns?"); ax.axis("off"); continue
         ax.scatter(df[nct], df[n50], s=7, alpha=0.45, color=_colour(org))
+        # The line was drawn with no label and no legend anywhere in the panel, so a
+        # reader of figure 3.4 alone could not tell what threshold it marks.
         ax.axhline(50000, ls="--", c="grey", lw=0.8)
+        ax.text(0.985, 50000, "N50 = 50 kb (computed, not enforced)",
+                transform=ax.get_yaxis_transform(), fontsize=6.5, color="grey",
+                ha="right", va="bottom", zorder=5,
+                bbox=dict(boxstyle="square,pad=0.12", fc="white", ec="none", alpha=0.85))
         ax.set_xscale("log"); ax.set_yscale("log")
         ax.set_xlabel("# contigs"); ax.set_ylabel("N50 (bp)")
         # QUAST does not always cover every genome the QC step saw: A. baumannii has
@@ -151,7 +169,13 @@ def fig_pass_rates(results, orgs, out):
                      "completeness": s.get("n_fail_completeness"),
                      "contamination": s.get("n_fail_contamination"),
                      "n50": s.get("n_fail_n50"),
-                     "contigs": s.get("n_fail_contigs")})
+                     "contigs": s.get("n_fail_contigs"),
+                     # The contiguity counts are OUT OF the genomes QUAST reported on,
+                     # which is not always n_genomes: A. baumannii has 1171 assessed and
+                     # 1169 QUAST rows. Today the worst-N50 organism is E. faecium, where
+                     # the two are equal, so the headline percentage happened to be right;
+                     # it would have been wrong the day A. baumannii took that place.
+                     "n_quast": _quast_n(results, org) or s.get("n_genomes")})
     if not rows:
         print("  (pass-rate: no 02d summaries — skipped)"); return
     df = pd.DataFrame(rows)
@@ -190,8 +214,8 @@ def fig_pass_rates(results, orgs, out):
     worst = df.loc[df["n50"].idxmax()]
     a2.set_title("Why genomes were excluded — and what was measured but not applied\n"
                  f"an N50 gate would have removed {int(worst['n50']):,} of "
-                 f"{int(worst['n'])} {_abbr(worst['organism'])} genomes "
-                 f"({100*worst['n50']/worst['n']:.0f}%)", fontsize=9)
+                 f"{int(worst['n_quast']):,} {_abbr(worst['organism'])} genomes "
+                 f"({100*worst['n50']/worst['n_quast']:.0f}%)", fontsize=9)
     fig.tight_layout()
     _save(fig, out, "12_qc_pass_rates")
 
