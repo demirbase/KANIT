@@ -25,6 +25,7 @@ Figures (results/figures/):
     19_unitig_lengths             unitig length distribution
 """
 import argparse
+import glob
 import json
 import sqlite3
 import sys
@@ -578,7 +579,42 @@ def _kb_unitig_lengths(db):
         return None
 
 
-def fig_unitig_lengths(data, ms, out, db=None, sample=40000, stride=25):
+def _blast_task_split(results, short_max=50):
+    """How many models BLAST actually ran in 'blastn-short'.
+
+    08 does not record the task it chose; choose_blast_task() derives it from the
+    MEDIAN length of the candidate FASTA, strictly below `short_max`. So the split is
+    recomputed the same way from the delivered 02_top_N FASTAs rather than asserted.
+    Returns (n_short, n_total, [names of the models that used plain blastn]).
+    """
+    n_short, n_total, plain = 0, 0, []
+    for f in sorted(glob.glob(f"{results}/*/*/05_explainability/02_top_*_features_*.fasta")):
+        parts = Path(f).parts
+        org, ab = parts[-4], parts[-3]
+        lens, cur = [], 0
+        with open(f, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if line.startswith(">"):
+                    if cur:
+                        lens.append(cur)
+                    cur = 0
+                else:
+                    cur += len(line.strip())
+        if cur:
+            lens.append(cur)
+        if not lens:
+            continue
+        n_total += 1
+        if float(np.median(lens)) < short_max:
+            n_short += 1
+        else:
+            d = _display(org).split()
+            name = f"{d[0][0]}. {d[1]}" if len(d) > 1 else org
+            plain.append(f"{name} {ab.replace('_', '/')}")
+    return n_short, n_total, plain
+
+
+def fig_unitig_lengths(data, ms, out, db=None, results="results", sample=40000, stride=25):
     """Unitig length distribution — why 'blastn-short' is the right BLAST task.
 
     Prefers the full features.txt. Where only ``features_sample.txt`` is present
@@ -638,9 +674,16 @@ def fig_unitig_lengths(data, ms, out, db=None, sample=40000, stride=25):
             f"\nnot the knowledge base's {kb['n']:,} graded unitigs "
             f"({kb['mn']}-{kb['mx']:,} bp, mean {kb['avg']:.1f}) — that set is what "
             "survived selection")
+    # "BLAST runs in blastn-short mode" was stated absolutely. The task is chosen per
+    # model from the median candidate length, and one model sits on the wrong side of
+    # the cutoff, so the panel claimed a uniformity the data does not have.
+    n_sh, n_tot, plain = _blast_task_split(results)
+    task = ("short unitigs are why BLAST runs in 'blastn-short' mode" if not n_tot else
+            f"short unitigs are why BLAST runs in 'blastn-short' mode — in {n_sh} of the "
+            f"{n_tot} models" + (f",\nand {', '.join(plain)} sits on the 50 bp cutoff "
+                                 "and uses plain 'blastn'" if plain else ""))
     ax.set_title(f"Candidate unitig length distribution before selection ({src})\n"
-                 "short unitigs are why BLAST runs in 'blastn-short' mode" + tail,
-                 fontsize=10.5)
+                 + task + tail, fontsize=10.5)
     ax.legend(fontsize=8, frameon=False)
     fig.tight_layout()
     _save(fig, out, "19_unitig_lengths")
@@ -672,7 +715,7 @@ def main():
         ("clonality",   lambda: fig_clonality_vs_inflation(args.data, args.tables, orgs, out)),
         ("structure",   lambda: fig_structure_vs_inflation(args.tables, out)),
         ("features",    lambda: fig_feature_counts(args.db, ms, out)),
-        ("lengths",     lambda: fig_unitig_lengths(args.data, ms, out, args.db)),
+        ("lengths",     lambda: fig_unitig_lengths(args.data, ms, out, args.db, args.results)),
     ]
     for name, fn in todo:
         if only and name not in only:
