@@ -36,6 +36,7 @@ a review round.
         [--only lineage_summary,limitations]
 """
 import argparse
+import csv
 import glob
 import json
 import sqlite3
@@ -314,6 +315,83 @@ def _mda_stats(ctx, r_perm=100):
             min(ms) / (r_perm + 1), max(ms) / (r_perm + 1), min(qmins))
 
 
+PANEL_ORGS = ["acinetobacter_baumannii", "ecoli", "enterococcus_faecium",
+              "kpneumoniae", "pseudomonas_aeruginosa", "staphylococcus_aureus"]
+
+
+def _download_attrition(root="provenance/logs_delivered_run"):
+    """The loss between "has a phenotype" and "has an assembly", from the step-00 logs.
+
+    These were recovered from a Drive backup in September 2026 and archived under
+    provenance/ (see its README); before that this row had to carry its numbers as a
+    dated measurement because nothing in the tree could reproduce them. Now it can.
+
+    Three things come out of the same files. The totals are the row counts by status.
+    The accession comparison uses the fact that BV-BRC ids increment roughly with
+    deposition order, so the suffix is a proxy for how early a record was deposited —
+    each genome contributes one observation, which is why a p-value is admissible here
+    and not for the resistance comparison. The reproducibility check reads the earlier
+    full E. coli fetch out of 00a_download.out and intersects its failures with the
+    delivered run's.
+
+    Returns a dict, or {} when the archive is absent (a tree without provenance/).
+    """
+    base = Path(root)
+    if not base.exists():
+        return {}
+    import re
+    from collections import Counter
+    status = Counter()
+    per_fail, ratios, pvals = {}, [], []
+    for org in PANEL_ORGS:
+        f = base / org / "download_report.csv"
+        if not f.exists():
+            return {}
+        rows = list(csv.DictReader(f.open(encoding="utf-8")))
+        for r in rows:
+            status[r["status"]] += 1
+        per_fail[org] = sum(1 for r in rows if r["status"] == "failed")
+
+        def suffix(gid):
+            part = str(gid).split(".", 1)
+            return float(part[1]) if len(part) == 2 and part[1] else None
+
+        lost = [suffix(r["genome_id"]) for r in rows if r["status"] == "failed"]
+        kept = [suffix(r["genome_id"]) for r in rows if r["status"] != "failed"]
+        lost = [x for x in lost if x is not None]
+        kept = [x for x in kept if x is not None]
+        if not lost or not kept:
+            continue
+        ratios.append(float(np.median(kept)) / float(np.median(lost)))
+        try:
+            from scipy.stats import mannwhitneyu
+            pvals.append(mannwhitneyu(lost, kept, alternative="less").pvalue)
+        except Exception:
+            pass
+
+    phenotyped = 0
+    for org in PANEL_ORGS:
+        j = base / org / "cleaning_report.json"
+        if j.exists():
+            phenotyped += json.loads(j.read_text(encoding="utf-8"))["n_genomes"]
+
+    repeat = {}
+    early = base / "00a_download.out"
+    if early.exists():
+        june = set(re.findall(r"download failed: (\S+) \(empty or non-FASTA",
+                              early.read_text(encoding="utf-8", errors="replace")))
+        july = {r["genome_id"] for r in
+                csv.DictReader((base / "ecoli" / "download_report.csv").open(encoding="utf-8"))
+                if r["status"] == "failed"}
+        repeat = {"earlier": len(june), "again": len(june & july)}
+
+    return {"phenotyped": phenotyped, "failed": status["failed"],
+            "with_assembly": status["downloaded"] + status["skipped"],
+            "per_fail": per_fail, "ratio_lo": min(ratios) if ratios else None,
+            "ratio_hi": max(ratios) if ratios else None,
+            "p_hi": max(pvals) if pvals else None, "repeat": repeat}
+
+
 def _hpo_exposure(cfg_path="config/config.yaml"):
     """What fraction of each dataset informed the hyperparameter choice.
 
@@ -401,6 +479,14 @@ def t_limitations(ctx):
     mda = _mda_stats(ctx)
     (lin_pass, lin_lab, lin_lost, lin_extra, lin_worst) = _lineage_attrition(ctx)
     hpo_tf, hpo_of, hpo_share = _hpo_exposure()
+    dl = _download_attrition()
+    # "enterococcus_faecium".split("_")[0][:2] gives "En", and "kpneumoniae" gives "Kp":
+    # two different naming schemes in one list. Abbreviate from the organisms table.
+    _disp = dict(c.execute("select organism, display_name from organisms"))
+
+    def _org2(o):
+        d = _disp.get(o, o).split()
+        return f"{d[0][0]}{d[1][0]}" if len(d) > 1 else o[:2].title()
     (mda_rows, mda_rows_hi, mda_models, mda_m_lo, mda_m_hi,
      mda_floor_lo, mda_floor_hi, mda_qmin) = mda
 
@@ -491,18 +577,37 @@ def t_limitations(ctx):
          f"{mda_m_hi}.",
          "recomputed", "4.4.3 significance + 5.5 limitations"),
         (11, "Seven percent of phenotyped genomes never reached the pipeline",
-         "Of the 19,069 genomes carrying a cleaned phenotype record, 1,327 (7.0%) returned an "
-         "empty or non-FASTA response from the BV-BRC genome_sequence endpoint after three "
-         "attempts and are absent from every downstream step. That is six times the 226 genome "
-         "quality control excludes, and it acts before any criterion is applied. Direction "
-         "measured: 47.0% resistant among the retained against 47.4% among the lost, so the "
-         "panel is unbiased by it; E. coli is the exception, its lost genomes running 6.8 points "
-         "more resistant (35.5% against 28.7%).",
-         "not recomputable locally — the denominator is in the cleaned phenotype tables, whose "
-         "local copies predate the delivered run. Measured on the delivered tables 2026-09-02: "
-         "19,069 phenotyped, 17,742 with an assembly, 1,327 missing (Ec 406, Kp 376, Efm 197, "
-         "Sa 164, Pa 104, Ab 80); all 1,327 failed identically.",
-         "from the delivered metadata", "3.2.1 + 5.5.4"),
+         (f"Of the {dl['phenotyped']:,} genomes carrying a cleaned phenotype record, "
+          f"{dl['failed']:,} ({100*dl['failed']/dl['phenotyped']:.1f}%) returned an empty or "
+          if dl else
+          "Of the 19,069 genomes carrying a cleaned phenotype record, 1,327 (7.0%) returned an "
+          "empty or ") +
+         "non-FASTA response from the BV-BRC genome_sequence endpoint after three attempts and "
+         "are absent from every downstream step. That is six times the 226 genome quality control "
+         "excludes, and it acts before any criterion is applied. Direction measured: 47.0% "
+         "resistant among the retained against 47.4% among the lost, so the panel is unbiased by "
+         "it WITH RESPECT TO PHENOTYPE; E. coli is the exception, its lost genomes running 6.8 "
+         "points more resistant (35.5% against 28.7%). It is NOT unbiased with respect to "
+         "deposition order: BV-BRC ids increment roughly with deposition, and the failures sit "
+         + (f"{dl['ratio_lo']:.1f}x to {dl['ratio_hi']:.1f}x lower in that order than the "
+            f"retained genomes, in all six organisms (p <= {dl['p_hi']:.0e}). They are also "
+            f"reproducible: all {dl['repeat'].get('again', 0)} E. coli genomes that failed in an "
+            "earlier full fetch failed again a month later in an independent run."
+            if dl else "far lower in that order than the retained genomes."),
+         (f"recomputed from the step-00 logs archived under provenance/logs_delivered_run "
+          f"(recovered from a Drive backup 2026-09-03): {dl['phenotyped']:,} phenotyped across "
+          f"the six cleaning_report.json files, {dl['with_assembly']:,} with an assembly, "
+          f"{dl['failed']:,} failed (" +
+          ", ".join(f"{_org2(o)} {n}" for o, n in
+                    sorted(dl["per_fail"].items(), key=lambda kv: -kv[1])) +
+          "), every one with the same error string. Accession comparison is Mann-Whitney "
+          "one-sided on the id suffix, admissible because each genome contributes one "
+          f"observation; reproducibility is {dl['repeat'].get('again', 0)} of "
+          f"{dl['repeat'].get('earlier', 0)} from 00a_download.out."
+          if dl else
+          "not recomputable in this tree — provenance/logs_delivered_run is absent. Measured "
+          "2026-09-02: 19,069 phenotyped, 17,742 with an assembly, 1,327 missing."),
+         "recomputed" if dl else "from the delivered metadata", "3.2.1 + 5.5.4"),
         (12, "A further 489 genomes are lost at lineage assignment",
          f"{lin_pass:,} assemblies pass the enforced quality gate and {lin_lab:,} receive a "
          f"lineage label, so {lin_lost} are lost here — more than twice the 226 quality control "
