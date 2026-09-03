@@ -314,6 +314,25 @@ def _mda_stats(ctx, r_perm=100):
             min(ms) / (r_perm + 1), max(ms) / (r_perm + 1), min(qmins))
 
 
+def _hpo_exposure(cfg_path="config/config.yaml"):
+    """What fraction of each dataset informed the hyperparameter choice.
+
+    Not a stored number: it falls out of two config fractions. Step 04 reserves
+    `test_fraction` of the chunks for the single-split test set and draws the Optuna
+    subset as `optuna_fraction` of what remains, so the subset is
+    optuna_fraction x (1 - test_fraction) of the data. Read from config rather than
+    written here because the code's own DEFAULT for optuna_fraction is 0.25 while the
+    delivered config sets 0.20 -- taking the default would report 20% instead of 16%.
+    """
+    try:
+        import yaml
+        t = yaml.safe_load(Path(cfg_path).read_text(encoding="utf-8"))["training"]
+        tf, of = float(t["test_fraction"]), float(t["optuna_fraction"])
+        return tf, of, of * (1 - tf)
+    except Exception:
+        return (float("nan"),) * 3
+
+
 def _lineage_attrition(ctx):
     """How many quality-passing genomes never receive a lineage label.
 
@@ -381,6 +400,7 @@ def t_limitations(ctx):
     # this script silently dropped it. It is computed here now.
     mda = _mda_stats(ctx)
     (lin_pass, lin_lab, lin_lost, lin_extra, lin_worst) = _lineage_attrition(ctx)
+    hpo_tf, hpo_of, hpo_share = _hpo_exposure()
     (mda_rows, mda_rows_hi, mda_models, mda_m_lo, mda_m_hi,
      mda_floor_lo, mda_floor_hi, mda_qmin) = mda
 
@@ -495,6 +515,23 @@ def t_limitations(ctx):
          f"{lin_extra} genomes carry a label without passing the gate, because the clustering "
          f"runs over its own input set; none of them appears in any model's genome list.",
          "recomputed", "3.2.3 + 5.5.4"),
+        (13, "Hyperparameters were selected outside the cross-validation loop",
+         "The Optuna objective is evaluated on a train/validation split stratified by label only, "
+         "with no lineage grouping, so the quantity tuned against is not the lineage-aware "
+         "quantity every reported metric uses — a conservative direction. The search also runs "
+         "once per model, before the folds exist, over a subset that the lineage-grouped folds do "
+         f"not exclude: {100*hpo_share:.0f}% of each dataset informed the hyperparameter choice "
+         "and can reappear in a fold's held-out set. This is an optimistic bias of unmeasured "
+         "size on the ABSOLUTE lineage-aware AUC. It is nil for the random-versus-lineage "
+         "comparison, where both arms share the same fixed hyperparameters and tree count and "
+         "differ only in whether lineages are respected.",
+         f"recomputed from the delivered configuration: test_fraction {hpo_tf:.2f} reserves the "
+         f"single-split test chunks and optuna_fraction {hpo_of:.2f} draws the search subset from "
+         f"what remains, so the subset is {hpo_of:.2f} x (1 - {hpo_tf:.2f}) = "
+         f"{hpo_share:.2f} of the data. The code's default optuna_fraction is 0.25 and would give "
+         f"0.20 — the delivered config is what applies. Lineage-blindness is structural: "
+         "04_optimization.py uses train_test_split(..., stratify=y) with no group argument.",
+         "recomputed", "3.5.2 + 5.5.1"),
     ]
     return pd.DataFrame(L, columns=["n", "limitation", "detail", "evidence",
                                     "evidence_source", "affects"])
