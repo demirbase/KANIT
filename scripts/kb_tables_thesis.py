@@ -314,6 +314,50 @@ def _mda_stats(ctx, r_perm=100):
             min(ms) / (r_perm + 1), max(ms) / (r_perm + 1), min(qmins))
 
 
+def _lineage_attrition(ctx):
+    """How many quality-passing genomes never receive a lineage label.
+
+    Neither end of this is in the KB: `unitigs` and `models` describe what survived,
+    not what was lost on the way in. Both ends are on disk though — 02d writes a
+    per-genome QC table with the two enforced flags, and 02c writes the delivered
+    cluster assignment — so the gap is recomputable, unlike the download loss above
+    it, whose denominator lives in the cleaned phenotype tables.
+
+    Returns (n_pass, n_labelled, n_lost, n_labelled_without_qc, worst_two).
+    """
+    qcs = sorted(glob.glob(f"{ctx.get('results', 'results')}/*/global_exploration/"
+                           "genome_qc/02d_genome_qc_*.csv"))
+    if not qcs:
+        return (0, 0, 0, 0, "")
+    n_pass = n_int = n_extra = 0
+    per = {}
+    for f in qcs:
+        org = Path(f).parts[-4]
+        cl_path = Path(ctx.get("data", "data/processed")) / org / "lineage" / "poppunk_clusters.csv"
+        if not cl_path.exists():
+            continue
+        d = pd.read_csv(f, dtype=str)
+        # pass_overall folds in N50 and contig count, which 3.2.2 explains are NOT
+        # enforced. The gate is the two CheckM2 flags and nothing else.
+        ok = ((d["pass_completeness"].astype(str).str.lower() == "true")
+              & (d["pass_contamination"].astype(str).str.lower() == "true"))
+        passed = set(d[ok]["genome_id"].astype(str))
+        clustered = set(pd.read_csv(cl_path, dtype=str)["Genome ID"].astype(str))
+        inter = passed & clustered
+        n_pass += len(passed); n_int += len(inter); n_extra += len(clustered - passed)
+        per[org] = len(passed - clustered)
+    # "kpneumoniae" has no underscore and "enterococcus_faecium" splits to the genus,
+    # so a bare split gives two different kinds of name. Use the organisms table's own
+    # display name and abbreviate it the way the figures do.
+    disp = dict(ctx["conn"].execute("select organism, display_name from organisms"))
+    def _ab(o):
+        d = disp.get(o, o).split()
+        return f"{d[0][0]}. {d[1]}" if len(d) > 1 else o
+    worst = ", ".join(f"{_ab(o)} {n}" for o, n in
+                      sorted(per.items(), key=lambda kv: -kv[1])[:2])
+    return (n_pass, n_int, n_pass - n_int, n_extra, worst)
+
+
 # ------------------------------------------------------------- B6 limitations
 def t_limitations(ctx):
     c, k, ms = ctx["conn"], ctx["kb_overview"], ctx["models_summary"]
@@ -336,6 +380,7 @@ def t_limitations(ctx):
     # This row lived only in the delivered CSV until 2026-09-02, so a full regeneration of
     # this script silently dropped it. It is computed here now.
     mda = _mda_stats(ctx)
+    (lin_pass, lin_lab, lin_lost, lin_extra, lin_worst) = _lineage_attrition(ctx)
     (mda_rows, mda_rows_hi, mda_models, mda_m_lo, mda_m_hi,
      mda_floor_lo, mda_floor_hi, mda_qmin) = mda
 
@@ -425,6 +470,31 @@ def t_limitations(ctx):
          f"from m, which is why a model can hold {mda_rows_hi} rows and correct over "
          f"{mda_m_hi}.",
          "recomputed", "4.4.3 significance + 5.5 limitations"),
+        (11, "Seven percent of phenotyped genomes never reached the pipeline",
+         "Of the 19,069 genomes carrying a cleaned phenotype record, 1,327 (7.0%) returned an "
+         "empty or non-FASTA response from the BV-BRC genome_sequence endpoint after three "
+         "attempts and are absent from every downstream step. That is six times the 226 genome "
+         "quality control excludes, and it acts before any criterion is applied. Direction "
+         "measured: 47.0% resistant among the retained against 47.4% among the lost, so the "
+         "panel is unbiased by it; E. coli is the exception, its lost genomes running 6.8 points "
+         "more resistant (35.5% against 28.7%).",
+         "not recomputable locally — the denominator is in the cleaned phenotype tables, whose "
+         "local copies predate the delivered run. Measured on the delivered tables 2026-09-02: "
+         "19,069 phenotyped, 17,742 with an assembly, 1,327 missing (Ec 406, Kp 376, Efm 197, "
+         "Sa 164, Pa 104, Ab 80); all 1,327 failed identically.",
+         "from the delivered metadata", "3.2.1 + 5.5.4"),
+        (12, "A further 489 genomes are lost at lineage assignment",
+         f"{lin_pass:,} assemblies pass the enforced quality gate and {lin_lab:,} receive a "
+         f"lineage label, so {lin_lost} are lost here — more than twice the 226 quality control "
+         f"removes, and the usable pool is {lin_lab:,} rather than {lin_pass:,}. Because the "
+         "lineage labels are also the cross-validation groups, a genome without a label cannot "
+         "be placed in a fold, so this loss is not separable from the validation design.",
+         f"recomputed from the 02d per-genome QC tables (enforced gate = completeness AND "
+         f"contamination, NOT pass_overall) against the delivered cluster assignments: "
+         f"{lin_pass:,} pass, {lin_lab:,} labelled, {lin_lost} lost, worst {lin_worst}. "
+         f"{lin_extra} genomes carry a label without passing the gate, because the clustering "
+         f"runs over its own input set; none of them appears in any model's genome list.",
+         "recomputed", "3.2.3 + 5.5.4"),
     ]
     return pd.DataFrame(L, columns=["n", "limitation", "detail", "evidence",
                                     "evidence_source", "affects"])
