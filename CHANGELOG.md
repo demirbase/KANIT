@@ -157,7 +157,7 @@ All notable changes to this project are documented here. The format is based on
   section quoted M13 concordance results (bACC 0.926 vs AMRFinderPlus 0.538) as
   findings — `external_concordance` is **empty** in 0.7.1, so those are now
   marked as superseded 0.6.0-era numbers that must not be used in the thesis.
-- **CARD tier filter documented.** 3007 of 3611 `blast_annotations` rows sit at
+- **CARD tier filter documented.** 3007 of 3602 `blast_annotations` rows sit at
   `tier='none'` (mean coverage 0.38, E-values to 9.3), including all 2035 rows
   whose `gene_symbol` is the literal `"nan"`. Any biological claim must filter
   `tier IN ('confirmed','candidate')`; unfiltered joins return, for example,

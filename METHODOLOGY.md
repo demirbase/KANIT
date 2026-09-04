@@ -318,7 +318,7 @@ To translate mathematical importance into biological relevance, step 08 runs a d
 1. **CARD Local BLAST:** We query the FASTA from §4.1 against a local installation of the Comprehensive Antibiotic Resistance Database (CARD). This identifies acquired resistance determinants — horizontally transferred genes, efflux components, and plasmid-mediated β-lactamases such as the *OXA* and *CTX-M* families. The BLAST task is chosen from the **median query length** (`blastn-short` with `word_size 7` below 50 bp, otherwise `blastn`), because the config's general `word_size` truncated or missed full-length hits on 30–50 bp unitigs.
 2. **NCBI Remote BLAST (`nt` database):** The same queries are searched against NCBI `nt`. This pass is **decoupled** from the local one: the public NCBI server kills `blastn-short` + `word_size 7` over `nt` with SIGXCPU, so it uses `blastn` + `word_size 11`, and it is **restricted to the study organism** via an `entrez_query` derived from the registry taxid, with `max_target_seqs = 50`.
 
-**These two passes do not have equal standing in the knowledge base, and Methods must say so.** Only the CARD pass enters the KB: `populate_database.py` writes `blast_annotations.source_db = 'card'` and nothing else, so all 3611 annotation rows in the delivered KB are CARD. The NCBI results (45 files, ~231k alignments) live on disk and feed the human-readable step-09 report and the step-18 novel-biomarker context analysis.
+**These two passes do not have equal standing in the knowledge base, and Methods must say so.** Only the CARD pass enters the KB: `populate_database.py` writes `blast_annotations.source_db = 'card'` and nothing else, so all 3602 annotation rows in the delivered KB are CARD. The NCBI results (45 files, ~231k alignments) live on disk and feed the human-readable step-09 report and the step-18 novel-biomarker context analysis.
 
 This asymmetry is deliberate and should be defended, not apologised for: CARD is a *curated resistance catalogue* carrying the ARO ontology, so a CARD hit is evidence about resistance. Organism-restricted `nt` is a *sequence archive*, so an `nt` hit establishes where a sequence sits in that species — a locus, never a mechanism. Consequently the `blast` evidence layer means "known CARD determinant", and `strong_novel` means "no curated CARD determinant" — an explicit knowledge gap, with the `nt` placement supplied separately by step 18.
 
@@ -424,7 +424,7 @@ AMRFinderPlus 4.2.7 and ResFinder 4.5.0: 83 rows over 44 of the 45 models, run
 29 (unitig, pair) records over 160 organism-internal pairs, so the API's
 `/overlap` route now returns data.
 
-For the annotation layer, all 3611 `blast_annotations` rows are CARD (§4.2), and
+For the annotation layer, all 3602 `blast_annotations` rows are CARD (§4.2), and
 they are **not interchangeable**: 3007 sit at `tier='none'` (mean query coverage
 0.38, E-values up to 9.3 — spurious homology from short queries), against 480
 `confirmed` (99.9% mean identity, full coverage), 117 `weak` and 7 `candidate`.
