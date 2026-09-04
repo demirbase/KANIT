@@ -392,23 +392,46 @@ def _download_attrition(root="provenance/logs_delivered_run"):
             "p_hi": max(pvals) if pvals else None, "repeat": repeat}
 
 
-def _hpo_exposure(cfg_path="config/config.yaml"):
-    """What fraction of each dataset informed the hyperparameter choice.
+def _hpo_exposure(root="provenance/experiments_delivered_run", data="data/processed"):
+    """What share of each dataset informed the hyperparameter choice — measured.
 
-    Not a stored number: it falls out of two config fractions. Step 04 reserves
-    `test_fraction` of the chunks for the single-split test set and draws the Optuna
-    subset as `optuna_fraction` of what remains, so the subset is
-    optuna_fraction x (1 - test_fraction) of the data. Read from config rather than
-    written here because the code's own DEFAULT for optuna_fraction is 0.25 while the
-    delivered config sets 0.20 -- taking the default would report 20% instead of 16%.
+    This was previously DERIVED from two config fractions as optuna_fraction x
+    (1 - test_fraction) = 16%, which is the asymptotic value and not what happened.
+    Step 04 takes max(1, floor(...)) chunks, and that floor binds on every small
+    dataset, so the realised share ranges from 9.6% to 38.6% with 16 of 45 models
+    above 20%. Reporting 16% understated the worst model by a factor of two.
+
+    Measured from the delivered per-model tuning configs, which record the actual
+    chunk split, against each model's own genome count. Returns a dict, or {} when
+    the archive is absent.
     """
     try:
         import yaml
-        t = yaml.safe_load(Path(cfg_path).read_text(encoding="utf-8"))["training"]
-        tf, of = float(t["test_fraction"]), float(t["optuna_fraction"])
-        return tf, of, of * (1 - tf)
     except Exception:
-        return (float("nan"),) * 3
+        return {}
+    base = Path(root)
+    if not base.exists():
+        return {}
+    shares, pool_opt, pool_n, worst = [], 0, 0, (None, 0.0)
+    for f in sorted(base.glob("*/config_*.yaml")):
+        cfg = yaml.safe_load(f.read_text(encoding="utf-8"))
+        org = f.parent.name
+        ab = cfg["antibiotic_metadata"]["target_antibiotic"]
+        y = Path(data) / org / ab / "matrix_unitig" / f"y_{ab}.csv"
+        if not y.exists():          # a config with no delivered model (52 tuned, 45 shipped)
+            continue
+        n = sum(1 for _ in y.open(encoding="utf-8")) - 1
+        # chunk_size 200; the partial chunk is never the Optuna one, so this is exact.
+        opt = int(cfg["data_split"]["optuna_count"]) * 200
+        shares.append(opt / n); pool_opt += opt; pool_n += n
+        if opt / n > worst[1]:
+            worst = (f"{org}/{ab}", opt / n)
+    if not shares:
+        return {}
+    return {"n": len(shares), "lo": min(shares), "hi": max(shares),
+            "median": float(np.median(shares)), "pool": pool_opt / pool_n,
+            "over20": sum(1 for x in shares if x > 0.20),
+            "pool_opt": pool_opt, "pool_n": pool_n, "worst": worst}
 
 
 def _lineage_attrition(ctx):
@@ -478,7 +501,7 @@ def t_limitations(ctx):
     # this script silently dropped it. It is computed here now.
     mda = _mda_stats(ctx)
     (lin_pass, lin_lab, lin_lost, lin_extra, lin_worst) = _lineage_attrition(ctx)
-    hpo_tf, hpo_of, hpo_share = _hpo_exposure()
+    hpo = _hpo_exposure()
     dl = _download_attrition()
     # "enterococcus_faecium".split("_")[0][:2] gives "En", and "kpneumoniae" gives "Kp":
     # two different naming schemes in one list. Abbreviate from the organisms table.
@@ -625,18 +648,27 @@ def t_limitations(ctx):
          "with no lineage grouping, so the quantity tuned against is not the lineage-aware "
          "quantity every reported metric uses — a conservative direction. The search also runs "
          "once per model, before the folds exist, over a subset that the lineage-grouped folds do "
-         f"not exclude: {100*hpo_share:.0f}% of each dataset informed the hyperparameter choice "
-         "and can reappear in a fold's held-out set. This is an optimistic bias of unmeasured "
-         "size on the ABSOLUTE lineage-aware AUC. It is nil for the random-versus-lineage "
-         "comparison, where both arms share the same fixed hyperparameters and tree count and "
-         "differ only in whether lineages are respected.",
-         f"recomputed from the delivered configuration: test_fraction {hpo_tf:.2f} reserves the "
-         f"single-split test chunks and optuna_fraction {hpo_of:.2f} draws the search subset from "
-         f"what remains, so the subset is {hpo_of:.2f} x (1 - {hpo_tf:.2f}) = "
-         f"{hpo_share:.2f} of the data. The code's default optuna_fraction is 0.25 and would give "
-         f"0.20 — the delivered config is what applies. Lineage-blindness is structural: "
-         "04_optimization.py uses train_test_split(..., stratify=y) with no group argument.",
-         "recomputed", "3.5.2 + 5.5.1"),
+         "not exclude, so genomes that helped choose the hyperparameters reappear in the held-out "
+         + (f"set of a fold scored under them. That share is not a constant: it runs from "
+            f"{100*hpo['lo']:.1f}% to {100*hpo['hi']:.1f}% of a dataset, median "
+            f"{100*hpo['median']:.1f}%, with {hpo['over20']} of {hpo['n']} models above 20% and "
+            f"the worst ({hpo['worst'][0]}, the smallest dataset) at {100*hpo['worst'][1]:.1f}%. "
+            "The floor of one chunk is what does it, so the contamination is largest exactly "
+            "where the datasets are smallest and the estimates least stable."
+            if hpo else "set of a fold scored under them.") +
+         " This is an optimistic bias of unmeasured size on the ABSOLUTE lineage-aware AUC. It is "
+         "nil for the random-versus-lineage comparison, where both arms share the same fixed "
+         "hyperparameters and tree count and differ only in whether lineages are respected.",
+         (f"recomputed from the {hpo['n']} delivered tuning configs archived under "
+          f"provenance/experiments_delivered_run, against each model's own genome count: "
+          f"{hpo['pool_opt']:,} of {hpo['pool_n']:,} genome-phenotype pairs, pooled "
+          f"{100*hpo['pool']:.1f}%. NOT the 16% that optuna_fraction x (1 - test_fraction) "
+          "predicts — step 04 takes max(1, floor(...)) chunks and that floor binds on every small "
+          "dataset. Lineage-blindness is structural: 04_optimization.py uses "
+          "train_test_split(..., stratify=y) with no group argument."
+          if hpo else
+          "not recomputable in this tree — provenance/experiments_delivered_run is absent."),
+         "recomputed" if hpo else "derived", "3.5.2 + 5.5.1"),
     ]
     return pd.DataFrame(L, columns=["n", "limitation", "detail", "evidence",
                                     "evidence_source", "affects"])
