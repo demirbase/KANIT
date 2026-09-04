@@ -624,7 +624,7 @@ def fig_unitig_lengths(data, ms, out, db=None, results="results", sample=40000, 
     confused.
     """
     fig, ax = plt.subplots(figsize=(8.5, 4.8))
-    drawn, all_lens, from_sample = 0, [], False
+    drawn, all_lens, from_sample, per_org = 0, [], False, {}
     for org, g in ms.groupby("organism"):
         lens = []
         for r in g.itertuples():
@@ -649,6 +649,7 @@ def fig_unitig_lengths(data, ms, out, db=None, results="results", sample=40000, 
         if not lens:
             continue
         all_lens += lens
+        per_org[org] = len(lens)
         ax.hist(lens, bins=60, range=(20, 120), histtype="step", lw=1.5,
                 density=True, color=_colour(org), label=f"{_display(org)} (n={len(lens):,})")
         drawn += 1
@@ -664,7 +665,16 @@ def fig_unitig_lengths(data, ms, out, db=None, results="results", sample=40000, 
             f"the sampled candidates reach {max(all_lens):,} bp",
             transform=ax.transAxes, ha="right", va="top", fontsize=8, color="#777")
     ax.set_xlabel("unitig length (bp)"); ax.set_ylabel("density")
-    src = "systematic 1-in-25 sample" if from_sample else "1-in-%d sample" % stride
+    # The extract is capped: features_sample.txt holds min(n/25, 40000) lines, and the
+    # cap was applied when the file was written on the HPC, so it cannot be undone here.
+    # Where it binds, what is drawn is the LEADING part of the feature space at 1-in-25,
+    # not a sample spread across it — calling it "systematic 1-in-25" without that
+    # qualification overstated the coverage on the large organisms (E. coli's model has
+    # ~5.2M features, of which 40,000 x 25 = 1M is reached).
+    capped = sum(1 for v in per_org.values() if v >= sample)
+    src = ("systematic 1-in-25 extract, capped at "
+           f"{sample:,} lines per organism" if from_sample
+           else "1-in-%d sample" % stride)
     # This is the CANDIDATE feature space that went into selection, not the graded
     # unitigs that came out of it. Section 3.3 quotes 31-1,424 bp for the knowledge
     # base's set, which is a different and much smaller population; without the
@@ -682,8 +692,11 @@ def fig_unitig_lengths(data, ms, out, db=None, results="results", sample=40000, 
             f"short unitigs are why BLAST runs in 'blastn-short' mode — in {n_sh} of the "
             f"{n_tot} models" + (f",\nand {', '.join(plain)} sits on the 50 bp cutoff "
                                  "and uses plain 'blastn'" if plain else ""))
+    cap = ("" if not capped else
+           f"\nthe cap binds for {capped} of the {drawn} organisms, so their curves cover the "
+           "leading part of the feature space rather than all of it")
     ax.set_title(f"Candidate unitig length distribution before selection ({src})\n"
-                 + task + tail, fontsize=10.5)
+                 + task + cap + tail, fontsize=10.5)
     ax.legend(fontsize=8, frameon=False)
     fig.tight_layout()
     _save(fig, out, "19_unitig_lengths")
