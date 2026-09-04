@@ -216,8 +216,11 @@ def fig_pipeline(f, out, n_fig, n_tab):
         ("PopPUNK lineages", [f"02c · {f['tools']['poppunk']}",
                               "graph-tool 3.0",
                               "clusters ARE the CV groups"], FILL_DATA),
+        # The backend is Bifrost, not bcalm. bcalm is installed and never invoked; the
+        # panel credited it because environment.yml lists both. k = 31 is the caller's
+        # own default, which 03u does not override.
         ("Unitig features", [f"03u · {f['tools']['unitig_caller']}",
-                             "bcalm de Bruijn graph",
+                             "Bifrost dBG, k = 31",
                              "presence/absence matrix"], FILL_DATA),
     ])
     cv = ", ".join(f"{k} ({v})" for k, v in f["cv"].items())

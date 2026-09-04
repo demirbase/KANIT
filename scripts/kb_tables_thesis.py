@@ -669,6 +669,21 @@ def t_limitations(ctx):
           if hpo else
           "not recomputable in this tree — provenance/experiments_delivered_run is absent."),
          "recomputed" if hpo else "derived", "3.5.2 + 5.5.1"),
+        (14, "The container base image is not pinned",
+         "Every conda package is pinned with exact equality and exported to a lock file, but each "
+         "container is bootstrapped From: condaforge/miniforge3:latest — an unpinned tag. The "
+         "compilers, system libraries and base interpreter beneath the pinned environment are "
+         "whatever that tag resolved to on the build date, so a rebuild from the same definition "
+         "is not guaranteed to reproduce the same image. The build definition carries its own "
+         "note to replace the tag with a content digest; that had not been done when the "
+         "delivered images were built. The images are retained and identified by digest instead, "
+         "which fixes the artefact without fixing the recipe.",
+         "read from the delivered images: the definition file embedded in amr.sif, amr-tools.sif "
+         "and amr-checkm2.sif each carry the unpinned From: line and a TODO(deploy) note about "
+         "it. Against that, the pinning that IS in force was verified — all 355 packages in "
+         "environment.lock.yml match amr.sif's own installed set, and the image's "
+         "/opt/environment.yml is byte-identical to the repository's.",
+         "from the delivered images", "3.9.1 + 5.5.4"),
     ]
     return pd.DataFrame(L, columns=["n", "limitation", "detail", "evidence",
                                     "evidence_source", "affects"])
