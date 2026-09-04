@@ -223,13 +223,23 @@ def t_provenance_tools(ctx):
         val = vals[0] if len(vals) == 1 else " | ".join(str(v) for v in vals)
         note = ""
         if str(val) == "None":
-            note = ("honest NULL: bcalm exposes no version CLI" if label == "bcalm"
-                    else "not recorded")
+            note = ("honest NULL: bcalm exposes no version CLI — and it never ran; "
+                    "the graph was built by unitig-caller's Bifrost backend"
+                    if label == "bcalm" else "not recorded")
             val = "not reported"      # else read_csv turns the text 'None' into NaN
         elif len(vals) > 1:
             note = f"NOT uniform across runs: {len(vals)} distinct values"
         rows.append({"item": label, "category": "tool", "value": val,
                      "n_runs_recording": n_runs, "note": note})
+    # The schema records the backend that did NOT run (bcalm) and has no field for the
+    # one that did. Rather than add a column the delivered runs could never have filled,
+    # the version is read where it IS recorded — the container's own package database —
+    # and the gap is labelled rather than papered over.
+    rows.append({"item": "Bifrost", "category": "tool", "value": "bifrost 1.3.5",
+                 "n_runs_recording": 0,
+                 "note": "the graph builder behind unitig-caller; NOT in pipeline_runs — "
+                         "the schema has no field for it, so this comes from the delivered "
+                         "container's conda package record (bifrost-1.3.5-h5ca1c30_3)"})
     for label, col, note in [
         ("random seed", "random_seed", "single seed across the whole panel"),
         ("min_support", "min_support", "unitig prevalence floor, fixed"),

@@ -47,7 +47,7 @@ EXPECTED_TABLES = {
     "novel_ncbi_hits.csv": None,
     "fair_mapping.csv": 15,          # the 15 FAIR principles, one row each
     # kb_tables_thesis.py. The counts below are structural, not sample-dependent:
-    # 6 organisms, 7 evidence layers, 9+2+4 provenance items, 45 models, 14 limitations.
+    # 6 organisms, 7 evidence layers, 10+2+4 provenance items, 45 models, 14 limitations.
     # Limitations 11-13 were added 2026-09-03: the download loss and the lineage-assignment
     # loss are both larger than the 226 genome QC excludes, and hyperparameter selection sits
     # outside the CV loop. None of the three was recorded.
@@ -55,7 +55,7 @@ EXPECTED_TABLES = {
     # it moves with the CARD snapshot.
     "lineage_summary.csv": 6,
     "evidence_accounting.csv": 7,
-    "provenance_tools.csv": 15,
+    "provenance_tools.csv": 16,
     "hyperparameters.csv": 45,
     "limitations.csv": 14,
     "headline_biomarkers.csv": None,
