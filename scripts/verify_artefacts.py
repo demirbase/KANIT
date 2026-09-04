@@ -72,7 +72,7 @@ EXPECTED_TABLES = {
 EXPECTED_KB = {
     "models": 45, "pipeline_runs": 45, "organisms": 7, "antibiotics": 22,
     "unitigs": 3509, "unitig_model_scores": 3613, "unitig_evidence_tier": 3571,
-    "blast_annotations": 3611, "unitig_background_frequency": 2409,
+    "blast_annotations": 3602, "unitig_background_frequency": 2409,
     "variant_snp_check": 953, "validation_evidence": 10659, "kb_metadata": 1,
     "external_concordance": 83, "unitig_antibiotic_overlap": 29,
 }
@@ -130,11 +130,11 @@ def verify_kb(root, rep):
         # Coverage is stored on the annotations that have a hit; the 2,035 rows whose
         # gene_symbol is the literal "nan" carry no hit, no identity and no E-value, so
         # they are excluded rather than counted as missing. Ten of the real ones stay
-        # NULL on purpose (8 would duplicate an existing row, 2 could not be matched).
+        # NULL on purpose: two annotations could not be matched to an alignment exactly.
         real, cov = con.execute(
             "SELECT COUNT(*), SUM(coverage IS NOT NULL) FROM blast_annotations "
             "WHERE gene_symbol <> 'nan'").fetchone()
-        rep.check(real == 1576 and cov == 1566, "annotation coverage stored",
+        rep.check(real == 1567 and cov == 1565, "annotation coverage stored",
                   f"{cov}/{real} real annotations")
         # Every stored coverage must sit above the floor its tier requires, or the row
         # and the alignment it claims to describe are not the same alignment.

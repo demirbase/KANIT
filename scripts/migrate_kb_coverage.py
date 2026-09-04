@@ -91,7 +91,10 @@ def recover(conn, results_root):
             cov = float(b.length) / float(b.qlen)
             if cov > 1.0:
                 skipped["coverage > 1"] += 1; continue
-            out[int(r.annotation_id)] = (round(cov, 6), r.tier)
+            # Do NOT round. 13b stores the full float, and a rounded copy of the same
+            # value is not equal to it — which slips past the duplicate check below and
+            # creates the very duplicate it exists to prevent. (It did, once.)
+            out[int(r.annotation_id)] = (cov, r.tier)
     return len(kb), out, skipped
 
 
