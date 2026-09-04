@@ -114,6 +114,10 @@ models/**/*.model
 # OPTUNA HYPERPARAMETER OPTIMIZATION DATABASES
 # ============================================================================
 *.db
+# ...except the archived knowledge base. It is not regenerable: three repairs
+# (snp loader, cpss, unitigs.k) were applied in place, the runs that produced its
+# inputs are not repeatable, and until it was committed it existed on one laptop.
+!provenance/kb_snapshot/*.db
 *.sqlite
 *.sqlite3
 optuna_studies/

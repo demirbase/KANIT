@@ -144,6 +144,15 @@ preprocessing:
 # KMC (02/02b) is kept for QC/spectra only. Output is written to a SEPARATE
 # sibling dir (out_subdir) so the raw-k-mer 'matrix' baseline is never overwritten.
 unitig:
+  # The de Bruijn k the graph is actually built at. NOT preprocessing.k_length —
+  # that is the KMC baseline's 21, and the KB used to copy it onto unitig rows,
+  # which was wrong. 03u does not pass --kmer, so unitig-caller's own default
+  # stands, and that default is 31 (unitig_caller/__main__.py: --kmer default=31).
+  # Confirmed three ways: the caller's argparse default, the absence of --kmer in
+  # 03u's invocation, and the delivered store holding no unitig shorter than 31 bp.
+  # Declared here so the value is recorded rather than inferred; changing it does
+  # NOT change the graph — to do that, pass --kmer in 03u.
+  k: 31
   # Sibling of data/processed/{organism}/{antibiotic}/matrix. Keep distinct from
   # "matrix" so the raw-k-mer baseline (for the thesis unitig-vs-k-mer table) stays.
   out_subdir: "matrix_unitig"

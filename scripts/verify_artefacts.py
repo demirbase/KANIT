@@ -127,6 +127,16 @@ def verify_kb(root, rep):
         rep.check(meta[0] == "0.7.1", "schema version", meta[0])
         rep.check(bool(meta[1]), "Zenodo DOI stamped", meta[1] or "(EMPTY)")
 
+        ks = dict(con.execute("SELECT k, COUNT(*) FROM unitigs GROUP BY k"))
+        shortest = con.execute("SELECT MIN(LENGTH(sequence)) FROM unitigs").fetchone()[0]
+        # k is metadata, so nothing downstream fails when it is wrong -- which is how
+        # the k-mer baseline's 21 sat on every unitig row unnoticed. Pin it, and pin it
+        # against the one fact that can contradict it: no path through a de Bruijn graph
+        # is shorter than one node, so the shortest unitig cannot fall below k.
+        rep.check(ks == {31: EXPECTED_KB["unitigs"]}, "unitig k",
+                  " · ".join(f"k={k} n={v}" for k, v in sorted(ks.items())))
+        rep.check(shortest >= 31, "shortest unitig >= k", f"{shortest} bp")
+
         tiers = dict(con.execute(
             "SELECT evidence_tier, COUNT(*) FROM unitig_evidence_tier "
             "GROUP BY evidence_tier"))

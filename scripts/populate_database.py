@@ -135,6 +135,29 @@ def _s(x):
 # ---------------------------------------------------------------------------
 # Per-table loaders
 # ---------------------------------------------------------------------------
+def _feature_k(config):
+    """The k to stamp on rows of `unitigs` — the k of the representation in force.
+
+    This used to read preprocessing.k_length unconditionally, which is the KMC
+    baseline's 21. The delivered run is the unitig representation, whose graph is
+    built at 31, so every unitig row carried the wrong k. The two paths have
+    genuinely different k and neither value is wrong for its own path; taking one
+    for the other is what was wrong.
+    """
+    import os
+    feat = os.environ.get("AMR_FEATURE_REPR") or \
+        (config.get("preprocessing", {}) or {}).get("feature_repr", "kmer")
+    if feat == "unitig":
+        k = (config.get("unitig", {}) or {}).get("k")
+        if k is None:
+            raise SystemExit(
+                "ERROR: feature_repr is 'unitig' but config has no unitig.k. Refusing to "
+                "fall back to preprocessing.k_length — that is the k-mer baseline's k and "
+                "stamping it on unitig rows is the defect this guard exists to prevent.")
+        return int(k)
+    return int(config["preprocessing"]["k_length"])
+
+
 def unitig_id(conn, sequence, k):
     """INSERT-OR-IGNORE a k-mer and return its id (dedup on sequence)."""
     conn.execute("INSERT OR IGNORE INTO unitigs(sequence, k) VALUES (?,?)",
@@ -645,7 +668,7 @@ def main():
     args = ap.parse_args()
     organism, antibiotic = args.organism, args.antibiotic
 
-    k_length = int(config["preprocessing"]["k_length"])
+    k_length = _feature_k(config)
     # CARD version (M6) — AMR_CARD_VERSION env override wins over config.yaml so
     # HPC can record it without editing the (manually-tuned) config. Neither is
     # usually set, so fall back to the file 08 auto-writes (blastdbcmd -info): that

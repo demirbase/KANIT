@@ -8,10 +8,12 @@ dependency or container rebuild; the DDL stays portable to PostgreSQL later
 (the only SQLite-isms are ``INTEGER PRIMARY KEY`` autoincrement and the pragmas,
 both trivially swapped).
 
-Feature unit = **unitig** (compacted de Bruijn graph paths from bcalm2/
-unitig-caller; ROADMAP §0.1). The tables are named accordingly (``unitigs``,
-``unitig_model_scores`` …); ``sequence`` is the unitig DNA and ``k`` the de
-Bruijn k used to build it (21).
+Feature unit = **unitig** (compacted de Bruijn graph paths from unitig-caller over
+its Bifrost backend; ROADMAP §0.1). The tables are named accordingly (``unitigs``,
+``unitig_model_scores`` …); ``sequence`` is the unitig DNA and ``k`` the de Bruijn k
+used to build it — **31**, unitig-caller's default, which 03u does not override. It
+is NOT preprocessing.k_length: that is the KMC baseline's 21, and stamping it here
+was a defect corrected by migrate_kb_unitig_k.py.
 
 Design notes
 ------------
