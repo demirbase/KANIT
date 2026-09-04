@@ -327,10 +327,16 @@ def best_card_hit(df_card, q_id):
     if hits.empty:
         return None
     row = hits.loc[hits['evalue'].idxmin()]
+    # Coverage is what classify_confidence graded on; carrying it out of here is what
+    # lets the KB store the number instead of only the verdict. It was computed and
+    # thrown away for years, so `blast_annotations.coverage` was NULL on every row that
+    # arrived by this route (see migrate_kb_coverage.py).
+    qle = float(row['qlen_eff']) if 'qlen_eff' in row and float(row['qlen_eff']) > 0 else 0.0
     return {
         'gene': row.get('Gene_Match', ''),
         'identity': float(row['pident']),
         'evalue': float(row['evalue']),
+        'coverage': (float(row['length']) / qle) if qle else float('nan'),
         'tier': row.get('Confidence', 'none'),
         'sseqid': row.get('sseqid', ''),
     }
@@ -388,6 +394,7 @@ def build_kb_candidates(df_features, df_card, stability_threshold, aro_index=Non
             'card_gene': hit['gene'] if hit else '',
             'card_identity': hit['identity'] if hit else float('nan'),
             'card_evalue': hit['evalue'] if hit else float('nan'),
+            'coverage': hit['coverage'] if hit else float('nan'),
             'confidence_tier': hit['tier'] if hit else 'none',
             'has_card_hit': hit is not None,
             'composite_score': composite_score(sel_freq, hit['identity'], hit['evalue']) if hit else float('nan'),
@@ -399,7 +406,7 @@ def build_kb_candidates(df_features, df_card, stability_threshold, aro_index=Non
         })
     cols = ['rank', 'kmer', 'feature_id', 'gain_score', 'in_gain_topN',
             'selection_frequency', 'stable', 'card_gene', 'card_identity',
-            'card_evalue', 'confidence_tier', 'has_card_hit', 'composite_score',
+            'card_evalue', 'coverage', 'confidence_tier', 'has_card_hit', 'composite_score',
             'aro_accession', 'aro_gene_family', 'aro_drug_class',
             'aro_resistance_mechanism']
     kb = pd.DataFrame(rows, columns=cols)

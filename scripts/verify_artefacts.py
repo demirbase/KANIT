@@ -127,6 +127,25 @@ def verify_kb(root, rep):
         rep.check(meta[0] == "0.7.1", "schema version", meta[0])
         rep.check(bool(meta[1]), "Zenodo DOI stamped", meta[1] or "(EMPTY)")
 
+        # Coverage is stored on the annotations that have a hit; the 2,035 rows whose
+        # gene_symbol is the literal "nan" carry no hit, no identity and no E-value, so
+        # they are excluded rather than counted as missing. Ten of the real ones stay
+        # NULL on purpose (8 would duplicate an existing row, 2 could not be matched).
+        real, cov = con.execute(
+            "SELECT COUNT(*), SUM(coverage IS NOT NULL) FROM blast_annotations "
+            "WHERE gene_symbol <> 'nan'").fetchone()
+        rep.check(real == 1576 and cov == 1566, "annotation coverage stored",
+                  f"{cov}/{real} real annotations")
+        # Every stored coverage must sit above the floor its tier requires, or the row
+        # and the alignment it claims to describe are not the same alignment.
+        bad = con.execute(
+            "SELECT COUNT(*) FROM blast_annotations WHERE coverage IS NOT NULL AND ("
+            " (tier='confirmed' AND coverage < 0.95) OR"
+            " (tier='candidate' AND coverage < 0.80) OR"
+            " (tier='weak'      AND coverage < 0.60) OR"
+            " (tier='none'      AND coverage >= 0.60))").fetchone()[0]
+        rep.check(bad == 0, "coverage consistent with tier", f"{bad} violation(s)")
+
         ks = dict(con.execute("SELECT k, COUNT(*) FROM unitigs GROUP BY k"))
         shortest = con.execute("SELECT MIN(LENGTH(sequence)) FROM unitigs").fetchone()[0]
         # k is metadata, so nothing downstream fails when it is wrong -- which is how

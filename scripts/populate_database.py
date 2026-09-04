@@ -269,13 +269,19 @@ def populate_candidates(conn, model_id, run_id, k, cand_df, card_version):
         # CARD BLAST annotation (best hit recorded in the candidate row)
         if str(r.get("card_gene", "")).strip():
             conn.execute(
+                # `coverage` was missing from this column list while the CPSS route
+                # below carried it, so every annotation arriving here stored NULL --
+                # 416 rows with a real tier and no record of the number that produced
+                # it. Step 09 now emits the column; migrate_kb_coverage.py backfilled
+                # the delivered KB.
                 """INSERT OR IGNORE INTO blast_annotations
                    (unitig_id, model_id, source_db, gene_symbol, identity_pct,
-                    evalue, tier, aro_accession, aro_gene_family, aro_drug_class,
-                    aro_resistance_mechanism)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    coverage, evalue, tier, aro_accession, aro_gene_family,
+                    aro_drug_class, aro_resistance_mechanism)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (kid, model_id, "card", str(r.get("card_gene")),
-                 _f(r.get("card_identity")), _f(r.get("card_evalue")),
+                 _f(r.get("card_identity")), _f(r.get("coverage")),
+                 _f(r.get("card_evalue")),
                  str(r.get("confidence_tier", "none")),
                  _s(r.get("aro_accession")), _s(r.get("aro_gene_family")),
                  _s(r.get("aro_drug_class")), _s(r.get("aro_resistance_mechanism"))),
