@@ -36,9 +36,15 @@ All notable changes to this project are documented here. The format is based on
   1920→1915; `confirmed`, `strong_novel` and `none` unchanged) · `unitigs`
   3844→**3509** · the accounting becomes **7 produced / 6 counted / 5 firing**,
   leaving `mda` as the only dead layer (a genuine underpowered null).
-  The 18 are the canonical target-site substitutions a homolog-model BLAST
-  cannot distinguish: *gyrA* S83L (*E. coli*), *gyrA* T83I (*P. aeruginosa*),
-  *gyrA* S84L and *parC* S80F (*S. aureus*), *parC* S84L (*A. baumannii*).
+  **Ten of the 18** are the canonical target-site substitutions a homolog-model
+  BLAST cannot distinguish: *gyrA* S83L (*E. coli*), *gyrA* T83I
+  (*P. aeruginosa*), *gyrA* S84L and *parC* S80F and S80Y (*S. aureus*),
+  *parC* S84L (*A. baumannii*). The other eight match a CARD variant model from
+  another organism, another drug class, or both, because step 11 does not
+  restrict the search to the model's own organism and class. Corrected
+  2026-09-04: this entry previously said all 18 were canonical and omitted
+  *parC* S80Y. Verified against `variant_snp_check` with
+  `allele_class='resistant_allele'` (21 rows over 10 models).
   Regression tests added in `tests/test_evidence_tier.py`.
   ⚠️ The KB now differs from the archived v0.7.1 and requires a new Zenodo
   version; `amrk.db`, `results/tables/` and figures 06/35/39 were regenerated.
