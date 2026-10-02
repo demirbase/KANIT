@@ -18,7 +18,6 @@ Public API:
 from __future__ import annotations
 
 import os
-import platform
 import shutil
 from pathlib import Path
 from typing import Any
@@ -175,26 +174,19 @@ def resolve_path(key: str, organism: str | None = None, antibiotic: str | None =
     return PROJECT_ROOT / resolved
 
 
-def resolve_tool(config_key: str, command_name: str, config: dict[str, Any] | None = None,
-                 env_var: str | None = None) -> str | None:
+def resolve_tool(command_name: str, env_var: str | None = None) -> str | None:
     """
-    Locate an external tool executable in a cross-platform / HPC-friendly way.
+    Locate an external tool executable.
 
     Resolution order (first hit wins):
-        1. Environment override (``env_var``, default ``AMR_<COMMAND>_BIN``).
-        2. ``command_name`` on PATH (``shutil.which``) — the normal case on an
-           HPC / Linux box where BLAST and the other tools come from conda or a loaded module.
-        3. The project-bundled path from config (``paths`` / ``paths_organism``
-           ``config_key``) — the macOS-only convenience binary under ``bin/bin/``.
-           The bundle ships a macOS (Mach-O) build, so it is trusted ONLY on
-           Darwin; on Linux/Windows ``os.access`` would happily return a binary
-           that cannot actually execute ("cannot execute binary file"), so we
-           skip it there and rely on PATH instead.
+        1. Environment override (``env_var``, default ``AMR_<COMMAND>_BIN`` with
+           hyphens as underscores, e.g. ``AMR_UNITIG_CALLER_BIN``).
+        2. ``command_name`` on PATH (``shutil.which``) — the normal case, with the
+           tools coming from the container, conda or a loaded module.
 
     Returns the resolved executable as a ``str``, or ``None`` if not found.
     """
-    cfg = config if config is not None else load_config()
-    env_var = env_var or f"AMR_{command_name.upper()}_BIN"
+    env_var = env_var or f"AMR_{command_name.upper().replace('-', '_')}_BIN"
 
     # 1) explicit environment override
     override = os.environ.get(env_var)
@@ -202,18 +194,4 @@ def resolve_tool(config_key: str, command_name: str, config: dict[str, Any] | No
         return override
 
     # 2) PATH lookup (conda / system / module-loaded) — portable everywhere
-    on_path = shutil.which(command_name)
-    if on_path:
-        return on_path
-
-    # 3) project-bundled macOS binary (fallback, Darwin only)
-    if platform.system() == "Darwin":
-        paths_org = cfg.get("paths_organism", {}) or {}
-        paths_legacy = cfg.get("paths", {}) or {}
-        rel = paths_org.get(config_key, paths_legacy.get(config_key))
-        if rel:
-            bundled = PROJECT_ROOT / rel
-            if bundled.exists() and os.access(bundled, os.X_OK):
-                return str(bundled)
-
-    return None
+    return shutil.which(command_name)

@@ -43,7 +43,7 @@ _b = importlib.import_module("09_biological_summary")  # reuse tiering + ARO
 
 def run_card_blast(fasta, card_db, out_tsv):
     """blastn-short vs the local CARD DB, emitting 09's expected outfmt-6 cols."""
-    blastn = resolve_tool("blastn", "blastn")
+    blastn = resolve_tool("blastn")
     cmd = [blastn, "-query", str(fasta), "-db", str(card_db),
            "-task", "blastn-short", "-word_size", "7", "-dust", "no",
            "-outfmt", "6 " + " ".join(_b.TSV_COLS),

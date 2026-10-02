@@ -70,7 +70,9 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 -- Antibiotic reference (class for cross-class vs within-class analysis). -----
 CREATE TABLE IF NOT EXISTS antibiotics (
     antibiotic      TEXT PRIMARY KEY,        -- canonical id (registry spelling)
-    drug_class      TEXT
+    drug_class      TEXT,
+    mechanism_type  TEXT,                    -- acquired | target_snp | mixed
+    who_aware       TEXT                     -- Access | Watch | Reserve
 );
 
 -- One trained model per run, with held-out evaluation metrics. ---------------
@@ -90,6 +92,7 @@ CREATE TABLE IF NOT EXISTS models (
     auc_mean_seeds  REAL,                    -- lineage-CV / 5-seed mean
     auc_std_seeds   REAL,                    -- lineage-CV / 5-seed std
     cv_method       TEXT,                    -- lineage_group_kfold_Nfold (honest) | repeated_holdout_5seed (fallback)
+    n_features      INTEGER,                 -- # unitigs in the model's matrix
     UNIQUE(run_id, antibiotic)
 );
 
@@ -245,35 +248,9 @@ CREATE INDEX IF NOT EXISTS idx_evtier_novel         ON unitig_evidence_tier(is_n
 """
 
 
-def _add_column(conn, table, col, decl):
-    """Idempotent ALTER TABLE ADD COLUMN (SQLite has no ADD COLUMN IF NOT EXISTS)."""
-    have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
-    if col not in have:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
-
-
 def create_schema(conn):
     """Create all tables/indexes on an open sqlite3 connection (idempotent)."""
     conn.executescript(SCHEMA_SQL)
-    # Additive migrations 0.4.0 -> 0.5.0: new columns on pre-existing tables
-    # (CREATE TABLE IF NOT EXISTS won't alter an already-created table).
-    _add_column(conn, "antibiotics", "mechanism_type", "TEXT")   # acquired | target_snp | mixed
-    _add_column(conn, "antibiotics", "who_aware", "TEXT")         # Access | Watch | Reserve
-    _add_column(conn, "models", "n_features", "INTEGER")          # # unitigs in the model's matrix
-    # 0.6.0: unitig_antibiotic_overlap gains `organism` (the unified KB must not
-    # merge e.g. gentamicin across organisms). It's a derived cache (rebuilt by
-    # step 15), so if the old organism-less shape exists, recreate it empty.
-    ov = {r[1] for r in conn.execute("PRAGMA table_info(unitig_antibiotic_overlap)")}
-    if ov and "organism" not in ov:
-        conn.execute("DROP TABLE unitig_antibiotic_overlap")
-        conn.executescript(SCHEMA_SQL)   # re-creates only the dropped table (others IF NOT EXISTS)
-    # 0.7.1: tool-version provenance for the tools that define the results. Added
-    # here too so a pre-0.7.1 KB gains the columns instead of failing on INSERT.
-    # They stay NULL for runs recorded before this landed — an honest "unknown",
-    # which is the point: those rows genuinely cannot say what produced them.
-    for col in ("unitig_caller_version", "bcalm_version", "poppunk_version",
-                "graph_tool_version", "blast_version", "pyseer_version"):
-        _add_column(conn, "pipeline_runs", col, "TEXT")
     conn.commit()
 
 

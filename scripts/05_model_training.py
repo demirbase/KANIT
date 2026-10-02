@@ -44,8 +44,8 @@ import gc
 import datetime
 import shutil
 
-# Shared label-slicing helper (single source of truth) — see scripts/utils.py
-from utils import get_y_chunk
+# Shared label-slicing helper (single source of truth)
+from lib.chunking import get_y_chunk
 # Streaming QuantileDMatrix construction (full-data boosting; bounded memory).
 from lib.xgb_data import build_quantile_dmatrix, global_pos_weight
 # MLOps model registry (SCALE_MLOPS_PLAN.md §7.2) — additive, best-effort.
@@ -211,7 +211,7 @@ def load_optimized_hyperparameters():
         sys.exit(1)
 
 
-# get_y_chunk() is imported from utils.py (shared with 04 and 06).
+# get_y_chunk() is imported from lib.chunking (shared with 04 and 06).
 
 
 # ============================================================================

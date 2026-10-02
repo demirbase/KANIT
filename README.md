@@ -73,17 +73,15 @@ ML_AMR_Prediction_v2/
 │   ├── 00a..16_*.py             # the numbered pipeline steps
 │   ├── populate_database.py     # load a finished model -> the KB (amrk.db)
 │   ├── kb_api.py / kb_app.py    # REST API + Streamlit explorer over the KB
-│   ├── lib/                     # shared package (no duplicated code)
-│   │   ├── config.py            #   load_config + resolve_path (organism-aware)
-│   │   ├── registry.py          #   organisms/antibiotics access
-│   │   ├── chunking.py          #   get_y_chunk
-│   │   ├── io_utils.py          #   run_command (shlex, never shell=True)
-│   │   └── run_metadata.py      #   git hash / versions / run_id capture
-│   ├── constants.py, utils.py   # thin backward-compat shims -> lib/
-│   └── migrate_to_organism_layout.py  # reversible data-layout migration
+│   └── lib/                     # shared package (no duplicated code)
+│       ├── config.py            #   load_config + resolve_path (organism-aware)
+│       ├── registry.py          #   organisms/antibiotics access
+│       ├── chunking.py          #   get_y_chunk
+│       ├── io_utils.py          #   run_command (shlex, never shell=True)
+│       └── run_metadata.py      #   git hash / versions / run_id capture
 ├── containers/                  # Apptainer definitions (amr / amr-tools / amr-checkm2)
 ├── slurm/                       # env-parametric HPC job scripts (see below)
-├── tests/                       # pytest suite (smoke / unit / integration)
+├── tests/                       # pytest suite (smoke / unit)
 ├── docs/
 │   └── RELEASE_ZENODO.md        # how a KB release is archived (DOI, FAIR)
 │   # NB: some code comments cite internal planning notes (ROADMAP §…, MODULE_… audits,

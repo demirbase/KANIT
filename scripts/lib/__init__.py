@@ -3,10 +3,7 @@
 """
 Shared library for the AMR Prediction pipeline (SCALE_MLOPS_PLAN.md §5).
 
-Canonical home for code that was previously duplicated across the numbered
-scripts. The top-level ``scripts/constants.py`` and ``scripts/utils.py`` remain
-as thin backward-compatibility shims that re-export from here, so existing
-``from utils import ...`` / ``from constants import ...`` imports keep working.
+Code shared by the numbered scripts.
 
 Submodules:
     registry      — organisms.yaml / antibiotics.yaml access (single source)

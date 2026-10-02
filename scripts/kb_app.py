@@ -217,8 +217,8 @@ with tab5:
         st.caption(f"{e['model_id'].nunique()} model × {e['caller'].nunique()} araç. "
                    "(Model bACC + K. pneu için `16_external_concordance.py`'yi o modellerde çalıştır.)")
     else:
-        st.info("`external_concordance` tablosu boş. `16_external_concordance.py` çalıştır + "
-                "`migrate_kb_050.py` ile KB'ye yükle.")
+        st.info("`external_concordance` tablosu boş. `16_external_concordance.py` çalıştır, "
+                "sonra `populate_database.py` ile KB'ye yükle.")
 
 with tab6:
     # Count/version read from the KB itself — a hardcoded "13 tables (schema 0.6.0)"

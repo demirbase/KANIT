@@ -28,7 +28,6 @@ PIPELINE_SCRIPTS = [
     "09_biological_summary.py",
     "10_unitig_background_frequency.py",
     "11_variant_snp_check.py",
-    "migrate_to_organism_layout.py",
 ]
 
 
@@ -50,12 +49,3 @@ def test_lib_package_imports():
     assert callable(io_utils.run_command)
     assert callable(run_metadata.make_run_id)
 
-
-@pytest.mark.smoke
-def test_compat_shims_import():
-    """Backward-compat shims still expose the legacy names."""
-    import constants
-    import utils
-    assert isinstance(constants.ANTIBIOTIC_CLASSES, dict)
-    assert callable(utils.get_y_chunk)
-    assert callable(utils.run_command)

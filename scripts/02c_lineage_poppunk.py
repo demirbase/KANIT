@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from utils import run_command
+from lib.io_utils import run_command
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -287,8 +287,7 @@ def main():
             sys.exit(f"ERROR: --clusters-csv not found: {raw_clusters}")
         print(f"  Using existing raw clusters: {raw_clusters}")
     else:
-        poppunk = resolve_tool("poppunk_bin", "poppunk", config=config,
-                               env_var="AMR_POPPUNK_BIN")
+        poppunk = resolve_tool("poppunk")
         if not poppunk:
             sys.exit("ERROR: poppunk not found. Install it (conda install -c bioconda "
                      "poppunk) so it is on PATH, or set AMR_POPPUNK_BIN.")

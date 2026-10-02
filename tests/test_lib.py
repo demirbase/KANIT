@@ -257,26 +257,6 @@ def test_pipeline_runs_has_tool_version_columns(tmp_path):
     c.close()
 
 
-def test_pre_071_kb_gains_the_columns_instead_of_failing(tmp_path):
-    """A KB created before 0.7.1 must migrate, not break on the next INSERT."""
-    import sqlite3
-    from lib.kb_schema import create_schema
-    p = str(tmp_path / "old.db")
-    c = sqlite3.connect(p)
-    c.execute("""CREATE TABLE pipeline_runs (run_id TEXT PRIMARY KEY, organism TEXT,
-                 antibiotic TEXT, git_commit TEXT, git_dirty INTEGER, card_version TEXT,
-                 kmc_version TEXT, xgboost_version TEXT, random_seed INTEGER,
-                 config_hash TEXT, min_support INTEGER, n_genomes INTEGER, created_at TEXT)""")
-    c.execute("INSERT INTO pipeline_runs(run_id, organism, antibiotic) VALUES ('R0','ecoli','amp')")
-    c.commit()
-    create_schema(c)                       # migration path
-    cols = {r[1] for r in c.execute("PRAGMA table_info(pipeline_runs)")}
-    assert "poppunk_version" in cols and "graph_tool_version" in cols
-    # the pre-existing row survives with an honest NULL — it genuinely cannot say
-    assert c.execute("SELECT poppunk_version FROM pipeline_runs WHERE run_id='R0'").fetchone()[0] is None
-    c.close()
-
-
 def test_populate_run_writes_versions_including_pyseer_from_step14(tmp_path):
     import sqlite3, importlib.util
     from lib.kb_schema import create_schema

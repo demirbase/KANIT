@@ -315,9 +315,7 @@ def best_card_hit(df_card, q_id):
         return None
     row = hits.loc[hits['evalue'].idxmin()]
     # Coverage is what classify_confidence graded on; carrying it out of here is what
-    # lets the KB store the number instead of only the verdict. It was computed and
-    # thrown away for years, so `blast_annotations.coverage` was NULL on every row that
-    # arrived by this route (see migrate_kb_coverage.py).
+    # lets the KB store the number instead of only the verdict.
     qle = float(row['qlen_eff']) if 'qlen_eff' in row and float(row['qlen_eff']) > 0 else 0.0
     return {
         'gene': row.get('Gene_Match', ''),

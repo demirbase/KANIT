@@ -8,7 +8,7 @@ From: condaforge/miniforge3:latest
 # ============================================================================
 # Separate from the core amr.sif so the audited pipeline env stays stable and
 # these heavier, independent tools don't risk a dependency-solve conflict.
-# Mirrors amr.def/amr-gpu.def: condaforge/miniforge3 + an env file via %files.
+# Mirrors amr.def: condaforge/miniforge3 + an env file via %files.
 #
 # Build (on a debug node with internet + fakeroot; build sandbox can't bind /arf):
 #   unset APPTAINER_BINDPATH

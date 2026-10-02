@@ -56,8 +56,8 @@ import sys
 import datetime
 import shutil
 
-# Shared label-slicing helper (single source of truth) — see scripts/utils.py
-from utils import get_y_chunk
+# Shared label-slicing helper (single source of truth)
+from lib.chunking import get_y_chunk
 # MLOps run provenance (SCALE_MLOPS_PLAN.md §7.1) — additive, best-effort.
 from lib import run_metadata as rm
 from lib.config import resolve_path, get_target
@@ -146,7 +146,7 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
-# get_y_chunk() is imported from utils.py (shared with 05 and 06).
+# get_y_chunk() is imported from lib.chunking (shared with 05 and 06).
 
 
 def count_features(matrix_dir):

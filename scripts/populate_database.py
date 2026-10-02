@@ -256,11 +256,8 @@ def populate_candidates(conn, model_id, run_id, k, cand_df, card_version):
         # CARD BLAST annotation (best hit recorded in the candidate row)
         if str(r.get("card_gene", "")).strip():
             conn.execute(
-                # `coverage` was missing from this column list while the CPSS route
-                # below carried it, so every annotation arriving here stored NULL --
-                # 416 rows with a real tier and no record of the number that produced
-                # it. Step 09 now emits the column; migrate_kb_coverage.py backfilled
-                # the delivered KB.
+                # `coverage` comes from step 09; without it a stored tier has no
+                # record of the number that produced it.
                 """INSERT OR IGNORE INTO blast_annotations
                    (unitig_id, model_id, source_db, gene_symbol, identity_pct,
                     coverage, evalue, tier, aro_accession, aro_gene_family,

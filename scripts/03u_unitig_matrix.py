@@ -39,7 +39,7 @@ import pandas as pd
 import yaml
 from scipy.sparse import csc_matrix, load_npz, save_npz, vstack
 
-from utils import run_command
+from lib.io_utils import run_command
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
@@ -166,10 +166,7 @@ def run_unitig_caller(valid_genomes, raw_genomes_dir, out_dir, threads, config):
         print(f"  ✓ Unitig rtab already exists, reusing: {rtab}")
         return rtab
 
-    unitig_caller = resolve_tool(
-        "unitig_caller_bin", "unitig-caller", config=config,
-        env_var="AMR_UNITIG_CALLER_BIN",
-    )
+    unitig_caller = resolve_tool("unitig-caller")
     if not unitig_caller:
         sys.exit(
             "ERROR: unitig-caller not found. Install it (conda install -c bioconda "

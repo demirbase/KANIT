@@ -218,8 +218,8 @@ def main():
         print(f"  No candidate FASTA at {fasta}; run 07 first. Nothing to check.")
         return
 
-    blastn = resolve_tool('blast_bin', 'blastn', config=config)
-    makeblastdb = resolve_tool('makeblastdb_bin', 'makeblastdb', config=config)
+    blastn = resolve_tool('blastn')
+    makeblastdb = resolve_tool('makeblastdb')
     if not blastn or not makeblastdb:
         print("  blastn/makeblastdb not on PATH (conda install -c bioconda blast). Skipping.")
         return
