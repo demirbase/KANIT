@@ -4,7 +4,7 @@
 Export tidy, machine-readable CSV summary tables from the unified AMR-KB
 (+ a few per-run result JSONs the KB doesn't store: PFER, pyseer counts, H2).
 
-Feeds kb_figures.py and any external plotting / thesis tables. Read-only.
+Feeds external plotting and the thesis tables. Read-only.
 
 Usage:
     python scripts/kb_tables.py --db results/kb/amrk.db \

@@ -16,7 +16,7 @@
 #                    make the organism inactive. See lib/registry.VALID_STATUS.)
 #   eskapee_phase:   1 (thesis + 1st paper: Kp, Ec, Sa, Ab) | 2 (2nd paper: Pa, Efm, Enterobacter)
 #   priority_classes: the antibiotic classes this organism is the strongest showcase for
-# Slugs are lowercase snake_case (must match kb_figures._abbr and path templates).
+# Slugs are lowercase snake_case (must match the path templates).
 # `antibiotics:` for a not-yet-run (planned) organism is PROVISIONAL — curated
 # to its priority classes, refined when its pipeline actually runs.
 # ============================================================================
