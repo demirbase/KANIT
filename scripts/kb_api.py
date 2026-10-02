@@ -11,8 +11,8 @@ versioned ``/api/v1`` routes, CORS, and auto OpenAPI docs at ``/docs``.
 Endpoints (ROADMAP §1.8):
     GET /api/v1/metadata                     FAIR metadata (schema ver, DOI, license) — S9
     GET /api/v1/stats                        aggregate counts
-    GET /api/v1/kmers?antibiotic=&tier=&evidence_tier=&novel_only=&min_stability=&stable_only=&limit=&offset=
-    GET /api/v1/kmers/{sequence}             one unitig's full evidence chain
+    GET /api/v1/unitigs?antibiotic=&tier=&evidence_tier=&novel_only=&min_stability=&stable_only=&limit=&offset=
+    GET /api/v1/unitigs/{sequence}             one unitig's full evidence chain
     GET /api/v1/novel?antibiotic=&organism=  strong_novel biomarkers (0.7.0) — no known gene, CPSS+pyseer
     GET /api/v1/overlap?ab1=&ab2=            cross-antibiotic shared stable unitigs
 
@@ -69,8 +69,8 @@ def _create_app():
         finally:
             c.close()
 
-    @app.get("/api/v1/kmers")
-    def kmers(antibiotic: str | None = None, tier: str | None = None,
+    @app.get("/api/v1/unitigs")
+    def unitigs(antibiotic: str | None = None, tier: str | None = None,
               min_stability: float | None = None, stable_only: bool = False,
               evidence_tier: str | None = None, novel_only: bool = False,
               limit: int = Query(200, le=2000), offset: int = 0):
@@ -97,8 +97,8 @@ def _create_app():
         finally:
             c.close()
 
-    @app.get("/api/v1/kmers/{sequence}")
-    def kmer(sequence: str):
+    @app.get("/api/v1/unitigs/{sequence}")
+    def unitig(sequence: str):
         c = _conn()
         try:
             rec = Q.get_unitig(c, sequence)
@@ -119,8 +119,8 @@ def _create_app():
     @app.get("/")
     def root():
         return {"name": "AMRK-DB API", "version": KB_SCHEMA_VERSION, "docs": "/docs",
-                "endpoints": ["/api/v1/metadata", "/api/v1/stats", "/api/v1/kmers",
-                              "/api/v1/kmers/{sequence}", "/api/v1/novel",
+                "endpoints": ["/api/v1/metadata", "/api/v1/stats", "/api/v1/unitigs",
+                              "/api/v1/unitigs/{sequence}", "/api/v1/novel",
                               "/api/v1/overlap?ab1=&ab2="]}
 
     return app

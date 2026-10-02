@@ -30,7 +30,7 @@ Pipeline (staged, so CPSS runs on a tractable feature set)
    importance, replaces raw Gain).
 
 Output (results/{org}/{ab}/05_explainability/)
-    13_stability_selection_{ab}.csv  — per-candidate chi2, selection_freq, stable, mean_abs_shap, kmer
+    13_stability_selection_{ab}.csv  — per-candidate chi2, selection_freq, stable, mean_abs_shap, unitig
     13_stability_summary_{ab}.json   — params, n_stable, PFER bound, top unitigs
 """
 
@@ -190,13 +190,13 @@ def main():
     print("  [4/4] SHAP (TreeSHAP, built-in)...", flush=True)
     shap_imp = shap_importance(X_k, y_all, params, total_trees)
 
-    kmers = _s.map_indices_to_kmers(set(int(i) for i in top_idx))
+    unitigs = _s.map_indices_to_unitigs(set(int(i) for i in top_idx))
     stable = sel_freq >= args.pi
     pfer = pfer_bound(avg_sel, len(top_idx), args.pi)
 
     df = _s.pd.DataFrame({
         "feature_index": top_idx,
-        "kmer": [kmers.get(int(i), "") for i in top_idx],
+        "unitig": [unitigs.get(int(i), "") for i in top_idx],
         "chi2": chi2_top,
         "selection_frequency": sel_freq,
         "stable": stable.astype(int),
@@ -208,13 +208,13 @@ def main():
 
     # Emit the stable set as FASTA so it can be BLAST-validated against CARD
     # (biological closure of the statistically-stable selection).
-    stable_df = df[(df["stable"] == 1) & (df["kmer"].astype(str).str.len() > 0)]
+    stable_df = df[(df["stable"] == 1) & (df["unitig"].astype(str).str.len() > 0)]
     fasta_path = out_dir / f"13_stable_features_{antibiotic}.fasta"
     with open(fasta_path, "w", encoding="utf-8") as fh:
         for rank, (_, r) in enumerate(stable_df.iterrows(), 1):
             fh.write(f">stable_{rank}|freq_{r['selection_frequency']:.2f}|"
                      f"shap_{r['mean_abs_shap']:.4g}|fidx_{int(r['feature_index'])}\n")
-            fh.write(f"{r['kmer']}\n")
+            fh.write(f"{r['unitig']}\n")
 
     n_stable = int(stable.sum())
     summary = {
@@ -227,7 +227,7 @@ def main():
         "base_trees": args.base_trees,
         "n_trees": int(total_trees),
         "top_stable": df[df["stable"] == 1].head(15)[
-            ["kmer", "selection_frequency", "mean_abs_shap"]].to_dict("records"),
+            ["unitig", "selection_frequency", "mean_abs_shap"]].to_dict("records"),
     }
     (out_dir / f"13_stability_summary_{antibiotic}.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8")

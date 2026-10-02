@@ -76,11 +76,11 @@ def test_kb_recovery_and_novel(load_script):
     import pandas as pd
     m = load_script("09_biological_summary.py")
     feats = pd.DataFrame([
-        {"Rank": 1, "Gain_Score": 9.0, "Feature_ID": "f1", "Kmer_Sequence": "AAA",
+        {"Rank": 1, "Gain_Score": 9.0, "Feature_ID": "f1", "Unitig_Sequence": "AAA",
          "in_gain_topN": True, "selection_frequency": 0.8, "stable": True},
-        {"Rank": 2, "Gain_Score": 5.0, "Feature_ID": "f2", "Kmer_Sequence": "CCC",
+        {"Rank": 2, "Gain_Score": 5.0, "Feature_ID": "f2", "Unitig_Sequence": "CCC",
          "in_gain_topN": True, "selection_frequency": 0.6, "stable": True},
-        {"Rank": 3, "Gain_Score": 4.0, "Feature_ID": "f3", "Kmer_Sequence": "GGG",
+        {"Rank": 3, "Gain_Score": 4.0, "Feature_ID": "f3", "Unitig_Sequence": "GGG",
          "in_gain_topN": False, "selection_frequency": 0.8, "stable": True},
     ])
     card = pd.DataFrame([
@@ -98,20 +98,20 @@ def test_kb_recovery_and_novel(load_script):
 
 
 # ---------------------------------------------------------------------------
-# 10_kmer_background_frequency.compute_kmer_stats (discriminativeness)
+# 10_unitig_background_frequency.compute_unitig_stats (discriminativeness)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
-def test_kmer_background_frequency(load_script):
-    m = load_script("10_kmer_background_frequency.py")
+def test_unitig_background_frequency(load_script):
+    m = load_script("10_unitig_background_frequency.py")
     # Strong resistance marker: present in most R, few S -> discriminative
-    s = m.compute_kmer_stats(present_r=90, n_r=100, present_s=10, n_s=100)
+    s = m.compute_unitig_stats(present_r=90, n_r=100, present_s=10, n_s=100)
     assert abs(s["prevalence_resistant"] - 0.9) < 1e-9
     assert abs(s["prevalence_susceptible"] - 0.1) < 1e-9
     assert s["enriched_in"] == "resistant"
     assert s["fisher_p"] < 0.05
     assert s["discriminative"] is True
     # Ubiquitous: present everywhere, no R/S difference -> NOT discriminative
-    u = m.compute_kmer_stats(present_r=95, n_r=100, present_s=95, n_s=100)
+    u = m.compute_unitig_stats(present_r=95, n_r=100, present_s=95, n_s=100)
     assert u["discriminative"] is False
     assert u["enriched_in"] == "equal"
 
@@ -119,7 +119,7 @@ def test_kmer_background_frequency(load_script):
 @pytest.mark.unit
 def test_benjamini_hochberg(load_script):
     import numpy as np
-    m = load_script("10_kmer_background_frequency.py")
+    m = load_script("10_unitig_background_frequency.py")
     # Known BH example: p=[0.01,0.02,0.03,0.04,0.05], m=5
     # q_i = min over k>=i of (p_k * 5 / k): largest stays 0.05, others adjust up.
     q = m.benjamini_hochberg([0.01, 0.02, 0.03, 0.04, 0.05])
@@ -148,7 +148,7 @@ def test_variant_snp_helpers(load_script):
     assert m.aro_from_sseqid("gb|AF469609.1|+|566-3353|ARO:3003297|gyrA") == "3003297"
 
     # Plus strand, ungapped: subject CDS 245..253, codon 247-249.
-    # k-mer carries CTG (Leu) at the codon -> resistant for S83L.
+    # unitig carries CTG (Leu) at the codon -> resistant for S83L.
     qc = m.query_codon_from_alignment(245, 253, "plus",
                                       "AG" + "CTG" + "AAGT", "AG" + "AGC" + "AAGT",
                                       (247, 248, 249))

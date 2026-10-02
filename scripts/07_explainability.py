@@ -3,13 +3,13 @@
 """
 Feature Importance Extraction Module
 
-This script extracts and analyzes the most important k-mer features from a
+This script extracts and analyzes the most important unitig features from a
 trained XGBoost model for AMR prediction. Feature importance is measured using
 Gain metric, which represents the average improvement in accuracy brought by
 a feature across all splits where it was used.
 
 Scientific Value:
-    Identifying important k-mers helps:
+    Identifying important unitigs helps:
     1. Understand genetic basis of resistance (biologically interpretable)
     2. Validate model (do important features correspond to known resistance genes?)
     3. Design targeted diagnostic assays
@@ -74,9 +74,9 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ============================================================================
 def load_stability_map():
     """
-    Load 07b's per-k-mer stability table if it exists.
+    Load 07b's per-unitig stability table if it exists.
 
-    Returns {feature_index: (selection_frequency, mean_gain, kmer)}. Empty dict
+    Returns {feature_index: (selection_frequency, mean_gain, unitig)}. Empty dict
     if 07b has not been run — in that case 07 falls back to gain-only output
     (fully backward compatible). For the stability-aware thesis run the order is
     05 → 07b → 07 → 08 → 09 so this file is present.
@@ -94,7 +94,7 @@ def load_stability_map():
             out[int(r['feature_index'])] = (
                 float(r['selection_frequency']),
                 float(r.get('mean_gain', 0.0)),
-                str(r['kmer']),
+                str(r['unitig']),
             )
         except (KeyError, TypeError, ValueError):
             continue
@@ -106,12 +106,12 @@ def load_stability_map():
 # ============================================================================
 def extract_top_features():
     """
-    Extract and export top k-mer features from trained XGBoost model.
+    Extract and export top unitig features from trained XGBoost model.
     
     This function:
     1. Loads the trained XGBoost model
     2. Extracts feature importance scores (Gain metric)
-    3. Maps feature indices to actual k-mer sequences
+    3. Maps feature indices to actual unitig sequences
     4. Exports results in CSV and FASTA formats
     
     The Gain importance metric represents the average improvement in accuracy
@@ -192,7 +192,7 @@ def extract_top_features():
             print("  ⚠ WARNING: the model exposes no feature importances (no tree splits).")
             print("    Writing empty top-feature outputs and stopping cleanly.")
             empty_cols = ['Rank', 'Feature_ID', 'Feature_Index', 'Gain_Score',
-                          'Kmer_Sequence', 'Kmer_Length',
+                          'Unitig_Sequence', 'Unitig_Length',
                           'in_gain_topN', 'selection_frequency', 'stable']
             csv_path = OUTPUT_DIR / f"01_top_{TOP_N}_features_{TARGET_ANTIBIOTIC}.csv"
             pd.DataFrame(columns=empty_cols).to_csv(csv_path, index=False, encoding='utf-8')
@@ -209,9 +209,9 @@ def extract_top_features():
     
     
     # ------------------------------------------------------------------------
-    # SECTION 3: Map Feature Indices to K-mer Sequences
+    # SECTION 3: Map Feature Indices to Unitig Sequences
     # ------------------------------------------------------------------------
-    print("\n[STEP 3/4] Mapping features to k-mer sequences...")
+    print("\n[STEP 3/4] Mapping features to unitig sequences...")
     
     try:
         # XGBoost features are named as 'f0', 'f1', 'f2', etc.
@@ -228,7 +228,7 @@ def extract_top_features():
         
         print(f"  Feature indices to map: {len(needed_indices)}")
         
-        # Load k-mer dictionary
+        # Load unitig dictionary
         features_file = MATRIX_DIR / "features.txt"
         
         if not features_file.exists():
@@ -237,22 +237,22 @@ def extract_top_features():
                 f"Please run matrix creation script first (03u_unitig_matrix.py)"
             )
         
-        # Map indices to k-mer sequences
+        # Map indices to unitig sequences
         # Read file line by line (memory efficient for large dictionaries)
         features_map = {}
         
         with open(features_file, 'r', encoding='utf-8') as f:
             for line_idx, line in enumerate(f):
                 if line_idx in needed_indices:
-                    # Format: "KMER_SEQUENCE COUNT"
-                    kmer_sequence = line.split()[0]
-                    features_map[line_idx] = kmer_sequence
+                    # Format: "UNITIG_SEQUENCE COUNT"
+                    unitig_sequence = line.split()[0]
+                    features_map[line_idx] = unitig_sequence
                     
                     # Early exit if all features found (optimization)
                     if len(features_map) == len(needed_indices):
                         break
         
-        print(f"  ✓ Successfully mapped {len(features_map)} k-mer sequences")
+        print(f"  ✓ Successfully mapped {len(features_map)} unitig sequences")
         
         # Verify all features were found
         if len(features_map) < len(needed_indices):
@@ -274,7 +274,7 @@ def extract_top_features():
     
     try:
         # 07b stability (if present) — lets us flag/extend the candidate set with
-        # k-mers that are reproducible across seeds (ROADMAP H1/H2). Both the
+        # unitigs that are reproducible across seeds (ROADMAP H1/H2). Both the
         # single-model gain top-N and the stable set are carried forward so the
         # biological validation (08/09) covers BOTH.
         stability_map = load_stability_map()
@@ -288,8 +288,8 @@ def extract_top_features():
             # Extract feature index (strip only the leading 'f' prefix)
             idx = int(feat_name[1:])
 
-            # Get k-mer sequence (use 'UNKNOWN' if not found)
-            kmer_seq = features_map.get(idx, "UNKNOWN")
+            # Get unitig sequence (use 'UNKNOWN' if not found)
+            unitig_seq = features_map.get(idx, "UNKNOWN")
             sel_freq = stability_map.get(idx, (np.nan, None, None))[0]
 
             # Add to results table
@@ -298,8 +298,8 @@ def extract_top_features():
                 'Feature_ID': feat_name,
                 'Feature_Index': idx,
                 'Gain_Score': score,
-                'Kmer_Sequence': kmer_seq,
-                'Kmer_Length': len(kmer_seq) if kmer_seq != "UNKNOWN" else 0,
+                'Unitig_Sequence': unitig_seq,
+                'Unitig_Length': len(unitig_seq) if unitig_seq != "UNKNOWN" else 0,
                 'in_gain_topN': True,
                 'selection_frequency': sel_freq,
                 'stable': bool(sel_freq >= STABILITY_THRESHOLD) if pd.notna(sel_freq) else False,
@@ -308,18 +308,18 @@ def extract_top_features():
             # Format for FASTA output
             # FASTA header includes rank and importance score for reference
             fasta_header = f">Rank_{rank}|Score_{score:.4f}|Feature_{feat_name}"
-            fasta_lines.append(f"{fasta_header}\n{kmer_seq}")
+            fasta_lines.append(f"{fasta_header}\n{unitig_seq}")
 
-        # ---- Append STABLE k-mers (07b) not already in the gain top-N --------
+        # ---- Append STABLE unitigs (07b) not already in the gain top-N --------
         # These are reproducible across seeds but did not make the single model's
         # top-N; the thesis's H2 BLAST validation must include them.
         rank = len(results_data)
         n_stable_added = 0
-        for idx, (sel_freq, mean_gain, kmer_seq) in sorted(
+        for idx, (sel_freq, mean_gain, unitig_seq) in sorted(
                 stability_map.items(), key=lambda kv: kv[1][0], reverse=True):
             if idx in gain_indices or sel_freq < STABILITY_THRESHOLD:
                 continue
-            if not kmer_seq or kmer_seq == "UNKNOWN":
+            if not unitig_seq or unitig_seq == "UNKNOWN":
                 continue
             rank += 1
             n_stable_added += 1
@@ -330,16 +330,16 @@ def extract_top_features():
                 'Feature_ID': feat_name,
                 'Feature_Index': idx,
                 'Gain_Score': score,
-                'Kmer_Sequence': kmer_seq,
-                'Kmer_Length': len(kmer_seq),
+                'Unitig_Sequence': unitig_seq,
+                'Unitig_Length': len(unitig_seq),
                 'in_gain_topN': False,
                 'selection_frequency': sel_freq,
                 'stable': True,
             })
-            fasta_lines.append(f">Rank_{rank}|Score_{score:.4f}|Feature_{feat_name}\n{kmer_seq}")
+            fasta_lines.append(f">Rank_{rank}|Score_{score:.4f}|Feature_{feat_name}\n{unitig_seq}")
 
         if stability_map:
-            print(f"  ✓ Stability merged: {n_stable_added} stable k-mer(s) "
+            print(f"  ✓ Stability merged: {n_stable_added} stable unitig(s) "
                   f"added beyond the gain top-{TOP_N} (threshold ≥ {STABILITY_THRESHOLD})")
 
         # Create DataFrame
@@ -368,7 +368,7 @@ def extract_top_features():
     print("=" * 80)
     print("\nTop 10 Most Important Features:")
     print("-" * 80)
-    print(results_df[['Rank', 'Feature_ID', 'Gain_Score', 'Kmer_Sequence']].head(10).to_string(index=False))
+    print(results_df[['Rank', 'Feature_ID', 'Gain_Score', 'Unitig_Sequence']].head(10).to_string(index=False))
     print("-" * 80)
     
     print("\nOutput Files:")
@@ -381,12 +381,12 @@ def extract_top_features():
     print("  1. BLAST Analysis:")
     print("     → Upload FASTA file to NCBI BLAST")
     print("     → Search against bacterial genomes database")
-    print("     → Identify if k-mers match known resistance genes")
+    print("     → Identify if unitigs match known resistance genes")
     print("  2. Literature Review:")
     print(f"     → Check if identified genes are documented for {TARGET_ANTIBIOTIC} resistance")
     print(f"     → Look for known {TARGET_ANTIBIOTIC} resistance mechanisms / target genes")
     print("  3. Experimental Validation:")
-    print("     → Design primers targeting these k-mers")
+    print("     → Design primers targeting these unitigs")
     print("     → Validate presence in resistant vs susceptible isolates")
     print("=" * 80)
 

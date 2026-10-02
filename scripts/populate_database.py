@@ -13,7 +13,7 @@ note, so the KB can be built from a partial pipeline):
   models/.../manifest.json + 06 metrics    -> models
   results/.../10_repeated_holdout_summary  -> models (07b 5-seed AUC mean/std)
   results/.../07_kb_candidates_{ab}.csv     \\
-  results/.../10_kmer_background_frequency   } -> unitigs, unitig_model_scores,
+  results/.../10_unitig_background_frequency   } -> unitigs, unitig_model_scores,
   results/.../11_variant_snp_check           /    blast_annotations,
                                                   unitig_background_frequency,
                                                   variant_snp_check, validation_evidence
@@ -60,7 +60,7 @@ _DNA = re.compile(r"^[ACGTN]+$", re.I)
 
 
 def _attach_snp_sequences(snp_df, results_root, antibiotic):
-    """Add a ``kmer`` column to step 11's output by resolving its ``kmer_qseqid``
+    """Add a ``unitig`` column to step 11's output by resolving its ``unitig_qseqid``
     FASTA headers against the FASTA the step queried.
 
     Step 11 BLASTs ``02_top_{n}_features_{ab}.fasta`` and reports the query by
@@ -83,8 +83,8 @@ def _attach_snp_sequences(snp_df, results_root, antibiotic):
                 id2seq[header] = line
                 header = None
     snp_df = snp_df.copy()
-    snp_df["kmer"] = snp_df["kmer_qseqid"].astype(str).str.strip().map(id2seq)
-    missed = int(snp_df["kmer"].isna().sum())
+    snp_df["unitig"] = snp_df["unitig_qseqid"].astype(str).str.strip().map(id2seq)
+    missed = int(snp_df["unitig"].isna().sum())
     if missed:
         print(f"  ⚠ {missed}/{len(snp_df)} SNP rows had no match in {fastas[-1].name}")
     return snp_df
@@ -146,7 +146,7 @@ def _feature_k(config):
 
 
 def unitig_id(conn, sequence, k):
-    """INSERT-OR-IGNORE a k-mer and return its id (dedup on sequence)."""
+    """INSERT-OR-IGNORE a unitig and return its id (dedup on sequence)."""
     conn.execute("INSERT OR IGNORE INTO unitigs(sequence, k) VALUES (?,?)",
                  (sequence, k))
     row = conn.execute("SELECT unitig_id FROM unitigs WHERE sequence=?",
@@ -232,15 +232,15 @@ def populate_model(conn, run_id, antibiotic, drug_class, manifest, metrics, hold
 
 
 def populate_candidates(conn, model_id, run_id, k, cand_df, card_version):
-    """Load per-k-mer scores + BLAST + background-frequency from the candidate
+    """Load per-unitig scores + BLAST + background-frequency from the candidate
     table (10's output is a superset of 09's; falls back to 09)."""
     if cand_df is None or cand_df.empty:
-        print("  ⚠ no candidate table (09/10) — skipping k-mer rows.")
+        print("  ⚠ no candidate table (09/10) — skipping unitig rows.")
         return 0
     has_bg = "discriminative" in cand_df.columns
     n = 0
     for _, r in cand_df.iterrows():
-        seq = str(r.get("kmer", "")).strip()
+        seq = str(r.get("unitig", "")).strip()
         if not seq:
             continue
         kid = unitig_id(conn, seq, k)
@@ -316,7 +316,7 @@ def populate_snp(conn, model_id, run_id, k, snp_df):
         return 0
     n = 0
     for _, r in snp_df.iterrows():
-        seq = str(r.get("kmer", "")).strip()
+        seq = str(r.get("unitig", "")).strip()
         # Guard: step 11 reports a FASTA header, not a sequence. Registering that
         # header as a unitig silently fills `unitigs` with identifier strings and
         # detaches the whole SNP layer, so anything that is not DNA is skipped.
@@ -349,7 +349,7 @@ def populate_cpss(conn, model_id, run_id, k, cpss_df):
         return 0
     n = 0
     for _, r in cpss_df.iterrows():
-        seq = str(r.get("kmer", "")).strip()
+        seq = str(r.get("unitig", "")).strip()
         if not seq:
             continue
         kid = unitig_id(conn, seq, k)
@@ -388,7 +388,7 @@ def populate_cpss(conn, model_id, run_id, k, cpss_df):
 
 def populate_pyseer(conn, run_id, sig_df, threshold):
     """pyseer LMM (lineage-corrected) significance (step 14) -> validation_evidence,
-    only for unitigs ALREADY in the KB (don't create bare kmers for genome-wide
+    only for unitigs ALREADY in the KB (don't create bare unitigs for genome-wide
     hits with no model/annotation)."""
     if sig_df is None or sig_df.empty:
         return 0
@@ -418,11 +418,11 @@ def populate_permutation(conn, run_id, k, perm_df, labelperm):
 
     Per-candidate MDA (test ROC-AUC drop) rows + one model-level label-permutation
     null row (unitig_id NULL, evidence_score = empirical p). Both are evidence, not
-    per-kmer scores, so they live in the generic evidence ledger."""
+    per-unitig scores, so they live in the generic evidence ledger."""
     n = 0
     if perm_df is not None and not perm_df.empty:
         for _, r in perm_df.iterrows():
-            seq = str(r.get("kmer", "")).strip()
+            seq = str(r.get("unitig", "")).strip()
             if not seq:
                 continue
             kid = unitig_id(conn, seq, k)
@@ -496,7 +496,7 @@ def populate_evidence_tier(conn, model_id, run_id, perm_df):
     if perm_df is not None and not perm_df.empty and "permutation_significant" in perm_df.columns:
         for _, r in perm_df.iterrows():
             if _b(r.get("permutation_significant")):
-                seq = str(r.get("kmer", "")).strip()
+                seq = str(r.get("unitig", "")).strip()
                 if seq:
                     mda_sig.add(seq)
     rows = conn.execute(
@@ -680,16 +680,16 @@ def main():
     manifest = _read_json(models_dir / "manifest.json")
     metrics = _read_json(_find(results_root, f"09_metrics_{antibiotic}.json"))
     holdout = _read_csv(_find(results_root, f"10_repeated_holdout_summary_{antibiotic}.csv"))
-    # 10's output is the richest per-k-mer table; fall back to 09's candidates.
-    cand = _read_csv(_find(results_root, f"10_kmer_background_frequency_{antibiotic}.csv"))
+    # 10's output is the richest per-unitig table; fall back to 09's candidates.
+    cand = _read_csv(_find(results_root, f"10_unitig_background_frequency_{antibiotic}.csv"))
     if cand is None:
         cand = _read_csv(_find(results_root, f"07_kb_candidates_{antibiotic}.csv"))
     snp = _read_csv(_find(results_root, f"11_variant_snp_check_{antibiotic}.csv"))
     # Step 11 identifies its hits by the FASTA header it queried
     # (``Rank_n|Score_x|Feature_f...``), not by sequence. Resolve those headers
-    # back to the k-mer via the same FASTA, so the SNP rows join to the graded
+    # back to the unitig via the same FASTA, so the SNP rows join to the graded
     # unitigs instead of registering their own identifier strings as sequences.
-    if snp is not None and not snp.empty and "kmer" not in snp.columns:
+    if snp is not None and not snp.empty and "unitig" not in snp.columns:
         snp = _attach_snp_sequences(snp, results_root, antibiotic)
     # Permutation significance (step 12 MDA + step 12b label-permutation null).
     perm_df = _read_csv(_find(results_root, f"12_permutation_test_{antibiotic}.csv"))

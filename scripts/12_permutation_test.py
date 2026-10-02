@@ -79,18 +79,18 @@ def benjamini_hochberg(pvals):
 
 
 def load_candidates(results_root, antibiotic):
-    """Per-candidate (kmer, matrix column index). Prefer step-10's table (it
+    """Per-candidate (unitig, matrix column index). Prefer step-10's table (it
     carries feature_index); fall back to 07's KB candidates."""
     def _find(name):
         hits = sorted(Path(results_root).rglob(name))
         return hits[-1] if hits else None
 
-    path = _find(f"10_kmer_background_frequency_{antibiotic}.csv")
+    path = _find(f"10_unitig_background_frequency_{antibiotic}.csv")
     if path is None:
         path = _find(f"07_kb_candidates_{antibiotic}.csv")
     if path is None:
         raise FileNotFoundError(
-            f"No candidate table (10_kmer_background_frequency / 07_kb_candidates) "
+            f"No candidate table (10_unitig_background_frequency / 07_kb_candidates) "
             f"for {antibiotic} under {results_root}"
         )
     df = pd.read_csv(path, encoding="utf-8")
@@ -161,8 +161,8 @@ def main():
     rows = []
     for _, c in cand.iterrows():
         fidx = int(c["feature_index"])
-        kmer = str(c.get("kmer", ""))
-        rec = {"rank": c.get("rank"), "kmer": kmer, "feature_index": fidx,
+        unitig = str(c.get("unitig", ""))
+        rec = {"rank": c.get("rank"), "unitig": unitig, "feature_index": fidx,
                "card_gene": c.get("card_gene"), "stable": c.get("stable"),
                "used_by_model": int(fidx in used_cols)}
 
@@ -213,7 +213,7 @@ def main():
         p = (1 + int(np.sum(perm_aucs >= baseline_auc))) / (R + 1)
         rec.update(mda_auc_drop=mda, perm_p=p, n_perm=R)
         rows.append(rec)
-        print(f"  f{fidx:<8} {kmer[:24]:<24} MDA={mda:+.4f}  p={p:.3f}  "
+        print(f"  f{fidx:<8} {unitig[:24]:<24} MDA={mda:+.4f}  p={p:.3f}  "
               f"({c.get('card_gene') or '—'})")
 
     res = pd.DataFrame(rows)

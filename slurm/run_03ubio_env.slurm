@@ -9,7 +9,7 @@ o=$AMR_ORGANISM; a=$AMR_ANTIBIOTIC; cd $H
 echo "== 03u(rtab) $o/$a =="; apptainer exec --no-home $SIF python -u scripts/03u_unitig_matrix.py --threads 20 2>&1 | tail -3
 if [ -s "$H/results/$o/$a/05_explainability/13_stability_selection_$a.csv" ]; then echo "== bio zaten var, atla =="; else
   echo "== bio 10-13b =="
-  apptainer exec --no-home $SIF python -u scripts/10_kmer_background_frequency.py 2>&1 | tail -1
+  apptainer exec --no-home $SIF python -u scripts/10_unitig_background_frequency.py 2>&1 | tail -1
   apptainer exec --no-home $SIF python -u scripts/11_variant_snp_check.py 2>&1 | tail -1
   apptainer exec --no-home $SIF python -u scripts/12_permutation_test.py --n-permutations 100 2>&1 | tail -1
   apptainer exec --no-home $SIF python -u scripts/12b_label_permutation_test.py --n-permutations 50 2>&1 | tail -1

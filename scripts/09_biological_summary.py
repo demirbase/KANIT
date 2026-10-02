@@ -4,7 +4,7 @@
 Biological Summary Report Generator — Step 09
 
 Generates a Markdown report (05_final_biological_report.md) that maps the
-top k-mer features (from Step 07) to their biological meaning via:
+top unitig features (from Step 07) to their biological meaning via:
 
   1. CARD local BLAST results  → acquired resistance gene names
   2. NCBI remote BLAST results → core-genome / SNP context
@@ -42,7 +42,7 @@ from lib.config import load_config, get_target  # noqa: E402  (canonical loader;
 # we never hardcode one here.
 
 # ----------------------------------------------------------------------------
-# BLAST confidence tiers for short (k-mer) alignments
+# BLAST confidence tiers for unitig alignments
 # ----------------------------------------------------------------------------
 # A 21-mer producing an E-value of 1.5 is NOT "confirmed" homology, so every hit
 # is graded (was P-07). Thresholds are read from config.yaml (analysis.
@@ -339,14 +339,14 @@ def composite_score(selection_frequency, identity_pct, evalue):
         return float('nan')
     if not (sf == sf) or ev <= 0:          # sf NaN or non-positive E
         return float('nan')
-    # E-value can exceed 1 for short k-mers -> log10(1/E) goes negative; clamp the
+    # E-value can exceed 1 for short unitigs -> log10(1/E) goes negative; clamp the
     # contribution at 0 so a weak hit cannot produce a negative composite score.
     return sf * max(0.0, math.log10(1.0 / ev)) * (idp / 100.0)
 
 
 def build_kb_candidates(df_features, df_card, stability_threshold, aro_index=None):
     """
-    Join the candidate k-mers (07: gain top-N ∪ stable) with their best CARD hit
+    Join the candidate unitigs (07: gain top-N ∪ stable) with their best CARD hit
     and compute the composite score. Returns (DataFrame, metrics dict).
 
     When ``aro_index`` is provided (CARD aro_index.tsv), each CARD hit is mapped to
@@ -372,7 +372,7 @@ def build_kb_candidates(df_features, df_card, stability_threshold, aro_index=Non
         aro = aro_index.get(aro_acc, {})
         rows.append({
             'rank': rank,
-            'kmer': feat.get('Kmer_Sequence', ''),
+            'unitig': feat.get('Unitig_Sequence', ''),
             'feature_id': feat_id,
             'gain_score': score,
             'in_gain_topN': bool(feat.get('in_gain_topN', True)),
@@ -391,7 +391,7 @@ def build_kb_candidates(df_features, df_card, stability_threshold, aro_index=Non
             'aro_drug_class': aro.get('drug_class', ''),
             'aro_resistance_mechanism': aro.get('resistance_mechanism', ''),
         })
-    cols = ['rank', 'kmer', 'feature_id', 'gain_score', 'in_gain_topN',
+    cols = ['rank', 'unitig', 'feature_id', 'gain_score', 'in_gain_topN',
             'selection_frequency', 'stable', 'card_gene', 'card_identity',
             'card_evalue', 'coverage', 'confidence_tier', 'has_card_hit', 'composite_score',
             'aro_accession', 'aro_gene_family', 'aro_drug_class',
@@ -414,11 +414,11 @@ def build_kb_candidates(df_features, df_card, stability_threshold, aro_index=Non
         'n_stable': n_stable,
         'stability_threshold': stability_threshold,
         'tier_counts_all': (kb['confidence_tier'].value_counts().to_dict() if n_features else {}),
-        # M7 / H2: of the reproducible (stable) k-mers, fraction that map to a
+        # M7 / H2: of the reproducible (stable) unitigs, fraction that map to a
         # known ARG at confirmed confidence. H2 accepts >= 0.40.
         'known_mechanism_recovery_rate': (n_stable_confirmed / n_stable) if n_stable else None,
         'H2_pass': ((n_stable_confirmed / n_stable) >= 0.40) if n_stable else None,
-        # H4: fraction of stable k-mers with NO CARD hit (novel candidates).
+        # H4: fraction of stable unitigs with NO CARD hit (novel candidates).
         'novel_candidate_fraction': (n_stable_novel / n_stable) if n_stable else None,
         'n_stable_confirmed': n_stable_confirmed,
         'n_stable_novel': n_stable_novel,
@@ -562,15 +562,15 @@ def main():
         # --- Quantitative validation summary (top of report) ---------------
         ct = metrics['tier_counts_all']
         f.write("## Quantitative validation summary\n\n")
-        f.write(f"- Candidate k-mers analysed: **{metrics['n_candidate_features']}** "
+        f.write(f"- Candidate unitigs analysed: **{metrics['n_candidate_features']}** "
                 f"(gain top-N: {metrics['n_in_gain_topN']}, "
                 f"stable ≥ {stability_threshold:g}: {metrics['n_stable']})\n")
         f.write(f"- Known-mechanism recovery rate (M7 / H2): "
-                f"**{_pct(metrics['known_mechanism_recovery_rate'])}** of stable k-mers "
+                f"**{_pct(metrics['known_mechanism_recovery_rate'])}** of stable unitigs "
                 f"are confirmed CARD ARGs "
                 f"(H2 accept ≥ 40% → **{'PASS' if metrics['H2_pass'] else 'fail' if metrics['H2_pass'] is not None else 'n/a'}**)\n")
         f.write(f"- Novel candidate fraction (H4): "
-                f"**{_pct(metrics['novel_candidate_fraction'])}** of stable k-mers have no CARD hit\n")
+                f"**{_pct(metrics['novel_candidate_fraction'])}** of stable unitigs have no CARD hit\n")
         f.write(f"- CARD tier distribution (best hit, all candidates): "
                 f"confirmed={ct.get('confirmed', 0)}, candidate={ct.get('candidate', 0)}, "
                 f"weak={ct.get('weak', 0)}, none={ct.get('none', 0)}\n\n")
@@ -609,7 +609,7 @@ def main():
             rank     = int(row['Rank'])
             score    = float(row['Gain_Score'])
             feat_id  = str(row['Feature_ID'])
-            sequence = str(row['Kmer_Sequence'])
+            sequence = str(row['Unitig_Sequence'])
 
             # Reconstruct the query ID to match BLAST qseqid column
             q_id = f"Rank_{rank}|Score_{score:.4f}|Feature_{feat_id}"

@@ -21,7 +21,7 @@ Flow
    composite score, and write a KB-ready table.
 
 Output (results/{org}/{ab}/05_explainability/)
-    13_stable_kb_candidates_{ab}.csv  — KB-ready: kmer, CPSS freq, SHAP, CARD gene,
+    13_stable_kb_candidates_{ab}.csv  — KB-ready: unitig, CPSS freq, SHAP, CARD gene,
         identity, coverage, tier, ARO fields, composite_score
 """
 
@@ -56,9 +56,9 @@ def annotate(stable_df, blast_df, tiers, aro_index):
     rows = []
     for _, s in stable_df.iterrows():
         fidx = int(s["feature_index"])
-        kmer = str(s.get("kmer", ""))
+        unitig = str(s.get("unitig", ""))
         rec = {
-            "feature_index": fidx, "kmer": kmer,
+            "feature_index": fidx, "unitig": unitig,
             "selection_frequency": s.get("selection_frequency"),
             "mean_abs_shap": s.get("mean_abs_shap"),
             "stable": 1,
@@ -74,7 +74,7 @@ def annotate(stable_df, blast_df, tiers, aro_index):
                 if not blast_df.empty else blast_df)
         if hits is not None and not hits.empty:
             best = hits.loc[hits["evalue"].idxmin()]
-            qlen = float(best["qlen"]) if best["qlen"] == best["qlen"] else (len(kmer) or 1)
+            qlen = float(best["qlen"]) if best["qlen"] == best["qlen"] else (len(unitig) or 1)
             tier = _b.classify_confidence(best["pident"], best["evalue"],
                                           best["length"], qlen, tiers)
             aro_acc = _b.aro_from_sseqid(best["sseqid"])
@@ -113,14 +113,14 @@ def main():
         sys.exit(1)
 
     df = pd.read_csv(stable_csv, encoding="utf-8")
-    stable_df = df[(df["stable"] == 1) & (df["kmer"].astype(str).str.len() > 0)].copy()
+    stable_df = df[(df["stable"] == 1) & (df["unitig"].astype(str).str.len() > 0)].copy()
     print(f"  stable unitigs to annotate: {len(stable_df)}")
 
     # FASTA keyed by feature_index (clean join key).
     fasta = out_dir / f"13_stable_features_{antibiotic}.fasta"
     with open(fasta, "w", encoding="utf-8") as fh:
         for _, r in stable_df.iterrows():
-            fh.write(f">{int(r['feature_index'])}\n{r['kmer']}\n")
+            fh.write(f">{int(r['feature_index'])}\n{r['unitig']}\n")
 
     blast_cfg = config.get("blast", {})
     card_db = (PROJECT_ROOT / blast_cfg.get("card_db_dir", "data/blast_db/card_nt")

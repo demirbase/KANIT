@@ -56,7 +56,7 @@ ALL_STEPS: list[tuple[str, str]] = [
     ("07",  "07_explainability.py"),
     ("08",  "08_blast_annotation.py"),       # CARD local + NCBI remote (internet)
     ("09",  "09_biological_summary.py"),
-    ("10",  "10_kmer_background_frequency.py"),
+    ("10",  "10_unitig_background_frequency.py"),
     ("11",  "11_variant_snp_check.py"),
     ("12",  "12_permutation_test.py"),       # MDA permutation (M9)
     ("12b", "12b_label_permutation_test.py"),# label-permutation null (M9)

@@ -3,13 +3,13 @@
 """
 BLAST Annotation Orchestrator — Step 08
 
-This script coordinates the biological validation of the top unitig/k-mer
+This script coordinates the biological validation of the top unitig
 features identified in Step 07 (07_explainability.py) by running blastn directly
 via subprocess (no Nextflow) in two BLAST searches:
 
   1. CARD Local BLAST:
      Queries the Comprehensive Antibiotic Resistance Database (CARD).
-     Directly tests whether the top k-mers overlap with documented
+     Directly tests whether the top unitigs overlap with documented
      resistance genes (e.g., gyrA, parC for fluoroquinolones).
      Requires a pre-built local blastn database.
 
@@ -89,7 +89,7 @@ EVALUE      = blast_cfg.get('evalue',    10)
 WORD_SIZE   = blast_cfg.get('word_size', 11)
 THREADS     = blast_cfg.get('threads',   8)
 # BLAST task is chosen from the ACTUAL query length (see choose_blast_task): the
-# 'blastn-short' params are tuned for queries <50 bp (k-mers AND short unitigs),
+# 'blastn-short' params are tuned for queries <50 bp (short unitigs),
 # 'blastn' for longer. Picking by feature type was wrong — unitigs can be short
 # (~30-50 bp), where 'blastn' finds nothing. blast.task overrides the auto choice.
 BLAST_TASK_OVERRIDE = blast_cfg.get('task')
@@ -162,7 +162,7 @@ NCBI_OUT  = EXPLAINABILITY_DIR / f"04_ncbi_blast_results_{TARGET_ANTIBIOTIC}.tsv
 # ============================================================================
 def main() -> None:
     """
-    Orchestrate the BLAST annotation pipeline for AMR k-mer features.
+    Orchestrate the BLAST annotation pipeline for AMR unitig features.
 
     Workflow:
         1. Validate tool availability (blastn)
@@ -172,7 +172,7 @@ def main() -> None:
         5. Confirm output files were created
     """
     print("=" * 80)
-    print(f"BLAST ANNOTATION: {TARGET_ANTIBIOTIC.upper()} — K-MER BIOLOGICAL VALIDATION")
+    print(f"BLAST ANNOTATION: {TARGET_ANTIBIOTIC.upper()} — UNITIG BIOLOGICAL VALIDATION")
     print("=" * 80)
     print(f"  Target antibiotic : {TARGET_ANTIBIOTIC}")
     print(f"  Top-N features    : {TOP_N}")
@@ -310,7 +310,7 @@ def main() -> None:
         if r.returncode != 0:
             sys.exit(f"ERROR: {label} blastn exited with status {r.returncode}.")
         # blastn writes an empty output file when there are no hits — a valid,
-        # meaningful result (a novel k-mer with no DB match), NOT an error; 09
+        # meaningful result (a novel unitig with no DB match), NOT an error; 09
         # already tolerates empty TSVs. Only a truly missing file is fatal.
         if not out_path.exists():
             sys.exit(f"ERROR: {label} produced no output file at {out_path}.")

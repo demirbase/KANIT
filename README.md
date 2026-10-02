@@ -252,7 +252,7 @@ python scripts/07b_feature_stability.py   # lineage-aware CV + stability (run be
 python scripts/07_explainability.py       # gain top-N ∪ stable set -> CSV + FASTA
 python scripts/08_blast_annotation.py     # needs BLAST+ and the local CARD DB
 python scripts/09_biological_summary.py   # tiered report; set ncbi.entrez_email or AMR_ENTREZ_EMAIL
-python scripts/10_kmer_background_frequency.py  # resistant-vs-susceptible discriminativeness
+python scripts/10_unitig_background_frequency.py  # resistant-vs-susceptible discriminativeness
 python scripts/11_variant_snp_check.py    # CARD variant-model SNP allele check (optional)
 python scripts/12_permutation_test.py     # M9: MDA permutation importance (+ BH-FDR)
 python scripts/12b_label_permutation_test.py  # M9: label-permutation null (model significance)
@@ -269,8 +269,8 @@ uvicorn scripts.kb_api:app                # REST API (S8/S9): /api/v1/{kmers,kme
 ```bash
 pip install fastapi uvicorn
 AMR_KB_DB=results/kb/amrk.db uvicorn scripts.kb_api:app   # http://localhost:8000/docs
-# GET /api/v1/kmers?antibiotic=cefotaxime&tier=confirmed&stable_only=true
-# GET /api/v1/kmers/{sequence}     GET /api/v1/overlap?ab1=ampicillin&ab2=cefotaxime
+# GET /api/v1/unitigs?antibiotic=cefotaxime&tier=confirmed&stable_only=true
+# GET /api/v1/unitigs/{sequence}     GET /api/v1/overlap?ab1=ampicillin&ab2=cefotaxime
 # GET /api/v1/stats                GET /api/v1/metadata   (FAIR: schema ver, DOI, license)
 ```
 

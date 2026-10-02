@@ -3,7 +3,7 @@
 """
 Step 07b — Feature stability + generalisation CV (out-of-core).
 
-Quantifies how reproducible the top k-mer/unitig features are across resampling
+Quantifies how reproducible the top unitig features are across resampling
 AND gives an honest generalisation ROC-AUC mean±std (ROADMAP §0.1 M2 / §1.5).
 
 DESIGN:
@@ -18,12 +18,12 @@ DESIGN:
           (config/experiments/{organism}/config_{antibiotic}.yaml) — HPO is done
           ONCE and held fixed across seeds; it never sees a seed's test split.
         - evaluate ROC-AUC on the held-out 20%
-        - extract the top-N (analysis.top_n_features) Gain k-mers
+        - extract the top-N (analysis.top_n_features) Gain unitigs
     Aggregate:
         - ROC-AUC mean ± std across the 5 seeds
-        - per-k-mer selection_frequency = (#seeds in top-N) / len(SEEDS)
+        - per-unitig selection_frequency = (#seeds in top-N) / len(SEEDS)
           ("stable" >= 0.6) and mean Gain
-        - mean pairwise Jaccard similarity of the 5 top-N k-mer sets
+        - mean pairwise Jaccard similarity of the 5 top-N unitig sets
 
 MEMORY MODEL: streamed, never materialised. A sample-level boolean mask selects
 the train/test rows that fall inside each chunk's offset range, and training
@@ -174,8 +174,8 @@ def top_feature_indices(model):
     return set(idx_gain), idx_gain
 
 
-def map_indices_to_kmers(indices):
-    """Map feature indices -> k-mer sequences via features.txt (single pass)."""
+def map_indices_to_unitigs(indices):
+    """Map feature indices -> unitig sequences via features.txt (single pass)."""
     features_file = MATRIX_DIR / "features.txt"
     mapping = {}
     if not indices or not features_file.exists():
@@ -360,12 +360,12 @@ def main():
     counts = Counter()
     for s in seed_sets:
         counts.update(s)
-    kmer_map = map_indices_to_kmers(set(counts))
+    unitig_map = map_indices_to_unitigs(set(counts))
     stab_rows = []
     for idx, c in counts.items():
         stab_rows.append({
             'feature_index': idx,
-            'kmer': kmer_map.get(idx, 'UNKNOWN'),
+            'unitig': unitig_map.get(idx, 'UNKNOWN'),
             'selection_frequency': c / n_seeds,
             'mean_gain': float(np.mean(gain_accum.get(idx, [0.0]))),
             'stable': (c / n_seeds) >= 0.6,
@@ -373,7 +373,7 @@ def main():
     # Fix the columns explicitly so an empty stab_rows (degenerate models with
     # no splits -> no selected features) still yields a valid, header-only CSV
     # instead of crashing on sort_values of a column-less frame.
-    stab = pd.DataFrame(stab_rows, columns=['feature_index', 'kmer',
+    stab = pd.DataFrame(stab_rows, columns=['feature_index', 'unitig',
                                             'selection_frequency', 'mean_gain', 'stable'])
     if not stab.empty:
         stab = stab.sort_values(['selection_frequency', 'mean_gain'], ascending=False)
@@ -385,7 +385,7 @@ def main():
     print("=" * 80)
     print(f"  ROC-AUC: {auc_mean:.4f} ± {auc_std:.4f}  (splits: {[f'{a:.3f}' for a in aucs]})")
     print(f"  Mean pairwise Jaccard (top-{TOP_N} sets): {jaccard:.4f}")
-    print(f"  Stable k-mers (freq ≥ 0.6): {int(stab['stable'].sum()) if len(stab) else 0}")
+    print(f"  Stable unitigs (freq ≥ 0.6): {int(stab['stable'].sum()) if len(stab) else 0}")
     print(f"  Saved: {summary_path.name}, {stab_path.name}")
     print("=" * 80)
 

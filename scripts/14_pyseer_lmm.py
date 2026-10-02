@@ -98,13 +98,13 @@ def bonferroni_threshold(patterns_file):
     return (0.05 / n if n else float("nan")), n
 
 
-def parse_and_flag(assoc_file, threshold, cpss_kmers):
+def parse_and_flag(assoc_file, threshold, cpss_unitigs):
     """Read pyseer output, keep Bonferroni-significant variants, flag CPSS-stable."""
     df = pd.read_csv(assoc_file, sep="\t")
     pcol = "lrt-pvalue" if "lrt-pvalue" in df.columns else "filter-pvalue"
     df[pcol] = pd.to_numeric(df[pcol], errors="coerce")
     sig = df[df[pcol] <= threshold].copy()
-    sig["is_cpss_stable"] = sig["variant"].astype(str).isin(cpss_kmers).astype(int)
+    sig["is_cpss_stable"] = sig["variant"].astype(str).isin(cpss_unitigs).astype(int)
     return df, sig.sort_values(pcol), pcol
 
 
@@ -151,19 +151,19 @@ def main():
               f"  Run the pyseer --lmm step (amr-tools.sif) first."); sys.exit(1)
     threshold, n_pat = bonferroni_threshold(patterns)
     cpss_csv = out_dir / f"13_stability_selection_{antibiotic}.csv"
-    cpss_kmers = set()
+    cpss_unitigs = set()
     if cpss_csv.exists():
         c = pd.read_csv(cpss_csv, encoding="utf-8")
-        cpss_kmers = set(c[c["stable"] == 1]["kmer"].astype(str))
+        cpss_unitigs = set(c[c["stable"] == 1]["unitig"].astype(str))
 
-    df, sig, pcol = parse_and_flag(assoc, threshold, cpss_kmers)
+    df, sig, pcol = parse_and_flag(assoc, threshold, cpss_unitigs)
     sig.to_csv(out_dir / f"14_pyseer_significant_{antibiotic}.csv", index=False)
     n_cpss_sig = int(sig["is_cpss_stable"].sum()) if not sig.empty else 0
     summary = {
         "antibiotic": antibiotic, "organism": organism,
         "n_patterns": n_pat, "bonferroni_threshold": threshold,
         "n_variants_tested": int(len(df)), "n_significant": int(len(sig)),
-        "n_cpss_stable_significant": n_cpss_sig, "n_cpss_stable_total": len(cpss_kmers),
+        "n_cpss_stable_significant": n_cpss_sig, "n_cpss_stable_total": len(cpss_unitigs),
         "pvalue_column": pcol,
         # pyseer lives in amr-tools.sif, populate runs in amr.sif — so the step
         # that actually invokes the tool is the only one that can honestly report
@@ -174,7 +174,7 @@ def main():
         json.dumps(summary, indent=2), encoding="utf-8")
     print("=" * 74)
     print(f"  threshold {threshold:.2e} ({n_pat} patterns) | tested {len(df)} | "
-          f"significant {len(sig)} | CPSS-stable & significant {n_cpss_sig}/{len(cpss_kmers)}")
+          f"significant {len(sig)} | CPSS-stable & significant {n_cpss_sig}/{len(cpss_unitigs)}")
     print(f"  ✓ 14_pyseer_significant_{antibiotic}.csv  ✓ 14_pyseer_summary_{antibiotic}.json")
     print("=" * 74)
 

@@ -2,10 +2,9 @@
 # -*- coding: utf-8 -*-
 """Streaming XGBoost DMatrix construction from on-disk genome×feature chunks.
 
-Feature-agnostic: the columns are k-mers (03) or unitigs (03u, the canonical
-representation) — the streaming logic is identical. Replaces the legacy
+The columns are unitigs (03u). Replaces the legacy
 incremental "1 tree per chunk" out-of-core regime. The full sparse matrix (e.g.
-~109 GB for ~5k E. coli genomes × 50.8M k-mers, or ~8 GB for ~4.9M unitigs) is
+~8 GB for ~5k E. coli genomes × ~4.9M unitigs) is
 never materialised in RAM: XGBoost pulls one chunk at a time through
 ``ChunkDMatrixIter`` and builds a single compact, quantised ``QuantileDMatrix``
 (binary 0/1 data → ``max_bin=2`` → ~1 byte per non-zero). This enables standard
@@ -25,7 +24,7 @@ from lib.chunking import get_y_chunk
 
 
 class ChunkDMatrixIter(xgb.DataIter):
-    """Yield genome×feature (k-mer/unitig) chunks one at a time for QuantileDMatrix construction.
+    """Yield genome×unitig chunks one at a time for QuantileDMatrix construction.
 
     Args:
         files:       Ordered chunk file paths (``X_{ab}_part_{n}.npz``).

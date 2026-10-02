@@ -97,7 +97,7 @@ def test_populate_evidence_tier_grades_and_flags_novel(tmp_path):
             VALUES (5,'pyseer_lmm','pyseer LMM','R1');
     """)
     c.commit()
-    perm_df = pd.DataFrame({"kmer": ["AAG"], "permutation_significant": [1]})
+    perm_df = pd.DataFrame({"unitig": ["AAG"], "permutation_significant": [1]})
 
     n = populate_evidence_tier(c, model_id=1, run_id="R1", perm_df=perm_df)
     assert n == 5
@@ -125,12 +125,12 @@ def test_populate_evidence_tier_idempotent(tmp_path):
 
 
 # ---- step 11 SNP rows must join to real unitigs ---------------------------
-# Regression: populate_snp used to fall back to step 11's `kmer_qseqid` column
-# when no `kmer` column was present. That column holds the queried FASTA header
+# Regression: populate_snp used to fall back to step 11's `unitig_qseqid` column
+# when no `unitig` column was present. That column holds the queried FASTA header
 # (`Rank_n|Score_x|Feature_f...`), not a sequence, so every SNP row registered
 # its own identifier string as a unitig. The layer then joined to nothing and
 # graded 0 biomarkers while looking like it had run.
-def test_attach_snp_sequences_maps_headers_to_kmers(tmp_path):
+def test_attach_snp_sequences_maps_headers_to_unitigs(tmp_path):
     from populate_database import _attach_snp_sequences
 
     d = tmp_path / "05_explainability"
@@ -138,13 +138,13 @@ def test_attach_snp_sequences_maps_headers_to_kmers(tmp_path):
     (d / "02_top_50_features_cipro.fasta").write_text(
         ">Rank_1|Score_9.0|Feature_f1\nACGTACGTAC\n"
         ">Rank_2|Score_8.0|Feature_f2\nTTTTGGGGCC\n", encoding="utf-8")
-    df = pd.DataFrame({"kmer_qseqid": ["Rank_2|Score_8.0|Feature_f2",
+    df = pd.DataFrame({"unitig_qseqid": ["Rank_2|Score_8.0|Feature_f2",
                                        "Rank_9|Score_1.0|Feature_f9"],
                        "allele_class": ["resistant_allele", "wildtype"]})
 
     out = _attach_snp_sequences(df, tmp_path, "cipro")
-    assert out.loc[0, "kmer"] == "TTTTGGGGCC"   # header resolved to its sequence
-    assert pd.isna(out.loc[1, "kmer"])          # unmatched header stays unmapped
+    assert out.loc[0, "unitig"] == "TTTTGGGGCC"   # header resolved to its sequence
+    assert pd.isna(out.loc[1, "unitig"])          # unmatched header stays unmapped
 
 
 def test_populate_snp_never_registers_a_non_dna_unitig():
@@ -158,7 +158,7 @@ def test_populate_snp_never_registers_a_non_dna_unitig():
         INSERT INTO antibiotics(antibiotic) VALUES ('ciprofloxacin');
         INSERT INTO models(model_id, run_id, antibiotic) VALUES (1,'R1','ciprofloxacin');
     """)
-    snp = pd.DataFrame({"kmer": ["Rank_1|Score_9.0|Feature_f1", "ACGTACGTAC"],
+    snp = pd.DataFrame({"unitig": ["Rank_1|Score_9.0|Feature_f1", "ACGTACGTAC"],
                         "variant_gene": ["Ecol_gyrA_FLO"] * 2,
                         "snp": ["S83L"] * 2,
                         "allele_class": ["resistant_allele"] * 2})

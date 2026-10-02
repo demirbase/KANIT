@@ -289,7 +289,7 @@ def final_training(best_params, train_files, y_all):
           f"external_memory={use_extmem}")
 
     # Optional: train on a stratified subset of the train chunks. nnz (and thus
-    # RAM) is driven by common k-mers, so raising min_support barely shrinks it —
+    # RAM) is driven by common unitigs, so raising min_support barely shrinks it —
     # the only way to fit the matrix IN-CORE (fast, no low-efficiency warning) is
     # to use fewer GENOMES. Chunks are picked by linspace over the
     # resistance-ratio-sorted train list (04's order) so the subset spans the

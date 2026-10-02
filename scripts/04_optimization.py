@@ -151,7 +151,7 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 def count_features(matrix_dir):
     """
-    Count the number of k-mer features (lines in features.txt).
+    Count the number of unitig features (lines in features.txt).
 
     Used to derive the √p column-subsampling range so the Optuna search space
     is anchored to the actual feature dimensionality (see objective()).

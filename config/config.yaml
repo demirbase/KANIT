@@ -14,7 +14,7 @@
 # ----------------------------------------------------------------------------
 project:
   name: "AMR_Genomic_Project"
-  description: "Machine learning-based antimicrobial resistance prediction using k-mer features"
+  description: "Machine learning-based antimicrobial resistance prediction using unitig features"
   target_antibiotic: "ampicillin"  # Primary antibiotic for analysis
   organism: "ecoli"  # Organism registry slug (see config/registry/organisms.yaml)
   # Human-readable names live in the registry (organisms.yaml `display_name`),
@@ -256,8 +256,8 @@ training:
   # discovered count.
   max_boost_rounds: 5000
   # Build the train DMatrix in external memory (pages spilled to scratch) so the
-  # full 50.8M-feature matrix fits a 384 GB node. NOTE: raising min_support does
-  # NOT shrink RAM (nnz is dominated by common k-mers, not the rare tail it
+  # full matrix fits a 384 GB node. NOTE: raising min_support does
+  # NOT shrink RAM (nnz is dominated by common unitigs, not the rare tail it
   # removes). To train IN-CORE (external_memory: false, fast, no low-efficiency
   # warning) the only lever is fewer GENOMES -> see max_train_chunks.
   external_memory: true
@@ -305,7 +305,7 @@ xgboost_params:
 # ----------------------------------------------------------------------------
 analysis:
   top_n_features: 50  # Number of top features to extract for biological analysis
-  stability_threshold: 0.6  # selection_frequency >= this -> "stable" k-mer (07b; ROADMAP H1)
+  stability_threshold: 0.6  # selection_frequency >= this -> "stable" unitig (07b; ROADMAP H1)
 
   # ── BLAST confidence tiers (step 09) ──────────────────────────────────────
   # Every BLAST hit is graded so weak matches are never presented as findings.
@@ -347,7 +347,7 @@ blast:
   # 'blastn-short' below 50 bp, otherwise 'blastn'). Set explicitly to override.
   task:         null
 
-  # ── CARD variant/SNP data (step 11 — k-mer-centric SNP allele check) ──────
+  # ── CARD variant/SNP data (step 11 — SNP allele check of the candidate unitigs) ──────
   # NOT shipped with the repo (the bundled card.fna is the homolog model only).
   # Download the full CARD data bundle to get these:
   #   mkdir -p data/external/card && cd data/external/card

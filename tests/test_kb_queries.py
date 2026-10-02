@@ -106,7 +106,7 @@ def test_fastapi_smoke(kb, load_script):
     client = TestClient(api._create_app())
     assert client.get("/api/v1/stats").json()["n_unitigs"] == 2
     assert client.get("/api/v1/metadata").json()["kb_schema_version"] == "0.4.0"
-    r = client.get("/api/v1/kmers", params={"antibiotic": "ampicillin", "stable_only": True})
+    r = client.get("/api/v1/unitigs", params={"antibiotic": "ampicillin", "stable_only": True})
     assert r.json()["count"] == 1
-    assert client.get("/api/v1/kmers/AAA").json()["blast"][0]["gene_symbol"] == "blaTEM-1"
-    assert client.get("/api/v1/kmers/ZZZ").status_code == 404
+    assert client.get("/api/v1/unitigs/AAA").json()["blast"][0]["gene_symbol"] == "blaTEM-1"
+    assert client.get("/api/v1/unitigs/ZZZ").status_code == 404

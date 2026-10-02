@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 """Assembly-level genome QC — CheckM2 + QUAST (must-have M15; ROADMAP §0.2).
 
-Hybrid genome QC on the raw assemblies, complementing 02b's k-mer complexity
-IQR advisory: **CheckM2** (completeness / contamination via a machine-learning
+Hybrid genome QC on the raw assemblies: **CheckM2** (completeness / contamination via a machine-learning
 model over DIAMOND hits) + **QUAST** (N50, contig count, total length). This is
 an *organism-level* step — it QCs every ``{genome_id}.fna`` once and the result
 covers all antibiotics.

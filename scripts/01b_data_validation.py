@@ -6,8 +6,8 @@ Exploratory Data Analysis (EDA) & Visualization Module for AMR Data
 This script generates publication-quality visualizations for the raw genomic 
 metadata (amr_phenotypes.csv) validated in 01_data_validation.py.
 It provides visual confirmation of data integrity, class distributions and
-missing data patterns before proceeding to computationally expensive k-mer
-extraction and model training.
+missing data patterns before proceeding to the computationally expensive unitig
+matrix construction and model training.
 
 Visualizations generated:
 1. Antibiotic Resistance Distribution (Horizontal Bar Plot)

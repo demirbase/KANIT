@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Step 11 — k-mer-centric CARD variant-model SNP allele check.
+Step 11 — CARD variant-model SNP allele check of the candidate unitigs.
 
-A homolog-model CARD hit (step 08/09) only proves a k-mer lies in a known ARG
+A homolog-model CARD hit (step 08/09) only proves a unitig lies in a known ARG
 *region*; for SNP-mediated resistance (e.g. gyrA/parC fluoroquinolone mutations,
 rpoB rifampicin) the gene is present in every isolate and only a specific point
 mutation confers resistance. This step asks the precise question:
 
-    Does the candidate k-mer span a known CARD resistance SNP position, and if
+    Does the candidate unitig span a known CARD resistance SNP position, and if
     so, does it carry the RESISTANT allele or the wildtype base?
 
 Method:
-  1. BLAST the candidate k-mers (07 FASTA) against CARD's *protein variant
+  1. BLAST the candidate unitigs (07 FASTA) against CARD's *protein variant
      model* nucleotide sequences (blastn-short), capturing the aligned query
      and subject strings + subject coordinates.
   2. Parse card.json for each variant model's resistance SNPs (protein
      positions, e.g. "S83L"); map protein position p -> CDS nt codon (3p-2..3p).
-  3. For every hit covering a SNP codon, read the k-mer's bases aligned to that
+  3. For every hit covering a SNP codon, read the unitig's bases aligned to that
      codon (strand-aware), translate, and classify:
          resistant_allele | wildtype | other_variant | partial/ambiguous.
 
-This turns "k-mer is in gyrA" into "k-mer carries gyrA S83L (resistant)" — the
+This turns "unitig is in gyrA" into "unitig carries gyrA S83L (resistant)" — the
 difference between a lineage/wildtype signal and a true resistance determinant.
 
 Requires the full CARD data download (not shipped):
@@ -100,7 +100,7 @@ def translate_codon(codon):
 def query_codon_from_alignment(sstart, send, sstrand, qseq_aln, sseq_aln,
                                codon_positions):
     """
-    Read the QUERY (k-mer) bases aligned to the given subject CDS positions,
+    Read the QUERY (unitig) bases aligned to the given subject CDS positions,
     returned in CDS (plus) sense. None if the codon is not fully covered or a
     gap falls in it.
 
@@ -130,7 +130,7 @@ def query_codon_from_alignment(sstart, send, sstrand, qseq_aln, sseq_aln,
 
 
 def classify_allele(query_codon, wt_aa, mut_aa):
-    """Classify the k-mer's codon against a CARD SNP (wt -> mut)."""
+    """Classify the unitig's codon against a CARD SNP (wt -> mut)."""
     if not query_codon or len(query_codon) != 3:
         return "ambiguous"
     aa = translate_codon(query_codon)
@@ -233,8 +233,8 @@ def main():
         subprocess.run([makeblastdb, "-in", str(variant_fasta), "-dbtype", "nucl",
                         "-out", str(db)], check=True, capture_output=True, text=True)
 
-    # 2) BLAST candidate k-mers vs variant models (short-query mode)
-    print("  BLAST candidate k-mers vs CARD variant models...")
+    # 2) BLAST candidate unitigs vs variant models (short-query mode)
+    print("  BLAST candidate unitigs vs CARD variant models...")
     r = subprocess.run(
         [blastn, "-query", str(fasta), "-db", str(db), "-task", "blastn-short",
          "-dust", "no", "-evalue", str(blast_cfg.get('evalue', 10)),
@@ -245,8 +245,8 @@ def main():
         print(f"  blastn failed: {(r.stderr or '')[:300]}")
         return
     if not r.stdout.strip():
-        print("  No variant-model BLAST hits for the candidate k-mers.")
-        pd.DataFrame(columns=["kmer_qseqid", "variant_gene", "aro", "snp",
+        print("  No variant-model BLAST hits for the candidate unitigs.")
+        pd.DataFrame(columns=["unitig_qseqid", "variant_gene", "aro", "snp",
                               "observed_codon", "observed_aa", "allele_class"]).to_csv(out_path, index=False)
         print(f"  Saved (empty): {out_path.name}")
         return
@@ -274,7 +274,7 @@ def main():
                 (c_start, c_start + 1, c_start + 2))
             allele = classify_allele(qcodon, wt, mut)
             rows.append({
-                "kmer_qseqid": h['qseqid'],
+                "unitig_qseqid": h['qseqid'],
                 "variant_gene": gene_from_sseqid(h['sseqid']),
                 "aro": aro,
                 "snp": f"{wt}{pos}{mut}",
@@ -284,7 +284,7 @@ def main():
                 "allele_class": allele,
             })
 
-    out = pd.DataFrame(rows, columns=["kmer_qseqid", "variant_gene", "aro", "snp",
+    out = pd.DataFrame(rows, columns=["unitig_qseqid", "variant_gene", "aro", "snp",
                                       "pident", "evalue", "observed_codon",
                                       "observed_aa", "allele_class"])
     out.to_csv(out_path, index=False)
@@ -295,8 +295,8 @@ def main():
           f"(resistant_allele={n_res}, wildtype={n_wt})")
     if n_res:
         for _, r2 in out[out['allele_class'] == 'resistant_allele'].iterrows():
-            print(f"    ✓ {r2['variant_gene']} {r2['snp']} — k-mer carries RESISTANT allele "
-                  f"({r2['kmer_qseqid']})")
+            print(f"    ✓ {r2['variant_gene']} {r2['snp']} — unitig carries RESISTANT allele "
+                  f"({r2['unitig_qseqid']})")
     print(f"  Saved: {out_path.name}")
     print("=" * 80)
 

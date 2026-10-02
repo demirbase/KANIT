@@ -148,8 +148,7 @@ def verify_kb(root, rep):
 
         ks = dict(con.execute("SELECT k, COUNT(*) FROM unitigs GROUP BY k"))
         shortest = con.execute("SELECT MIN(LENGTH(sequence)) FROM unitigs").fetchone()[0]
-        # k is metadata, so nothing downstream fails when it is wrong -- which is how
-        # the k-mer baseline's 21 sat on every unitig row unnoticed. Pin it, and pin it
+        # k is metadata, so nothing downstream fails when it is wrong. Pin it, and pin it
         # against the one fact that can contradict it: no path through a de Bruijn graph
         # is shorter than one node, so the shortest unitig cannot fall below k.
         rep.check(ks == {31: EXPECTED_KB["unitigs"]}, "unitig k",

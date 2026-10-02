@@ -4,7 +4,7 @@
 
 Pure, dependency-light functions (scipy only for p-values, with a stdlib
 fallback) shared by ``16_external_concordance.py`` to compare, on the same set of
-genomes, any two of: our k-mer model's calls, AMRFinderPlus/ResFinder genotypic
+genomes, any two of: our unitig model's calls, AMRFinderPlus/ResFinder genotypic
 calls, and the EUCAST/CLSI phenotype (ground truth).
 
 Convention: label 1 = **resistant** (the positive/clinically-important class),

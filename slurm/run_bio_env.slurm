@@ -7,7 +7,7 @@ export APPTAINER_BINDPATH=/arf
 : "${AMR_ORGANISM:?}" "${AMR_ANTIBIOTIC:?}"
 W=/arf/scratch/edemirbas/amr; H=/arf/home/edemirbas/ML_AMR_Prediction_v2; SIF=$W/containers/amr.sif
 cd $H
-apptainer exec --no-home $SIF python -u scripts/10_kmer_background_frequency.py 2>&1
+apptainer exec --no-home $SIF python -u scripts/10_unitig_background_frequency.py 2>&1
 apptainer exec --no-home $SIF python -u scripts/11_variant_snp_check.py 2>&1
 apptainer exec --no-home $SIF python -u scripts/12_permutation_test.py --n-permutations 100 2>&1
 apptainer exec --no-home $SIF python -u scripts/12b_label_permutation_test.py --n-permutations 50 2>&1

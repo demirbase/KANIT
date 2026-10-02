@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Step 10 — k-mer background frequency / discriminativeness (ROADMAP §1.1).
+Step 10 — unitig background frequency / discriminativeness (ROADMAP §1.1).
 
-A k-mer can be stable, high-Gain AND map to a known ARG, yet still be a poor
+A unitig can be stable, high-Gain AND map to a known ARG, yet still be a poor
 marker if it is present in (nearly) every genome — resistant and susceptible
-alike. BLAST tells us *what gene* a k-mer belongs to; it does NOT tell us
-whether the k-mer *discriminates* resistance. This step closes that gap.
+alike. BLAST tells us *what gene* a unitig belongs to; it does NOT tell us
+whether the unitig *discriminates* resistance. This step closes that gap.
 
-For each candidate k-mer (07_kb_candidates: gain top-N ∪ stable set) it streams
+For each candidate unitig (07_kb_candidates: gain top-N ∪ stable set) it streams
 the out-of-core matrix once and computes:
     prevalence_resistant   = present in R genomes / n_R
     prevalence_susceptible = present in S genomes / n_S
@@ -19,13 +19,13 @@ the out-of-core matrix once and computes:
                                      set; q < alpha — ROADMAP §0.2)
 
 This distinguishes a genuine resistance marker from a ubiquitous / lineage
-(conserved) sequence and feeds the KB `kmer_background_frequency` record. A
-k-mer that is "confirmed" by BLAST but NOT discriminative is flagged — it is
+(conserved) sequence and feeds the KB `unitig_background_frequency` record. A
+unitig that is "confirmed" by BLAST but NOT discriminative is flagged — it is
 likely a wildtype gene region or a clonal-lineage signal, not a resistance
 determinant (cf. the gyrA caveat in step 09).
 
 Output:
-    results/{org}/{ab}/05_explainability/10_kmer_background_frequency_{ab}.csv
+    results/{org}/{ab}/05_explainability/10_unitig_background_frequency_{ab}.csv
         = 07_kb_candidates columns + the prevalence/discriminativeness columns
 """
 
@@ -68,10 +68,10 @@ def benjamini_hochberg(pvals):
     return q
 
 
-def compute_kmer_stats(present_r, n_r, present_s, n_s,
+def compute_unitig_stats(present_r, n_r, present_s, n_s,
                        min_delta=MIN_PREVALENCE_DELTA, alpha=FISHER_ALPHA):
     """
-    Pure function: prevalence + discriminativeness for one k-mer.
+    Pure function: prevalence + discriminativeness for one unitig.
 
     Args are presence counts and group sizes for resistant (r) / susceptible (s)
     genomes. Returns a dict of prevalences, odds ratio, Fisher p and a
@@ -122,7 +122,7 @@ def compute_kmer_stats(present_r, n_r, present_s, n_s,
 def count_presence_by_label(indices, chunk_files, y_all):
     """
     Stream the matrix chunks once and count, for each feature index, how many
-    resistant / susceptible genomes carry that k-mer (presence = value > 0).
+    resistant / susceptible genomes carry that unitig (presence = value > 0).
 
     Returns {feature_index: (present_R, present_S)}. One chunk in RAM at a time.
     """
@@ -164,13 +164,13 @@ def main():
     kb = pd.read_csv(kb_path)
 
     print("=" * 80)
-    print(f"K-MER BACKGROUND FREQUENCY / DISCRIMINATIVENESS: {antibiotic.upper()} ({organism})")
+    print(f"UNITIG BACKGROUND FREQUENCY / DISCRIMINATIVENESS: {antibiotic.upper()} ({organism})")
     print("=" * 80)
 
     if kb.empty:
-        out_path = explain_dir / f"10_kmer_background_frequency_{antibiotic}.csv"
+        out_path = explain_dir / f"10_unitig_background_frequency_{antibiotic}.csv"
         kb.to_csv(out_path, index=False)
-        print(f"  No candidate k-mers; wrote empty {out_path.name}.")
+        print(f"  No candidate unitigs; wrote empty {out_path.name}.")
         return
 
     # feature index from 'feature_id' (e.g. "f19862101")
@@ -187,14 +187,14 @@ def main():
     y_all = pd.read_csv(y_path)['label'].values.astype(int)
     n_r, n_s = int((y_all == 1).sum()), int((y_all == 0).sum())
     print(f"  Genomes: {len(y_all)} (resistant={n_r}, susceptible={n_s}) | "
-          f"candidate k-mers: {len(kb)}")
+          f"candidate unitigs: {len(kb)}")
 
     presence = count_presence_by_label(kb['feature_index'].tolist(), chunk_files, y_all)
 
     stat_rows = []
     for _, r in kb.iterrows():
         pr, ps = presence.get(int(r['feature_index']), (0, 0))
-        stat_rows.append(compute_kmer_stats(pr, n_r, ps, n_s))
+        stat_rows.append(compute_unitig_stats(pr, n_r, ps, n_s))
     stats = pd.DataFrame(stat_rows)
     # BH-FDR across the candidate set (ROADMAP §0.2): adds fisher_q + an
     # FDR-corrected discriminative flag (|Δprev| >= delta AND q < alpha). The raw
@@ -206,7 +206,7 @@ def main():
     ).fillna(False).astype(bool)
     out = pd.concat([kb.reset_index(drop=True), stats], axis=1)
 
-    out_path = explain_dir / f"10_kmer_background_frequency_{antibiotic}.csv"
+    out_path = explain_dir / f"10_unitig_background_frequency_{antibiotic}.csv"
     out.to_csv(out_path, index=False)
 
     # ---- summary -----------------------------------------------------------
@@ -224,10 +224,10 @@ def main():
           f"{n_disc}/{len(out)}  (stable: {n_stable_disc}/{len(stable)})")
     print(f"  Discriminative after BH-FDR (q<{FISHER_ALPHA:g}): {n_disc_fdr}/{len(out)}")
     if len(conf_not_disc):
-        print(f"  ⚠ {len(conf_not_disc)} CONFIRMED-by-BLAST k-mer(s) are NOT discriminative "
+        print(f"  ⚠ {len(conf_not_disc)} CONFIRMED-by-BLAST unitig(s) are NOT discriminative "
               f"(ubiquitous / likely wildtype or lineage signal):")
         for _, r in conf_not_disc.iterrows():
-            print(f"      {r['kmer']} [{r.get('card_gene','')}] "
+            print(f"      {r['unitig']} [{r.get('card_gene','')}] "
                   f"prev_R={r['prevalence_resistant']:.2f} prev_S={r['prevalence_susceptible']:.2f}")
     print(f"  Saved: {out_path.name}")
     print("=" * 80)

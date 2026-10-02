@@ -12,14 +12,14 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "amr-kmer-kb"
+name = "kanit-amr"
 version = "0.7.1"
 description = "Explainable, FAIR, multi-organism AMR unitig-biomarker knowledge-base pipeline (ESKAPEE)"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 license = { file = "LICENSE" }
 authors = [{ name = "Eren Demirbaş", email = "eren0demirbas@gmail.com" }]
-keywords = ["antimicrobial-resistance", "machine-learning", "k-mer", "bioinformatics", "xgboost", "FAIR"]
+keywords = ["antimicrobial-resistance", "machine-learning", "unitig", "bioinformatics", "xgboost", "FAIR"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",

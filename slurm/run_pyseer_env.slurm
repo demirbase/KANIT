@@ -12,7 +12,7 @@ echo "== prep =="; apptainer exec $AMR python -u scripts/14_pyseer_lmm.py --mode
 P=$H/results/$AMR_ORGANISM/$AMR_ANTIBIOTIC/05_explainability/14_pyseer_paths_$AMR_ANTIBIOTIC.sh
 source "$P"; D=$(dirname "$ASSOC")
 echo "== cand + sub rtab =="
-apptainer exec $AMR python -c "import pandas as pd;d=pd.read_csv('$D/13_stability_selection_${AMR_ANTIBIOTIC}.csv');open('$D/14_cand_seqs.txt','w').write('\n'.join(d.kmer.astype(str))+'\n')"
+apptainer exec $AMR python -c "import pandas as pd;d=pd.read_csv('$D/13_stability_selection_${AMR_ANTIBIOTIC}.csv');open('$D/14_cand_seqs.txt','w').write('\n'.join(d.unitig.astype(str))+'\n')"
 awk -F'\t' -v C="$D/14_cand_rtab.rtab" -v S="$D/14_sub_rtab.rtab" \
   'NR==FNR{seq[$1]=1;next} FNR==1{print>C;print>S;next} ($1 in seq){print>C} (FNR%100==1){print>S}' \
   "$D/14_cand_seqs.txt" "$PRES"

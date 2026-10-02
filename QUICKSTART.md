@@ -128,7 +128,7 @@ python scripts/07b_feature_stability.py   # 5-seed stability (AUC ±, Jaccard, s
 python scripts/07_explainability.py       # top-N gain k-mers ∪ stable set -> CSV + FASTA
 python scripts/08_blast_annotation.py     # BLAST vs CARD + NCBI (Nextflow; needs internet)
 python scripts/09_biological_summary.py   # tiered report + recovery rate / composite / novel fraction
-python scripts/10_kmer_background_frequency.py  # resistant-vs-susceptible prevalence + discriminativeness (Fisher)
+python scripts/10_unitig_background_frequency.py  # resistant-vs-susceptible prevalence + discriminativeness (Fisher)
 python scripts/11_variant_snp_check.py    # CARD variant-model SNP allele check (optional; needs full CARD download)
 ```
 
