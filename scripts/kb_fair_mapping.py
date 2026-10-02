@@ -18,7 +18,7 @@ Two rows are `partial` on purpose:
   R1.3  no community standard exists for unitig-resolution AMR biomarker bases;
         this uses CARD/ARO, NCBI Taxonomy and WHO AWaRe, which is the closest thing.
 
-    python scripts/kb_fair_mapping.py --db results/kb/amrk.db --out results/tables
+    python scripts/kb_fair_mapping.py --db results/kb/kanit.db --out results/tables
 """
 import argparse
 import csv
@@ -91,10 +91,10 @@ def rows(f):
 
         ("F3", "Metadata clearly and explicitly include the identifier of the data",
          "The DOI lives inside the database, not only beside it",
-         (f"kb_metadata.zenodo_doi is a column of amrk.db, so a copy of the file "
+         (f"kb_metadata.zenodo_doi is a column of kanit.db, so a copy of the file "
           f"identifies its own published archive with no external manifest."
           if f['doi'] else
-          "kb_metadata.zenodo_doi is a column of amrk.db but is currently empty, so a "
+          "kb_metadata.zenodo_doi is a column of kanit.db but is currently empty, so a "
           "copy of the file does not identify its own archive until the next release "
           "repopulates it."),
          "met" if f['doi'] else "not met"),
@@ -111,7 +111,7 @@ def rows(f):
 
         ("A1.1", "The protocol is open, free and universally implementable",
          "HTTP(S), and SQLite plus CSV as the container formats",
-         f"amrk.db is a single SQLite file (schema {f['schema']}) readable by any language's "
+         f"kanit.db is a single SQLite file (schema {f['schema']}) readable by any language's "
          f"standard library; the tidy tables are plain CSV.", "met"),
 
         ("A1.2", "The protocol allows authentication and authorisation where necessary",

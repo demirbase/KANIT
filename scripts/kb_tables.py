@@ -7,7 +7,7 @@ Export tidy, machine-readable CSV summary tables from the unified AMR-KB
 Feeds external plotting and the thesis tables. Read-only.
 
 Usage:
-    python scripts/kb_tables.py --db results/kb/amrk.db \
+    python scripts/kb_tables.py --db results/kb/kanit.db \
         --results results --out results/tables
 
 Outputs (results/tables/):
@@ -88,7 +88,7 @@ def _load_json(pattern):
 
 def main():
     ap = argparse.ArgumentParser(description="Export tidy CSV tables from the AMR-KB.")
-    ap.add_argument("--db", default="results/kb/amrk.db")
+    ap.add_argument("--db", default="results/kb/kanit.db")
     ap.add_argument("--results", default="results", help="root holding {org}/{ab}/05_explainability")
     ap.add_argument("--out", default="results/tables")
     args = ap.parse_args()

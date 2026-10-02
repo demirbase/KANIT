@@ -13,7 +13,7 @@
 # PROJECT METADATA
 # ----------------------------------------------------------------------------
 project:
-  name: "AMR_Genomic_Project"
+  name: "KANIT"
   description: "Machine learning-based antimicrobial resistance prediction using unitig features"
   target_antibiotic: "ampicillin"  # Primary antibiotic for analysis
   organism: "ecoli"  # Organism registry slug (see config/registry/organisms.yaml)
@@ -70,9 +70,8 @@ provenance:
   card_version:     "4.0.1"   # CARD DB version used for BLAST annotation (citeable)
   # kb_schema_version deliberately NOT here: it lives in code
   # (lib/kb_schema.KB_SCHEMA_VERSION) and collect_versions reads it from there.
-  # As a config key it silently rotted to 0.6.1 while the schema moved to 0.7.1 —
-  # and run_metadata copied that stale value INTO the KB, so the KB misreported
-  # its own schema. One source, not two.
+  # As a config key it drifted from the schema, and run_metadata copied the stale
+  # value INTO the KB, so the KB misreported its own schema. One source, not two.
   # NCBI Entrez identity is configured under the `ncbi:` section below
   # (entrez_email / api_key); it is the single source for Step 09.
 

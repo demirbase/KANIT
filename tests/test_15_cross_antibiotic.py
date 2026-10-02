@@ -124,7 +124,7 @@ def _kb(tmp_path, stable_by_ab):
     """
     from lib.kb_schema import create_schema
 
-    db = tmp_path / "amrk.db"
+    db = tmp_path / "kanit.db"
     conn = sqlite3.connect(str(db))
     create_schema(conn)
     all_uids = sorted({u for s in stable_by_ab.values() for u in s})

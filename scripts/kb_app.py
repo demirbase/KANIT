@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-AMRK-DB explorer — a local Streamlit UI over the knowledge-base SQLite file.
+KANIT explorer — a local Streamlit UI over the knowledge-base SQLite file.
 
 This is the queryable interface for the unitig AMR biomarker knowledge base
 (ROADMAP S8/N1): browse the stable/confirmed biomarkers, inspect each unitig's
@@ -11,7 +11,7 @@ stability, permutation, pyseer LMM), and see the run provenance.
 Run locally (not part of the HPC pipeline / container):
     pip install streamlit pandas
     streamlit run scripts/kb_app.py
-Then point the sidebar at your amrk.db (default: results/kb/amrk.db — the
+Then point the sidebar at your kanit.db (default: results/kb/kanit.db — the
 unified multi-organism KB).
 """
 
@@ -21,11 +21,11 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="AMRK-DB — AMR Unitig Knowledge Base",
+st.set_page_config(page_title="KANIT — AMR Unitig Knowledge Base",
                    page_icon="🧬", layout="wide")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DB = PROJECT_ROOT / "results" / "kb" / "amrk.db"  # unified multi-organism KB
+DEFAULT_DB = PROJECT_ROOT / "results" / "kb" / "kanit.db"  # unified multi-organism KB
 
 
 @st.cache_data(show_spinner=False)
@@ -54,11 +54,11 @@ def best_annotation(blast: pd.DataFrame) -> pd.DataFrame:
 
 
 # --- sidebar: DB selection -------------------------------------------------
-st.sidebar.title("🧬 AMRK-DB")
-db_path = st.sidebar.text_input("Veritabanı yolu (amrk.db)", str(DEFAULT_DB))
+st.sidebar.title("🧬 KANIT")
+db_path = st.sidebar.text_input("Veritabanı yolu (kanit.db)", str(DEFAULT_DB))
 if not Path(db_path).exists():
     st.warning(f"Veritabanı bulunamadı: `{db_path}`\n\n"
-               "Kenar çubuğundan `amrk.db` yolunu gir (Drive yedeğinden indirdiğin dosya).")
+               "Kenar çubuğundan `kanit.db` yolunu gir (Drive yedeğinden indirdiğin dosya).")
     st.stop()
 
 T = load_tables(db_path, Path(db_path).stat().st_mtime)
@@ -201,7 +201,7 @@ with tab4:
         st.info("Overlap tablosu boş / <2 antibiyotik. `15_cross_antibiotic.py` çalıştır.")
 
 with tab5:
-    st.caption("Dış doğrulama (M13, şema 0.5.0 `external_concordance` tablosu): "
+    st.caption("Dış doğrulama (`external_concordance` tablosu): "
                "AMRFinderPlus / ResFinder (ve varsa model) vs EUCAST/CLSI fenotip — "
                "held-out test genomlarında dengeli doğruluk (bACC), Cohen κ, FDA ME/VME.")
     ext = T.get("external_concordance", pd.DataFrame())
@@ -221,10 +221,8 @@ with tab5:
                 "sonra `populate_database.py` ile KB'ye yükle.")
 
 with tab6:
-    # Count/version read from the KB itself — a hardcoded "13 tables (schema 0.6.0)"
-    # here was wrong on both counts once 0.7.0 added unitig_evidence_tier.
-    st.caption(f"KB'nin {len(T)} ham tablosu. Her tablonun/kolonun anlamı: "
-               "`docs/KB_ACIKLAMA.md`.")
+    # Table count read from the KB itself, never hardcoded.
+    st.caption(f"KB'nin {len(T)} ham tablosu.")
     _order = ["kb_metadata", "organisms", "antibiotics", "pipeline_runs", "models",
               "unitigs", "unitig_model_scores", "blast_annotations",
               "unitig_background_frequency", "variant_snp_check",

@@ -8,7 +8,7 @@ copy of the database can identify its own archive — a placeholder in that colu
 would make verify_artefacts pass while the property it checks is still false,
 which is worse than an empty field.
 
-    python scripts/stamp_zenodo_doi.py --db results/kb/amrk.db --doi 10.5281/zenodo.1234567
+    python scripts/stamp_zenodo_doi.py --db results/kb/kanit.db --doi 10.5281/zenodo.1234567
 """
 import argparse
 import re
@@ -32,7 +32,7 @@ THESIS_SPOTS = [
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--db", default="results/kb/amrk.db")
+    ap.add_argument("--db", default="results/kb/kanit.db")
     ap.add_argument("--doi", required=True, help="concept DOI, e.g. 10.5281/zenodo.1234567")
     a = ap.parse_args()
 

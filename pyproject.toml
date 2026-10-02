@@ -1,5 +1,5 @@
 # ============================================================================
-# pyproject.toml — ML_AMR_Prediction_v2
+# pyproject.toml — KANIT
 # ============================================================================
 # Project metadata (PEP 621) + tooling configuration (ruff, mypy, pytest).
 # The numbered pipeline scripts live in scripts/ and are invoked directly
@@ -54,9 +54,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/demirbase/ML_AMR_Prediction_v2"
-Repository = "https://github.com/demirbase/ML_AMR_Prediction_v2"
-Documentation = "https://github.com/demirbase/ML_AMR_Prediction_v2/blob/main/README.md"
+Homepage = "https://github.com/iumobg/KANIT"
+Repository = "https://github.com/iumobg/KANIT"
+Documentation = "https://github.com/iumobg/KANIT/blob/main/README.md"
 
 # Expose the reusable helper package (scripts/lib) for `pip install -e .`.
 [tool.setuptools]

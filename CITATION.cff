@@ -12,7 +12,7 @@ authors:
   - family-names: "Demirbaş"
     given-names: "Eren"
     email: "eren0demirbas@gmail.com"
-repository-code: "https://github.com/demirbase/ML_AMR_Prediction_v2"
+repository-code: "https://github.com/iumobg/KANIT"
 license: MIT
 version: "1.0.0"
 keywords:

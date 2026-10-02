@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""One-command thesis-ready results summary from the AMRK-DB knowledge base.
+"""One-command thesis-ready results summary from the KANIT knowledge base.
 
-Reads a populated ``amrk.db`` and renders a Markdown snapshot of everything the
+Reads a populated ``kanit.db`` and renders a Markdown snapshot of everything the
 thesis Results section needs — per-antibiotic model performance (lineage-CV +
 single-split AUC, MCC, tree count), CPSS-stable counts, confirmed CARD gene
 families, statistical validation (pyseer LMM), external concordance (M13
@@ -12,7 +12,7 @@ is reproducible and stays in sync with whatever is actually in the KB.
 
 Usage:
   python scripts/kb_report.py                       # -> stdout + results/{org}/kb/KB_REPORT_{org}.md
-  python scripts/kb_report.py --db path/to/amrk.db --organism ecoli
+  python scripts/kb_report.py --db path/to/kanit.db --organism ecoli
 """
 
 import argparse
@@ -34,7 +34,7 @@ def build_report(conn):
     m = Q.get_metadata(conn)
     s = Q.get_stats(conn)
     L = []
-    L.append("# AMRK-DB — results summary")
+    L.append("# KANIT — results summary")
     L.append("")
     L.append(f"- **schema** {m.get('kb_schema_version','?')} · **CARD** "
              f"{m.get('card_version','?')} · **license** {m.get('license','?')} · "
@@ -125,10 +125,10 @@ def build_report(conn):
 def main():
     ap = argparse.ArgumentParser(description="Thesis-ready KB results summary.")
     ap.add_argument("--organism", default="ecoli")
-    ap.add_argument("--db", default=None, help="KB path (default: results/{org}/kb/amrk.db)")
+    ap.add_argument("--db", default=None, help="KB path (default: results/{org}/kb/kanit.db)")
     args = ap.parse_args()
     db_path = Path(args.db) if args.db else (
-        PROJECT_ROOT / "results" / args.organism / "kb" / "amrk.db")
+        PROJECT_ROOT / "results" / args.organism / "kb" / "kanit.db")
     if not db_path.exists():
         sys.exit(f"KB not found: {db_path}")
     conn = Q.connect(db_path)

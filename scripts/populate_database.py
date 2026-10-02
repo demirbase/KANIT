@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Populate the AMRK-DB knowledge base from pipeline outputs (M8).
+"""Populate the KANIT knowledge base from pipeline outputs (M8).
 
 Reads the per-antibiotic artefacts produced by the pipeline and loads them into
 a single SQLite knowledge base (schema: scripts/lib/kb_schema.py). Idempotent —
@@ -177,7 +177,7 @@ def populate_run(conn, organism, antibiotic, run_meta, card_version, min_support
         config_hash = rm.get("config_hash")
         if config_hash is not None and not isinstance(config_hash, str):
             config_hash = json.dumps(config_hash, sort_keys=True)
-    # 0.7.1: versions of the tools the results actually depend on. `versions` comes
+    # Versions of the tools the results actually depend on. `versions` comes
     # from lib.run_metadata.collect_versions, captured inside amr.sif — so pyseer
     # is absent there (it lives in amr-tools.sif) and is passed in separately from
     # 14's own summary, the only place that saw the binary that ran.
@@ -445,7 +445,7 @@ def populate_permutation(conn, run_id, k, perm_df, labelperm):
     return n
 
 
-# --- Composite evidence tier (0.7.0) ---------------------------------------
+# --- Composite evidence tier ---------------------------------------
 # Two of the five statistical layers — CPSS stability + pyseer LMM — are the
 # lineage-aware, confounder-robust "novelty backbone" (literature E2/E3): a
 # unitig passing BOTH with no known CARD gene is a strong *novel* candidate
@@ -557,7 +557,7 @@ def update_metadata(conn, card_version):
 # Main
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
-# 0.5.0 reference/meta populators.
+# Reference/meta populators.
 # ---------------------------------------------------------------------------
 def populate_organisms(conn):
     """Populate the organism reference table from the registry (single source of
@@ -650,10 +650,10 @@ def _card_version_from_file(organism, antibiotic, config):
 
 def main():
     config = load_config()
-    ap = argparse.ArgumentParser(description="Populate the AMRK-DB knowledge base.")
+    ap = argparse.ArgumentParser(description="Populate the KANIT knowledge base.")
     ap.add_argument("--organism", default=get_target(config=config)[0])
     ap.add_argument("--antibiotic", default=get_target(config=config)[1])
-    ap.add_argument("--db", default=None, help="SQLite path (default: results/kb/amrk.db — "
+    ap.add_argument("--db", default=None, help="SQLite path (default: results/kb/kanit.db — "
                     "unified multi-organism KB; models.organism distinguishes rows)")
     args = ap.parse_args()
     organism, antibiotic = args.organism, args.antibiotic
@@ -703,11 +703,11 @@ def main():
     # Unified multi-organism KB (schema tags each model with organism). Per-organism
     # KBs are deprecated; pass --db to override. results_root above stays
     # organism/antibiotic-scoped because the per-run artefacts live there.
-    db_path = Path(args.db) if args.db else (PROJECT_ROOT / "results" / "kb" / "amrk.db")
+    db_path = Path(args.db) if args.db else (PROJECT_ROOT / "results" / "kb" / "kanit.db")
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     print("=" * 70)
-    print(f"POPULATE AMRK-DB  ({organism} / {antibiotic})  ->  {db_path}")
+    print(f"POPULATE KANIT  ({organism} / {antibiotic})  ->  {db_path}")
     print("=" * 70)
     print(f"  run_metadata : {'yes' if run_meta else 'MISSING'}")
     print(f"  manifest/06  : {'yes' if manifest else 'MISSING'} / {'yes' if metrics else 'MISSING'}")
@@ -727,7 +727,7 @@ def main():
     ensure_unique_indexes(conn)
     matrix_dir = resolve_path("matrix_dir", organism=organism, antibiotic=antibiotic, config=config)
     try:
-        populate_organisms(conn)                                  # 0.5.0 reference table
+        populate_organisms(conn)                                  # reference table
         run_id = populate_run(conn, organism, antibiotic, run_meta, card_version,
                               min_support,
                               pyseer_version=(pyseer_sum or {}).get("pyseer_version"))
@@ -738,13 +738,13 @@ def main():
         n_c = populate_cpss(conn, model_id, run_id, k_length, cpss)
         n_l = populate_pyseer(conn, run_id, pyseer_sig,
                               (pyseer_sum or {}).get("bonferroni_threshold"))
-        # 0.7.0: composite evidence tier (runs last — needs every other layer
+        # Composite evidence tier (runs last — needs every other layer
         # already written for this model, esp. pyseer/cpss/blast).
         n_et = populate_evidence_tier(conn, model_id, run_id, perm_df)
         n_novel = conn.execute(
             "SELECT COUNT(*) FROM unitig_evidence_tier WHERE model_id=? AND is_novel_candidate=1",
             (model_id,)).fetchone()[0]
-        # 0.5.0: model feature count + antibiotic meta + external concordance
+        # Model feature count + antibiotic meta + external concordance
         nf = _count_features(matrix_dir)
         conn.execute("UPDATE models SET n_features=? WHERE model_id=?", (nf, model_id))
         populate_antibiotics_meta(conn)                           # after the ab row exists

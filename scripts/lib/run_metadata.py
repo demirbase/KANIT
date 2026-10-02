@@ -113,9 +113,9 @@ def collect_versions(config=None):
         "graph_tool": _pkg_version("graph_tool"),          # changes PopPUNK's clustering
         "pyseer": _tool_version("pyseer"),                 # None from amr.sif; see docstring
     }
-    # The KB schema version comes from CODE, never from config. As a config key it
-    # rotted to 0.6.1 while the schema was 0.7.1, and this function copied that
-    # stale value into run_metadata.json — i.e. the KB misreported its own schema.
+    # The KB schema version comes from CODE, never from config: a config copy
+    # drifts, and this function would write the stale value into
+    # run_metadata.json, so the KB would misreport its own schema.
     try:
         from lib.kb_schema import KB_SCHEMA_VERSION
         versions["kb_schema_version"] = KB_SCHEMA_VERSION

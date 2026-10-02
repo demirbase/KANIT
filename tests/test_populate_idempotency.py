@@ -9,7 +9,7 @@ from lib.kb_schema import create_schema, ensure_unique_indexes
 
 
 def _kb(tmp_path):
-    c = sqlite3.connect(str(tmp_path / "amrk.db"))
+    c = sqlite3.connect(str(tmp_path / "kanit.db"))
     create_schema(c)
     c.executescript("""
         INSERT INTO pipeline_runs(run_id, organism, antibiotic) VALUES ('R1','ecoli','ampicillin');

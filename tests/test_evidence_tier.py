@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Composite evidence_tier (KB schema 0.7.0): the per-(unitig, model) grade that
+"""Composite evidence_tier: the per-(unitig, model) grade that
 folds the BLAST hit + the 5 statistical validation layers into one confidence
 level, and — the point of the feature — surfaces `strong_novel` biomarkers the
 BLAST-only tier hides as `none`. See populate_database.classify_evidence_tier."""
@@ -56,7 +56,7 @@ def test_layer_count_and_passed_names():
 
 # ---- integration: populate_evidence_tier over a small KB ------------------
 def _kb(tmp_path):
-    c = sqlite3.connect(str(tmp_path / "amrk.db"))
+    c = sqlite3.connect(str(tmp_path / "kanit.db"))
     create_schema(c)
     c.executescript("""
         INSERT INTO pipeline_runs(run_id, organism, antibiotic) VALUES ('R1','ecoli','ampicillin');

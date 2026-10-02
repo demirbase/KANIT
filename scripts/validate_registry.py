@@ -8,7 +8,7 @@ invariants the pipeline relies on, and — with --db — that the KB agrees with
 registry (the registry is the single source of truth; the KB is its derivative).
 
     python scripts/validate_registry.py
-    python scripts/validate_registry.py --db results/kb/amrk.db
+    python scripts/validate_registry.py --db results/kb/kanit.db
 
 Exit code 0 = all checks pass, 1 = one or more violations (suitable for CI).
 """

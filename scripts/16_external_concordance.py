@@ -426,7 +426,7 @@ def _r(x):
 
 
 def write_kb_evidence(db_path, summary, logger, organism):
-    """Persist the concordance result into amrk.db `validation_evidence` (M11):
+    """Persist the concordance result into kanit.db `validation_evidence` (M11):
     one row per (antibiotic, caller) vs phenotype + the model head-to-head, linked
     to that antibiotic's model run. Idempotent (clears prior concordance rows)."""
     import sqlite3
@@ -515,8 +515,8 @@ def main():
     ap.add_argument("--antibiotics", default=",".join(DEFAULT_ANTIBIOTICS),
                     help="comma-separated (default: ampicillin,cefotaxime,ciprofloxacin)")
     ap.add_argument("--write-kb", action="store_true",
-                    help="(post) also write concordance to amrk.db validation_evidence (M11)")
-    ap.add_argument("--db", default=None, help="KB path (default: results/{org}/kb/amrk.db)")
+                    help="(post) also write concordance to kanit.db validation_evidence (M11)")
+    ap.add_argument("--db", default=None, help="KB path (default: results/{org}/kb/kanit.db)")
     args = ap.parse_args()
     organism = args.organism
     antibiotics = [a.strip() for a in args.antibiotics.split(",") if a.strip()]
@@ -530,7 +530,7 @@ def main():
         summary = do_post(organism, antibiotics, out_dir, config, logger)
         if args.write_kb:
             db_path = Path(args.db) if args.db else (
-                PROJECT_ROOT / "results" / organism / "kb" / "amrk.db")
+                PROJECT_ROOT / "results" / organism / "kb" / "kanit.db")
             if db_path.exists():
                 write_kb_evidence(db_path, summary, logger, organism)
             else:

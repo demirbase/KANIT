@@ -28,7 +28,7 @@
   ],
   "related_identifiers": [
     {
-      "identifier": "https://github.com/demirbase/ML_AMR_Prediction_v2",
+      "identifier": "https://github.com/iumobg/KANIT",
       "relation": "isSupplementTo",
       "resource_type": "software",
       "scheme": "url"

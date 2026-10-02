@@ -12,7 +12,7 @@ from lib.kb_schema import create_schema
 
 @pytest.fixture
 def kb(tmp_path):
-    db = tmp_path / "amrk.db"
+    db = tmp_path / "kanit.db"
     c = sqlite3.connect(str(db))
     create_schema(c)
     c.executescript("""
@@ -29,7 +29,7 @@ def kb(tmp_path):
                    (NULL,'head_to_head_model','unitig model vs tools on held-out test (bACC=0.873, kappa=0.707, n=800)',0.707,'R1'),
                    (1,'pyseer_lmm','pyseer LMM',1e-9,'R1');
         INSERT INTO kb_metadata(id,kb_schema_version,card_version,license,n_unitigs,n_models)
-            VALUES (1,'0.4.0','4.0.1','CC-BY-4.0',2,2);
+            VALUES (1,'1.0.0','4.0.1','CC-BY-4.0',2,2);
     """)
     c.commit(); c.close()
     return db
@@ -44,8 +44,8 @@ def test_build_report_contents(mod, kb):
     c = Q.connect(kb)
     md = mod.build_report(c)
     c.close()
-    assert "# AMRK-DB — results summary" in md
-    assert "schema** 0.4.0" in md and "CC-BY-4.0" in md
+    assert "# KANIT — results summary" in md
+    assert "schema** 1.0.0" in md and "CC-BY-4.0" in md
     # per-antibiotic performance
     assert "0.951±0.011" in md and "TEM beta-lactamase" in md
     assert "ampicillin" in md and "cefotaxime" in md

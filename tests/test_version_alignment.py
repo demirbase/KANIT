@@ -2,11 +2,8 @@
 # -*- coding: utf-8 -*-
 """Guard: every declared version must match lib.kb_schema.KB_SCHEMA_VERSION.
 
-Five files carry the project version and they drift — repeatedly. kb_api once
-reported 0.4.0 while the schema was 0.6.1; .zenodo.json claimed schema 0.4.0
-three versions late, and .zenodo.json is the text Zenodo mints a permanent DOI
-over. config.yaml even carried a comment saying it was "aligned to the KB schema"
-while being one minor version behind it.
+Five files carry the project version, and copies drift. .zenodo.json matters
+most: it is the text Zenodo mints a permanent DOI over.
 
 kb_api imports the constant so it cannot drift. Static files (.zenodo.json,
 CITATION.cff, pyproject.toml, config.yaml) cannot import anything, so this test
@@ -48,9 +45,8 @@ def test_all_declared_versions_match_the_schema():
 def test_no_stale_schema_version_in_public_prose():
     """Version fields are not the only place a version hides.
 
-    .zenodo.json's `description` and `notes` state the schema in running text —
-    the field said 0.7.1 while the prose still said "amrk.db, schema 0.7.0", and
-    the prose is what a human reads off the DOI landing page. Catch any
+    .zenodo.json's `description` and `notes` can state the schema in running
+    text, and the prose is what a human reads off the DOI landing page. Catch any
     schema-like number in that prose that is not the current one.
     """
     z = json.loads((PROJECT_ROOT / ".zenodo.json").read_text())
@@ -65,9 +61,8 @@ def test_no_stale_schema_version_in_public_prose():
 def test_kb_schema_version_is_not_duplicated_in_config():
     """config.yaml must not carry its own copy of the schema version.
 
-    It did, and it rotted to 0.6.1 while the code was at 0.7.1 — and
-    run_metadata.collect_versions copied that stale value into the KB, so the KB
-    misreported its own schema. The constant in lib/kb_schema is the one source.
+    A copy there drifts, and run_metadata.collect_versions would copy the stale
+    value into the KB. The constant in lib/kb_schema is the one source.
     """
     cfg = yaml.safe_load((PROJECT_ROOT / "config" / "config.yaml").read_text())
     prov = cfg.get("provenance", {}) or {}

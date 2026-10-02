@@ -13,7 +13,7 @@ from lib.kb_schema import create_schema
 
 @pytest.fixture
 def kb(tmp_path):
-    db = tmp_path / "amrk.db"
+    db = tmp_path / "kanit.db"
     c = sqlite3.connect(str(db))
     create_schema(c)
     c.executescript("""
@@ -35,7 +35,7 @@ def kb(tmp_path):
         INSERT INTO validation_evidence(unitig_id,evidence_type,evidence_source,evidence_score,pipeline_run_id)
             VALUES (1,'blast','CARD 4.0.1',1e-40,'R1');
         INSERT INTO kb_metadata(id,kb_schema_version,card_version,zenodo_doi,license,n_unitigs,n_models)
-            VALUES (1,'0.4.0','4.0.1',NULL,'CC-BY-4.0',2,2);
+            VALUES (1,'1.0.0','4.0.1',NULL,'CC-BY-4.0',2,2);
     """)
     c.commit(); c.close()
     return db
@@ -44,7 +44,7 @@ def kb(tmp_path):
 def test_metadata(kb):
     c = Q.connect(kb)
     m = Q.get_metadata(c)
-    assert m["kb_schema_version"] == "0.4.0"
+    assert m["kb_schema_version"] == "1.0.0"
     assert m["license"] == "CC-BY-4.0"
     assert m["antibiotics"] == ["ampicillin", "cefotaxime"]
     c.close()
@@ -105,7 +105,7 @@ def test_fastapi_smoke(kb, load_script):
     api.DB_PATH = kb
     client = TestClient(api._create_app())
     assert client.get("/api/v1/stats").json()["n_unitigs"] == 2
-    assert client.get("/api/v1/metadata").json()["kb_schema_version"] == "0.4.0"
+    assert client.get("/api/v1/metadata").json()["kb_schema_version"] == "1.0.0"
     r = client.get("/api/v1/unitigs", params={"antibiotic": "ampicillin", "stable_only": True})
     assert r.json()["count"] == 1
     assert client.get("/api/v1/unitigs/AAA").json()["blast"][0]["gene_symbol"] == "blaTEM-1"

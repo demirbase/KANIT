@@ -137,7 +137,7 @@ def test_write_kb_evidence(mod, tmp_path):
     from lib.kb_schema import create_schema
     from lib import concordance as C
     from lib.logging_utils import get_logger
-    db = tmp_path / "amrk.db"
+    db = tmp_path / "kanit.db"
     conn = sqlite3.connect(str(db))
     create_schema(conn)
     conn.execute("INSERT INTO pipeline_runs(run_id, organism, antibiotic) VALUES ('R1','ecoli','ampicillin')")
@@ -211,7 +211,7 @@ def test_write_kb_evidence_is_organism_scoped(mod, tmp_path):
     from lib.kb_schema import create_schema
     from lib import concordance as C
     from lib.logging_utils import get_logger
-    db = tmp_path / "amrk.db"
+    db = tmp_path / "kanit.db"
     conn = sqlite3.connect(str(db))
     create_schema(conn)
     conn.execute("INSERT INTO antibiotics(antibiotic) VALUES ('ampicillin')")

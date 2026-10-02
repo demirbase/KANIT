@@ -32,7 +32,7 @@ prescription is followed here:
      (Mann-Whitney U), because that is the claim, not any single pair's p-value.
 
 Usage:
-    python scripts/17_h3_gene_family_overlap.py --db results/kb/amrk.db \
+    python scripts/17_h3_gene_family_overlap.py --db results/kb/kanit.db \
         --tables results/tables --figures results/figures [--permutations 1000]
 
 Outputs:
@@ -141,7 +141,7 @@ def benjamini_yekutieli(pvals):
 
 def main():
     ap = argparse.ArgumentParser(description="H3 gene-family overlap test (E2 framework).")
-    ap.add_argument("--db", default="results/kb/amrk.db")
+    ap.add_argument("--db", default="results/kb/kanit.db")
     ap.add_argument("--tables", default="results/tables")
     ap.add_argument("--figures", default="results/figures")
     ap.add_argument("--permutations", type=int, default=1000)

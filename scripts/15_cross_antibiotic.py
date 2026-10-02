@@ -3,7 +3,7 @@
 """Cross-antibiotic stable-unitig overlap (Should-have S1; ROADMAP §1.6 / H3).
 
 Runs *after* populate_database.py — it operates directly on the populated KB
-(``results/{org}/kb/amrk.db``), which already holds every antibiotic's stable
+(``results/{org}/kb/kanit.db``), which already holds every antibiotic's stable
 unitig set in ``unitig_model_scores`` (``stable = 1``). For every pair of
 antibiotics it computes the overlap of the stable sets, records each shared
 unitig in ``unitig_antibiotic_overlap`` (the schema's S1/H3 substrate), and
@@ -243,14 +243,14 @@ def main():
     config = load_config()
     ap = argparse.ArgumentParser(description="Cross-antibiotic stable-unitig overlap (S1/H3).")
     ap.add_argument("--organism", default=config.get("project", {}).get("organism", "ecoli"))
-    ap.add_argument("--db", default=None, help="SQLite path (default: results/kb/amrk.db — unified KB)")
+    ap.add_argument("--db", default=None, help="SQLite path (default: results/kb/kanit.db — unified KB)")
     ap.add_argument("--with-test", action="store_true",
                     help="Also compute the (preliminary) hypergeometric p per pair. "
                          "DEFERRED by default — see module docstring / ROADMAP §1.6.")
     args = ap.parse_args()
     organism = args.organism
 
-    db_path = Path(args.db) if args.db else (PROJECT_ROOT / "results" / "kb" / "amrk.db")
+    db_path = Path(args.db) if args.db else (PROJECT_ROOT / "results" / "kb" / "kanit.db")
     out_dir = PROJECT_ROOT / "results" / organism / "kb"
     logger = get_logger("s1-cross-antibiotic")
 

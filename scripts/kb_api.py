@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""AMRK-DB REST API (Should-have S8/S9; ROADMAP §1.8).
+"""KANIT REST API (Should-have S8/S9; ROADMAP §1.8).
 
 A minimal, read-only FastAPI over the SQLite knowledge base — enough for the
 publication "the KB is queryable via an open API" criterion (Database Oxford /
@@ -13,12 +13,12 @@ Endpoints (ROADMAP §1.8):
     GET /api/v1/stats                        aggregate counts
     GET /api/v1/unitigs?antibiotic=&tier=&evidence_tier=&novel_only=&min_stability=&stable_only=&limit=&offset=
     GET /api/v1/unitigs/{sequence}             one unitig's full evidence chain
-    GET /api/v1/novel?antibiotic=&organism=  strong_novel biomarkers (0.7.0) — no known gene, CPSS+pyseer
+    GET /api/v1/novel?antibiotic=&organism=  strong_novel biomarkers — no known gene, CPSS+pyseer
     GET /api/v1/overlap?ab1=&ab2=            cross-antibiotic shared stable unitigs
 
 Run:
     pip install fastapi uvicorn
-    AMR_KB_DB=results/kb/amrk.db uvicorn scripts.kb_api:app --reload
+    AMR_KB_DB=results/kb/kanit.db uvicorn scripts.kb_api:app --reload
     # or: python scripts/kb_api.py   (serves on :8000)
 """
 
@@ -32,7 +32,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from lib import kb_queries as Q  # noqa: E402
 from lib.kb_schema import KB_SCHEMA_VERSION  # noqa: E402
 
-DB_PATH = Path(os.environ.get("AMR_KB_DB", PROJECT_ROOT / "results" / "kb" / "amrk.db"))
+DB_PATH = Path(os.environ.get("AMR_KB_DB", PROJECT_ROOT / "results" / "kb" / "kanit.db"))
 
 
 def _create_app():
@@ -40,7 +40,7 @@ def _create_app():
     from fastapi.middleware.cors import CORSMiddleware
 
     app = FastAPI(
-        title="AMRK-DB API",
+        title="KANIT API",
         version=KB_SCHEMA_VERSION,   # single source of truth — never hardcode a copy
         description="Read-only API over the stability-filtered, lineage-validated, "
                     "unitig-resolution AMR biomarker knowledge base for ESKAPEE pathogens.",
@@ -87,7 +87,7 @@ def _create_app():
     @app.get("/api/v1/novel")
     def novel(antibiotic: str | None = None, organism: str | None = None,
               limit: int = Query(200, le=2000), offset: int = 0):
-        """strong_novel biomarkers (0.7.0): CPSS-stable + pyseer-significant with
+        """strong_novel biomarkers: CPSS-stable + pyseer-significant with
         no known CARD gene — the candidates the BLAST-only tier hides as `none`."""
         c = _conn()
         try:
@@ -118,7 +118,7 @@ def _create_app():
 
     @app.get("/")
     def root():
-        return {"name": "AMRK-DB API", "version": KB_SCHEMA_VERSION, "docs": "/docs",
+        return {"name": "KANIT API", "version": KB_SCHEMA_VERSION, "docs": "/docs",
                 "endpoints": ["/api/v1/metadata", "/api/v1/stats", "/api/v1/unitigs",
                               "/api/v1/unitigs/{sequence}", "/api/v1/novel",
                               "/api/v1/overlap?ab1=&ab2="]}

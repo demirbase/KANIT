@@ -1,12 +1,12 @@
 # Contributing
 
-Thanks for your interest in contributing to **ML_AMR_Prediction_v2**.
+Thanks for your interest in contributing to **KANIT**.
 
 ## Development setup
 
 ```bash
-git clone https://github.com/demirbase/ML_AMR_Prediction_v2.git
-cd ML_AMR_Prediction_v2
+git clone https://github.com/iumobg/KANIT.git
+cd KANIT
 conda env create -f environment.yml && conda activate amr-prediction   # or: pip install -e ".[dev]"
 pre-commit install
 ```

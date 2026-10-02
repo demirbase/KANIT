@@ -1,5 +1,5 @@
 # ============================================================================
-# Makefile — ML_AMR_Prediction_v2 developer & pipeline shortcuts
+# Makefile — KANIT developer & pipeline shortcuts
 # ============================================================================
 # `make help` lists targets. PYTHON can be overridden, e.g.:
 #     make test PYTHON=/opt/anaconda3/envs/bitirme_vol2/bin/python
@@ -13,8 +13,8 @@ AB     ?= ampicillin
         pipeline data train biology tables clean-pyc
 
 # Artefact paths. Override on the command line if the KB lives elsewhere,
-# e.g. `make tables KB=$$AMR_WORK/results/kb/amrk.db`.
-KB      ?= results/kb/amrk.db
+# e.g. `make tables KB=$$AMR_WORK/results/kb/kanit.db`.
+KB      ?= results/kb/kanit.db
 RESULTS ?= results
 TABLES  ?= results/tables
 FIGURES ?= results/figures

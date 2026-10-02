@@ -232,7 +232,7 @@ def test_validate_registry_rejects_an_unknown_status(monkeypatch):
     assert any("in_progres" in e for e in errors), errors
 
 
-# ---- tool-version provenance (schema 0.7.1) --------------------------------
+# ---- tool-version provenance --------------------------------
 # The KB records the tools the results depend on: unitig-caller (builds the
 # features) and PopPUNK (defines the CV groups). graph_tool is tracked
 # because pinning PopPUNK does NOT pin its behaviour: on 2026-07-15 a rebuild held

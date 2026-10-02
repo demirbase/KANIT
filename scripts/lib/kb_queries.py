@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Read-only query layer over the AMRK-DB knowledge base (S8/S9 API backend).
+"""Read-only query layer over the KANIT knowledge base (S8/S9 API backend).
 
 Pure ``sqlite3`` functions returning plain dicts/lists — no web framework, so
 they are unit-testable without FastAPI. ``kb_api.py`` is a thin FastAPI wrapper
@@ -24,9 +24,9 @@ def _rows(conn, sql, params=()):
 
 
 def _table_exists(conn, name):
-    """Guard for pre-0.7.0 KBs that lack unitig_evidence_tier — keep the API
-    working (evidence_tier fields just come back NULL) until a re-populate adds
-    the table, instead of failing with 'no such table'."""
+    """Guard for a KB without unitig_evidence_tier — keep the API working
+    (evidence_tier fields just come back NULL) instead of failing with 'no such
+    table'."""
     return conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
     ).fetchone() is not None
@@ -66,7 +66,7 @@ def list_biomarkers(conn, antibiotic=None, min_stability=None, tier=None,
                     stable_only=False, evidence_tier=None, novel_only=False,
                     limit=200, offset=0):
     """Filterable biomarker list (unitig × model), with best BLAST gene/tier AND
-    the composite evidence_tier (0.7.0).
+    the composite evidence_tier.
 
     Joins the per-(unitig,model) scores to the model's antibiotic, the unitig's
     best confirmed/candidate BLAST hit, and its composite evidence tier. Filters
@@ -74,7 +74,7 @@ def list_biomarkers(conn, antibiotic=None, min_stability=None, tier=None,
     is the composite grade; ``novel_only`` keeps only strong_novel candidates."""
     has_et = _table_exists(conn, "unitig_evidence_tier")
     if (evidence_tier or novel_only) and not has_et:
-        return []   # pre-0.7.0 KB: no composite tier to filter on
+        return []   # no composite tier to filter on
     where, params = ["1=1"], []
     if antibiotic:
         where.append("m.antibiotic = ?"); params.append(antibiotic)
@@ -121,11 +121,11 @@ def list_biomarkers(conn, antibiotic=None, min_stability=None, tier=None,
 
 
 def list_novel_candidates(conn, antibiotic=None, organism=None, limit=200, offset=0):
-    """The flagship 0.7.0 query: `strong_novel` biomarkers — CPSS-stable +
+    """The flagship query: `strong_novel` biomarkers — CPSS-stable +
     pyseer-significant unitigs with NO known CARD gene, which the BLAST-only tier
     hides as `none`. Returns unitig × model rows ordered by evidence breadth."""
     if not _table_exists(conn, "unitig_evidence_tier"):
-        return []   # pre-0.7.0 KB
+        return []   # no composite tier
     where, params = ["et.is_novel_candidate = 1"], []
     if antibiotic:
         where.append("m.antibiotic = ?"); params.append(antibiotic)
@@ -187,7 +187,7 @@ def get_unitig(conn, sequence):
 def get_overlap(conn, ab1, ab2, organism=None):
     """Cross-antibiotic shared stable unitigs for a pair (order-independent).
 
-    The overlap table is organism-aware (schema 0.6.0): pass ``organism`` to keep
+    The overlap table is organism-aware: pass ``organism`` to keep
     a same-drug pair from being merged across species; None returns all organisms.
     """
     org_clause = " AND o.organism = ?" if organism else ""

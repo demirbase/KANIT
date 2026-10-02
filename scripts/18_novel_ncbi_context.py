@@ -57,7 +57,7 @@ Output
 
 Usage (TRUBA, login node is fine — stdlib only, no pandas)
     python3 scripts/18_novel_ncbi_context.py \
-        --kb $AMR_WORK/results/kb/amrk.db \
+        --kb $AMR_WORK/results/kb/kanit.db \
         --results-root $AMR_WORK/results \
         --out $AMR_WORK/results/tables
 """
@@ -165,7 +165,7 @@ def hits_for(tsv_path, wanted_qseqids):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--kb", required=True, help="path to amrk.db")
+    ap.add_argument("--kb", required=True, help="path to kanit.db")
     ap.add_argument("--results-root", required=True,
                     help="results/ root holding {organism}/{antibiotic}/05_explainability")
     ap.add_argument("--out", required=True, help="directory for the two CSVs")

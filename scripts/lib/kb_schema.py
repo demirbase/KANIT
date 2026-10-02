@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""AMRK-DB knowledge-base schema (SQLite, stdlib only).
+"""KANIT knowledge-base schema (SQLite, stdlib only).
 
 The schema follows docs/ROADMAP.md §1.1. It is intentionally plain SQL via the
 stdlib ``sqlite3`` module (no SQLAlchemy/ORM) so populating the KB needs no extra
@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS variant_snp_check (
 -- Cross-antibiotic stable-unitig overlap (step S1 / H3). --------------------
 CREATE TABLE IF NOT EXISTS unitig_antibiotic_overlap (
     unitig_id       INTEGER NOT NULL REFERENCES unitigs(unitig_id),
-    organism        TEXT NOT NULL,           -- 0.6.0: keep overlaps per-organism
+    organism        TEXT NOT NULL,           -- keep overlaps per-organism
     antibiotic_a    TEXT NOT NULL,
     antibiotic_b    TEXT NOT NULL,
     same_class      INTEGER,                 -- 0/1 within-class pair?
@@ -181,7 +181,7 @@ CREATE TABLE IF NOT EXISTS validation_evidence (
     pipeline_run_id  TEXT REFERENCES pipeline_runs(run_id)
 );
 
--- Composite evidence tier (0.7.0) — one grade per (unitig, model) folding the
+-- Composite evidence tier — one grade per (unitig, model) folding the
 -- BLAST hit + the 5 statistical validation layers into a single confidence
 -- level (see populate_database.classify_evidence_tier). This is ADDITIVE to and
 -- independent of blast_annotations.tier (the BLAST-only layer-1 grade, kept for
@@ -212,7 +212,7 @@ CREATE TABLE IF NOT EXISTS kb_metadata (
 );
 
 -- Organism reference (gram stain / phylum) for cross-phylum generalisation. --
--- Added 0.5.0. pipeline_runs.organism is the slug that keys here.
+-- pipeline_runs.organism is the slug that keys here.
 CREATE TABLE IF NOT EXISTS organisms (
     organism      TEXT PRIMARY KEY,       -- slug: ecoli, kpneumoniae, saureus
     display_name  TEXT,
@@ -224,7 +224,7 @@ CREATE TABLE IF NOT EXISTS organisms (
 -- External-validation concordance (M13): the model AND reference genotype tools
 -- (AMRFinderPlus, ResFinder) scored vs EUCAST/CLSI phenotype on the model's
 -- held-out TEST genomes (leakage-free). FDA ME/VME + Cohen's kappa + bACC.
--- Added 0.5.0; feeds the 'external validation' reviewer question directly.
+-- Feeds the 'external validation' reviewer question directly.
 CREATE TABLE IF NOT EXISTS external_concordance (
     model_id              INTEGER NOT NULL REFERENCES models(model_id),
     caller                TEXT NOT NULL,  -- 'model' | 'AMRFinderPlus' | 'ResFinder'

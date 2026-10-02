@@ -106,10 +106,10 @@ class Report:
 
 
 def verify_kb(root, rep):
-    db = root / "kb" / "amrk.db"
+    db = root / "kb" / "kanit.db"
     print("\nKB")
     if not db.exists():
-        rep.check(False, "amrk.db present", str(db))
+        rep.check(False, "kanit.db present", str(db))
         return
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
