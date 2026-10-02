@@ -30,7 +30,7 @@ import xgboost as xgb
 from scipy.sparse.csgraph import connected_components
 from scipy.stats import false_discovery_control, rankdata
 
-from lib import folds
+from lib import folds, train
 
 _TOL = 1e-12        # float slack when comparing AUCs and thresholds
 
@@ -42,14 +42,6 @@ def auc_rows(scores, y) -> np.ndarray:
     n_neg = y.size - n_pos
     ranks = rankdata(np.atleast_2d(scores), axis=1)
     return (ranks[:, y].sum(axis=1) - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg)
-
-
-def used_patterns(booster: xgb.Booster) -> np.ndarray:
-    """Pattern ids (feature indices) the booster splits on."""
-    names = booster.get_score(importance_type="weight")
-    if any(not (k.startswith("f") and k[1:].isdigit()) for k in names):
-        raise ValueError("the booster's features must be unnamed (f0, f1, ...)")
-    return np.array(sorted(int(k[1:]) for k in names), dtype=np.int64)
 
 
 @dataclass
@@ -75,18 +67,12 @@ class FoldModel:
 def fold_model(mm, unit: Path, rows: np.ndarray, p: np.ndarray, repeat: int,
                fold: int) -> FoldModel:
     booster = xgb.Booster(model_file=str(unit / "model.ubj"))
-    # one thread: XGBoost sets up a buffer as wide as the model per thread and row
-    # block, so with millions of patterns more threads make each prediction slower
-    booster.set_param({"nthread": 1})
+    booster.set_param({"nthread": 1})          # the fastest for wide models (train.predict_sparse)
     if booster.num_features() != mm.n_patterns:
         raise ValueError(f"{unit}: the model has {booster.num_features()} features, "
                          f"the model matrix {mm.n_patterns} patterns")
-    used = used_patterns(booster)
-    vals = mm.columns(used)[rows].astype(np.float32)
-    n, k = vals.shape
-    csr = sp.csr_matrix((vals.ravel(), np.tile(used.astype(np.int32), n),
-                         np.arange(n + 1, dtype=np.int64) * k), shape=(n, mm.n_patterns))
-    fm = FoldModel(repeat, fold, rows, p, booster, used, csr)
+    used = train.used_patterns(booster)
+    fm = FoldModel(repeat, fold, rows, p, booster, used, train.sparse_rows(mm, rows, used))
     if not np.allclose(fm.predict(), p, rtol=0, atol=1e-6):
         raise ValueError(f"{unit}: the stored model does not reproduce oof.csv")
     return fm

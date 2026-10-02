@@ -23,6 +23,7 @@ import math
 import numpy as np
 import optuna
 import pandas as pd
+import scipy.sparse as sp
 import xgboost as xgb
 
 from lib import folds
@@ -198,6 +199,34 @@ def predict(booster: xgb.Booster, mm, rows, batch_rows: int = 512) -> np.ndarray
     rows = np.asarray(rows, dtype=np.int64)
     out = [booster.inplace_predict(block) for block in mm.row_batches(rows, batch_rows)]
     return np.concatenate(out) if out else np.empty(0)
+
+
+def used_patterns(booster: xgb.Booster) -> np.ndarray:
+    """Pattern ids (feature indices) the booster splits on."""
+    names = booster.get_score(importance_type="weight")
+    if any(not (k.startswith("f") and k[1:].isdigit()) for k in names):
+        raise ValueError("the booster's features must be unnamed (f0, f1, ...)")
+    return np.array(sorted(int(k[1:]) for k in names), dtype=np.int64)
+
+
+def sparse_rows(mm, rows, used) -> sp.csr_matrix:
+    """Model-matrix rows as a sparse matrix that stores the ``used`` patterns, zeros
+    included. XGBoost treats an absent entry as missing, but a pattern the model
+    never splits on is never read, so the predictions equal those of the dense rows."""
+    rows, used = np.asarray(rows, dtype=np.int64), np.asarray(used, dtype=np.int64)
+    vals = mm.columns(used)[rows].astype(np.float32)
+    n, k = vals.shape
+    return sp.csr_matrix((vals.ravel(), np.tile(used.astype(np.int32), n),
+                          np.arange(n + 1, dtype=np.int64) * k), shape=(n, mm.n_patterns))
+
+
+def predict_sparse(booster: xgb.Booster, mm, rows) -> np.ndarray:
+    """``predict`` through ``sparse_rows``, single-threaded: XGBoost sets up a buffer
+    as wide as the model for every thread, so with millions of patterns one thread
+    is the fastest. Changes the booster's thread count."""
+    booster.set_param({"nthread": 1})
+    return np.asarray(booster.inplace_predict(sparse_rows(mm, rows, used_patterns(booster))),
+                      dtype=float)
 
 
 def train(mm, rows, y, groups, arm: str, seed: int, cfg: dict, threads: int) -> dict:

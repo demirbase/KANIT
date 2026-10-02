@@ -31,6 +31,7 @@ PIPELINE_SCRIPTS = [
     "10_prevalence.py",
     "11_variant_snp_check.py",
     "12_mda.py",
+    "12b_label_permutation.py",
     "14b_grading.py",
 ]
 

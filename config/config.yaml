@@ -68,6 +68,9 @@ paths_organism:
   # Statistical layers (<layer>.csv: pattern_id, passes) and the grades (14b_grading.py).
   layers_dir:           "results/{organism}/{antibiotic}/layers"
   grades_dir:           "results/{organism}/{antibiotic}/grades"
+  # Label permutation test of one pair (12b) and the results across models.
+  label_permutation_dir: "results/{organism}/{antibiotic}/label_permutation"
+  cross_model_dir:      "results/cross_model"
   models_dir:           "models/{organism}/{antibiotic}"
   logs_dir:             "logs/{organism}/{antibiotic}"
   dir_01_data_exploration:   "results/{organism}/{antibiotic}/01_data_exploration"
@@ -272,6 +275,13 @@ mda:                        # 12_mda.py, lib/mda.py
   seed: 0                   # the draws of every test fold are seeded by (seed, repeat, fold)
   alpha: 0.05               # BH q over the model's candidates
   cluster_r: 0.9            # sensitivity analysis: |r| that links candidates into one group
+
+# Label permutation test of every model (12b_label_permutation.py; protocol §8.6)
+label_permutation:
+  n_permutations: 100       # R; smallest attainable p = 1/(R + 1)
+  seed: 0                   # permutation b is seeded by (seed, b)
+  chunk: 10                 # permutations of one fold per task
+  alpha: 0.05               # BH q across models; q >= alpha flags permutation_not_significant
 
 # ----------------------------------------------------------------------------
 # GRADING RULE (14b_grading.py, lib/grading.py; protocol §9)
