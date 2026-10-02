@@ -100,6 +100,6 @@ def test_runner_end_to_end(model, load_script):
     for arm in folds.ARMS:
         assert m["arms"][arm]["roc_auc"] > 0.8               # the planted signal is found
     assert "lineage_blind_minus_lineage_aware" in m["bootstrap"]
-    rec = json.loads((out / "units" / r.unit_name(*units[0]) / "record.json").read_text())
+    rec = json.loads((out / "units" / folds.unit_name(*units[0]) / "record.json").read_text())
     assert rec["n_trees"] >= 1 and rec["n_trials_complete"] + rec["n_trials_pruned"] == 3
     assert (out / "final" / "model.ubj").exists()

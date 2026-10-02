@@ -262,6 +262,18 @@ card:
   min_overlap: 0.5          # share of the unitig that must overlap an RGI hit
 
 # ----------------------------------------------------------------------------
+# STATISTICAL LAYERS (protocol §8.2–8.3); each writes layers_dir/<layer>.csv
+# ----------------------------------------------------------------------------
+prevalence:                 # 10_prevalence.py, lib/prevalence.py
+  min_delta: 0.10           # |prev(R) - prev(S)|
+  alpha: 0.05               # BH-adjusted Fisher exact q over the model's candidates
+mda:                        # 12_mda.py, lib/mda.py
+  n_permutations: 2000      # R; p = (1 + #{permuted AUC >= observed AUC}) / (R + 1)
+  seed: 0                   # the draws of every test fold are seeded by (seed, repeat, fold)
+  alpha: 0.05               # BH q over the model's candidates
+  cluster_r: 0.9            # sensitivity analysis: |r| that links candidates into one group
+
+# ----------------------------------------------------------------------------
 # GRADING RULE (14b_grading.py, lib/grading.py; protocol §9)
 # ----------------------------------------------------------------------------
 grading:

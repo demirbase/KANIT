@@ -16,6 +16,12 @@ import pandas as pd
 
 LINEAGE_AWARE, LINEAGE_BLIND = "lineage_aware", "lineage_blind"
 ARMS = (LINEAGE_AWARE, LINEAGE_BLIND)
+NOT_EVALUABLE = 3       # exit status of a step skipped because the model is not evaluable
+
+
+def unit_name(arm: str, repeat: int, fold: int) -> str:
+    """Directory name of one outer fold's model under <cv_dir>/units/."""
+    return f"{arm}_r{repeat}_f{fold}"
 
 
 @dataclass

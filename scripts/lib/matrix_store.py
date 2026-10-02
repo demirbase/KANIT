@@ -287,6 +287,16 @@ class ModelMatrix:
                          shape=tuple(self.summary["patterns_shape"]))
         return np.unpackbits(np.asarray(pmap[pattern_id]))[:self.n_genomes]
 
+    def columns(self, pattern_ids) -> np.ndarray:
+        """Dense uint8 0/1 block (n_genomes × len(pattern_ids)) of the given patterns."""
+        ids = np.asarray(pattern_ids, dtype=np.int64)
+        if ids.size and (ids.min() < 0 or ids.max() >= self.n_patterns):
+            raise IndexError(f"pattern ids must lie in [0, {self.n_patterns})")
+        pmap = np.memmap(self.dir / "patterns.bin", dtype=np.uint8, mode="r",
+                         shape=tuple(self.summary["patterns_shape"]))
+        bits = np.unpackbits(np.asarray(pmap[ids]), axis=1)[:, :self.n_genomes]
+        return np.ascontiguousarray(bits.T)
+
     def members(self) -> pd.DataFrame:
         """Store unitig index and pattern id of every kept unitig."""
         m = np.load(self.dir / "members.npy")

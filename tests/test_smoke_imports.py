@@ -28,8 +28,9 @@ PIPELINE_SCRIPTS = [
     "08_blast_annotation.py",
     "09_card_layer.py",
     "09_biological_summary.py",
-    "10_unitig_background_frequency.py",
+    "10_prevalence.py",
     "11_variant_snp_check.py",
+    "12_mda.py",
     "14b_grading.py",
 ]
 

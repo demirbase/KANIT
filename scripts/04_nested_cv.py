@@ -40,8 +40,6 @@ from lib.config import get_target, load_config, resolve_path  # noqa: E402
 from lib.matrix_store import ModelMatrix  # noqa: E402
 from lib.run_metadata import peak_rss_gb  # noqa: E402
 
-NOT_EVALUABLE = 3
-
 
 def _now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -49,10 +47,6 @@ def _now():
 
 def _write_json(path, payload):
     Path(path).write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
-
-
-def unit_name(arm, repeat, fold):
-    return f"{arm}_r{repeat}_f{fold}"
 
 
 def _data(mm):
@@ -97,7 +91,7 @@ def _design(out_dir):
     if not design["evaluable"]:
         print("Model not evaluable: a lineage-aware repeat has no seed meeting the "
               "class-balance rule (see seeds.csv).")
-        sys.exit(NOT_EVALUABLE)
+        sys.exit(folds.NOT_EVALUABLE)
     return design
 
 
@@ -136,7 +130,7 @@ def run_unit(mm, out_dir, arm, repeat, fold, hpo, threads):
     result = train.train(mm, tr, y, groups, arm, seed, hpo, threads)
     p = train.predict(result["booster"], mm, te)
     oof = pd.DataFrame({"genome_id": ids[te], "y": y[te], "p": p})
-    _save(result, out_dir / "units" / unit_name(arm, repeat, fold),
+    _save(result, out_dir / "units" / folds.unit_name(arm, repeat, fold),
           {"repeat": repeat, "fold": fold, "n_test": int(len(te)), "finished_at": _now(),
            "seconds": round(time.time() - t0, 1), "peak_rss_gb": round(peak_rss_gb(), 2),
            "tables": {"oof.csv": oof}})
@@ -158,13 +152,13 @@ def run_metrics(mm, out_dir, cv):
     seeds = pd.read_csv(out_dir / "seeds.csv")
     expected = [(s.arm, int(s.repeat), k) for s in seeds.itertuples() if s.evaluable
                 for k in range(cv["n_folds"])]
-    missing = [unit_name(*u) for u in expected
-               if not (out_dir / "units" / unit_name(*u) / "record.json").exists()]
+    missing = [folds.unit_name(*u) for u in expected
+               if not (out_dir / "units" / folds.unit_name(*u) / "record.json").exists()]
     if missing:
         sys.exit(f"ERROR: {len(missing)} outer fold(s) not finished: {', '.join(missing[:10])}")
     parts = []
     for arm, repeat, fold in expected:
-        d = pd.read_csv(out_dir / "units" / unit_name(arm, repeat, fold) / "oof.csv",
+        d = pd.read_csv(out_dir / "units" / folds.unit_name(arm, repeat, fold) / "oof.csv",
                         dtype={"genome_id": str})
         parts.append(d.assign(arm=arm, repeat=repeat, fold=fold))
     oof = pd.concat(parts, ignore_index=True)[["arm", "repeat", "fold", "genome_id", "y", "p"]]
@@ -229,7 +223,7 @@ def main():
             if s.evaluable:
                 for k in range(cv["n_folds"]):
                     run_unit(mm, out_dir, s.arm, int(s.repeat), k, hpo, args.threads)
-                    print(f"  ✓ {unit_name(s.arm, int(s.repeat), k)}")
+                    print(f"  ✓ {folds.unit_name(s.arm, int(s.repeat), k)}")
     if args.command in ("final", "all"):
         run_final(mm, out_dir, hpo, args.threads)
         print("  ✓ final model")
