@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for lib/concordance.py (M13 external-validation metrics)."""
 
 import pytest
-
 from lib import concordance as C
 
 

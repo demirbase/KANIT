@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 H3 — cross-antibiotic biomarker overlap, tested the way E2 says it must be.
 
@@ -47,6 +46,7 @@ import sys
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
@@ -298,7 +298,7 @@ def main():
         a2.set_yticks(y)
         a2.set_yticklabels([f"{_short(r.ab1)}–{_short(r.ab2)} ({_abbr(r.organism)})"
                             for r in top.itertuples()], fontsize=7)
-        for yi, r in zip(y, top.itertuples()):
+        for yi, r in zip(y, top.itertuples(), strict=True):
             a2.text(r.n_shared + 0.06, yi, f"OC {r.overlap_coefficient:.2f} · FE {r.fold_enrichment:g}",
                     va="center", fontsize=6.5, color="#555")
         a2.invert_yaxis()

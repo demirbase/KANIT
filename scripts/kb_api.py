@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """KANIT REST API (Should-have S8/S9; ROADMAP §1.8).
 
 A minimal, read-only FastAPI over the SQLite knowledge base — enough for the

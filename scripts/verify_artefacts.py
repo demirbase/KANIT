@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Verify a delivered artefact tree: KB + tidy tables + thesis figures.
 
 Answers one question — *is this tree the thing we think it is?* — for whichever

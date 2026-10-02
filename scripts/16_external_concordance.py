@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """External-validation concordance: AMRFinderPlus + ResFinder vs phenotype (M13).
 
 Head-to-head genotype-vs-phenotype validation of the KB antibiotics. Two
@@ -47,7 +46,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 from lib import concordance as C  # noqa: E402
-from lib.config import load_config, resolve_path, get_target  # noqa: E402
+from lib.config import get_target, load_config, resolve_path  # noqa: E402
 from lib.logging_utils import get_logger  # noqa: E402
 from lib.registry import load_amrfinder_keywords  # noqa: E402
 
@@ -394,7 +393,7 @@ def do_post(organism, antibiotics, out_dir, config, logger):
         if f.exists():
             mp = pd.read_csv(f)
             model_calls[ab] = dict(zip(mp["Genome ID"].astype(str),
-                                       mp["model_pred"].astype(int)))
+                                       mp["model_pred"].astype(int), strict=True))
     if model_calls:
         summary["head_to_head_model_test_genomes"] = head_to_head(
             genomes, pheno, afp, rf, model_calls, antibiotics)

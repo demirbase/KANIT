@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for BV-BRC AMR cleaning + name normalisation (step 00)."""
 
 import sys
@@ -12,7 +11,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from lib import registry                      # noqa: E402
+from lib import registry  # noqa: E402
 from lib.bvbrc import clean_amr_table, pivot_binary  # noqa: E402
 
 

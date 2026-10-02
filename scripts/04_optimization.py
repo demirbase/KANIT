@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 XGBoost Hyperparameter Optimization Module for AMR Prediction
 
@@ -42,26 +41,27 @@ Hyperparameter Search Space:
 # ============================================================================
 # LIBRARY IMPORTS
 # ============================================================================
-import pandas as pd
-import numpy as np
-import xgboost as xgb
-import optuna
-import yaml
-import joblib
-from pathlib import Path
-from scipy.sparse import load_npz, vstack
-from sklearn.model_selection import train_test_split
-import os
-import sys
 import datetime
+import os
 import shutil
+import sys
+from pathlib import Path
+
+import joblib
+import numpy as np
+import optuna
+import pandas as pd
+import xgboost as xgb
+import yaml
+
+# MLOps run provenance (SCALE_MLOPS_PLAN.md §7.1) — additive, best-effort.
+from lib import run_metadata as rm
 
 # Shared label-slicing helper (single source of truth)
 from lib.chunking import get_y_chunk
-# MLOps run provenance (SCALE_MLOPS_PLAN.md §7.1) — additive, best-effort.
-from lib import run_metadata as rm
-from lib.config import resolve_path, get_target
-
+from lib.config import get_target, resolve_path
+from scipy.sparse import load_npz, vstack
+from sklearn.model_selection import train_test_split
 
 # ============================================================================
 # LOAD CONFIGURATION FROM YAML
@@ -77,7 +77,7 @@ if not CONFIG_FILE.exists():
         f"Please ensure config.yaml exists in the config/ directory."
     )
 
-with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+with open(CONFIG_FILE, encoding='utf-8') as f:
     config = yaml.safe_load(f)
 
 # Extract configuration values
@@ -162,7 +162,7 @@ def count_features(matrix_dir):
     features_file = matrix_dir / "features.txt"
     if not features_file.exists():
         return 0
-    with open(features_file, 'r', encoding='utf-8') as f:
+    with open(features_file, encoding='utf-8') as f:
         return sum(1 for _ in f)
 
 
@@ -614,10 +614,14 @@ def generate_optuna_plots(study, target_antibiotic):
     output_dir.mkdir(parents=True, exist_ok=True)
     
     try:
+        import warnings
+
         import matplotlib.pyplot as plt
         import seaborn as sns
-        from optuna.visualization.matplotlib import plot_optimization_history, plot_param_importances
-        import warnings
+        from optuna.visualization.matplotlib import (
+            plot_optimization_history,
+            plot_param_importances,
+        )
         warnings.filterwarnings('ignore', category=UserWarning)  # Suppress optuna matplotlib experimental warnings
         
         # Set style
@@ -625,7 +629,7 @@ def generate_optuna_plots(study, target_antibiotic):
         
         # 1. Optimization History Plot
         fig1 = plt.figure(figsize=(10, 6))
-        ax1 = plot_optimization_history(study)
+        plot_optimization_history(study)
         plt.title(f'Hyperparameter Optimization History ({target_antibiotic.upper()})', fontsize=14, pad=15)
         plt.tight_layout()
         hist_path = output_dir / f"01_optuna_history_{target_antibiotic}.png"
@@ -645,7 +649,7 @@ def generate_optuna_plots(study, target_antibiotic):
         
         # 2. Hyperparameter Importance Plot
         fig2 = plt.figure(figsize=(10, 6))
-        ax2 = plot_param_importances(study)
+        plot_param_importances(study)
         plt.title(f'Hyperparameter Importance ({target_antibiotic.upper()})', fontsize=14, pad=15)
         plt.tight_layout()
         imp_path = output_dir / f"02_optuna_importance_{target_antibiotic}.png"

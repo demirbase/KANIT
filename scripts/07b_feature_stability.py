@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Step 07b — Feature stability + generalisation CV (out-of-core).
 
@@ -48,12 +47,11 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 import yaml
+from lib.config import env_bool, get_target, load_config, resolve_path
+from lib.xgb_data import build_quantile_dmatrix, global_pos_weight
 from scipy.sparse import load_npz
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
-
-from lib.config import load_config, resolve_path, env_bool, get_target
-from lib.xgb_data import build_quantile_dmatrix, global_pos_weight
 
 SEEDS = [42, 123, 777, 1024, 2025]
 TEST_SIZE = 0.20
@@ -86,7 +84,7 @@ def load_fixed_params():
     if not cfg_path.exists():
         print(f"ERROR: tuned config not found: {cfg_path}\n  Run 04_optimization.py first.")
         sys.exit(1)
-    with open(cfg_path, 'r', encoding='utf-8') as f:
+    with open(cfg_path, encoding='utf-8') as f:
         ab_cfg = yaml.safe_load(f)
 
     base = {
@@ -181,7 +179,7 @@ def map_indices_to_unitigs(indices):
     if not indices or not features_file.exists():
         return mapping
     needed = set(indices)
-    with open(features_file, 'r', encoding='utf-8') as f:
+    with open(features_file, encoding='utf-8') as f:
         for line_idx, line in enumerate(f):
             if line_idx in needed:
                 mapping[line_idx] = line.split()[0]
@@ -227,7 +225,7 @@ def build_cv_splits(y_all, n_total, genomes_csv, lineage_csv, n_splits, seed=42)
 
     if lineage_csv.exists() and genomes_csv.exists():
         try:
-            from lib.lineage import load_lineage, group_kfold_masks, no_group_leakage
+            from lib.lineage import group_kfold_masks, load_lineage, no_group_leakage
             groups = load_lineage(genomes_csv, lineage_csv)
             n_clusters = len(set(groups.tolist()))
             if len(groups) == n_total and n_clusters >= n_splits:
@@ -310,7 +308,7 @@ def main():
     # the allocated cores (one DMatrix over all train rows). The 'seed' column in
     # the summary is kept for backward compatibility (it holds the fold id here).
     seed_rows, seed_sets, gain_accum = [], [], {}
-    for label, (train_mask, test_mask) in zip(split_labels, splits):
+    for label, (train_mask, test_mask) in zip(split_labels, splits, strict=True):
         print(f"\n--- SPLIT {label} ---")
         try:
             cache_dir = MODELS_DIR / f"_xgb_cache_split{label}"

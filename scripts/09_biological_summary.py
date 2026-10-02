@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Biological Summary Report Generator — Step 09
 
@@ -21,12 +20,12 @@ try/except so the script never crashes from network errors.
 # LIBRARY IMPORTS
 # ============================================================================
 import os
-import sys
 import re
+import sys
 import time
-import yaml
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
 from Bio import Entrez, SeqIO
 
 # ============================================================================
@@ -34,7 +33,7 @@ from Bio import Entrez, SeqIO
 # ============================================================================
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
-from lib.config import load_config, get_target  # noqa: E402  (canonical loader; audit Issue 23)
+from lib.config import get_target, load_config  # noqa: E402  (canonical loader; audit Issue 23)
 
 # NCBI Entrez identification (email / optional api_key) is configured at runtime
 # from config.yaml in configure_entrez(); see main(). A fake/placeholder email

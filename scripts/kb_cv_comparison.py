@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Random-vs-lineage-aware CV comparison (the table reviewers ask for).
 
@@ -26,6 +25,7 @@ import sys
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
@@ -141,7 +141,7 @@ def main():
         def _short(a): return a
     y = np.arange(len(df))
     fig, ax = plt.subplots(figsize=(9.5, 0.42 * len(df) + 1.6))
-    for yi, (_, r) in zip(y, df.iterrows()):
+    for yi, (_, r) in zip(y, df.iterrows(), strict=True):
         ax.plot([r["lineage_cv_auc"], r["random_cv_auc"]], [yi, yi],
                 color="lightgrey", lw=2, zorder=1)
         ax.scatter(r["random_cv_auc"], yi, color="#999999", s=30, zorder=2)
@@ -149,7 +149,7 @@ def main():
     ax.axvline(0.5, ls="--", c="grey", lw=0.8)
     ax.set_yticks(y)
     ax.set_yticklabels([f"{_short(a)} ({_abbr(o)})"
-                        for a, o in zip(df.antibiotic, df.organism)], fontsize=7.5)
+                        for a, o in zip(df.antibiotic, df.organism, strict=True)], fontsize=7.5)
     ax.set_xlabel("ROC-AUC")
     ax.set_xlim(min(0.40, float(df["lineage_cv_auc"].min()) - 0.04), 1.0)
     ax.set_title("Removing the lineage grouping inflates the AUC\n"

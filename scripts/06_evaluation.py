@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Comprehensive Model Performance Analysis Module
 
@@ -32,39 +31,39 @@ Clinical Context:
 # ============================================================================
 # LIBRARY IMPORTS
 # ============================================================================
-import pandas as pd
+import sys
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import seaborn as sns
 import xgboost as xgb
 import yaml
-from pathlib import Path
-from scipy.sparse import load_npz, vstack
-from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-    confusion_matrix,
-    roc_auc_score,
-    f1_score,
-    matthews_corrcoef,
-    precision_recall_curve,
-    auc,
-    cohen_kappa_score,
-    balanced_accuracy_score,
-    roc_curve,
-    average_precision_score,
-    precision_score,
-    recall_score
-)
-import matplotlib.pyplot as plt
-import seaborn as sns
-import sys
-from sklearn.calibration import calibration_curve
+
+# MLOps run provenance (SCALE_MLOPS_PLAN.md §7) — additive, best-effort.
+from lib import run_metadata as rm
 
 # Shared label-slicing helper (single source of truth)
 from lib.chunking import get_y_chunk
-# MLOps run provenance (SCALE_MLOPS_PLAN.md §7) — additive, best-effort.
-from lib import run_metadata as rm
-from lib.config import resolve_path, get_target
-
+from lib.config import get_target, resolve_path
+from scipy.sparse import load_npz, vstack
+from sklearn.calibration import calibration_curve
+from sklearn.metrics import (
+    accuracy_score,
+    average_precision_score,
+    balanced_accuracy_score,
+    classification_report,
+    cohen_kappa_score,
+    confusion_matrix,
+    f1_score,
+    matthews_corrcoef,
+    precision_recall_curve,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+    roc_curve,
+)
 
 # ============================================================================
 # LOAD CONFIGURATION FROM YAML
@@ -79,7 +78,7 @@ if not CONFIG_PATH.exists():
         f"Please ensure config.yaml exists in the config/ directory."
     )
 
-with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+with open(CONFIG_PATH, encoding='utf-8') as f:
     config = yaml.safe_load(f)
 
 # Extract configuration values
@@ -147,7 +146,7 @@ def load_test_files_from_config():
         )
     
     try:
-        with open(antibiotic_config_path, 'r', encoding='utf-8') as f:
+        with open(antibiotic_config_path, encoding='utf-8') as f:
             config = yaml.safe_load(f)
         
         if 'data_split' not in config:
@@ -460,7 +459,6 @@ def plot_threshold_analysis(results_df, output_dir, antibiotic):
     # Mark optimal threshold
     best_idx = results_df['mcc'].idxmax()
     best_thresh = results_df.loc[best_idx, 'threshold']
-    best_mcc = results_df.loc[best_idx, 'mcc']
     
     plt.axvline(x=best_thresh, color='red', linestyle='--', linewidth=1.5, 
                 label=f'Optimal Threshold = {best_thresh:.2f}')

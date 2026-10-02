@@ -72,14 +72,12 @@ include = ["lib*"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-extend-exclude = ["bin", "archive", "data", "results", "logs", "runs", "work"]
+extend-exclude = ["bin", "archive", "backup", "tez", "data", "results", "logs", "runs", "work"]
 
 [tool.ruff.lint]
-# Conservative, high-signal rule set: real correctness errors (syntax, undefined
-# names) that a working codebase already passes — so CI is meaningful without
-# forcing a large stylistic refactor of the existing scientific scripts. Stricter
-# rules (F401 unused imports, I import-sorting, etc.) can be enabled incrementally.
-select = ["E9", "F63", "F7", "F82"]
+# Syntax errors (E9), pyflakes (F), bugbear (B), import order (I) and pyupgrade
+# (UP). Line length is not enforced.
+select = ["E9", "F", "B", "I", "UP"]
 ignore = ["E501"]
 
 # ----------------------------------------------------------------------------

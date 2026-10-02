@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Step 00 — Build the binary phenotype matrix from the cleaned AMR table.
 
@@ -25,9 +24,9 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from lib.bvbrc import pivot_binary               # noqa: E402
+from lib.bvbrc import pivot_binary  # noqa: E402
 from lib.config import load_config, resolve_path  # noqa: E402
-from lib.registry import normalize_antibiotic    # noqa: E402
+from lib.registry import normalize_antibiotic  # noqa: E402
 
 log = logging.getLogger("prepare")
 

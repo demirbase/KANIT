@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Guard: kb_tables' drug-class -> ARO keyword map must cover the antibiotic registry.
 
 `mechanisms.csv` marks a CARD gene on-target by matching the model's drug class to a

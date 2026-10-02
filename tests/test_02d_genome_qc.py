@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for 02d_genome_qc.py (M15 CheckM2 + QUAST genome QC).
 
 Exercise the pure logic without the tools: the CheckM2/QUAST TSV readers on

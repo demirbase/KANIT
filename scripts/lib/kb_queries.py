@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Read-only query layer over the KANIT knowledge base (S8/S9 API backend).
 
 Pure ``sqlite3`` functions returning plain dicts/lists — no web framework, so

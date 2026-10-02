@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for lib/kb_queries.py (S8/S9 API backend) against a synthetic KB, plus
 an optional FastAPI smoke test (skipped if fastapi is not installed)."""
 
 import sqlite3
 
 import pytest
-
 from lib import kb_queries as Q
 from lib.kb_schema import create_schema
 

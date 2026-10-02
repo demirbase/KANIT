@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """ResFinder antibiotic-name matching (M13, step 16).
 
 ResFinder writes "amoxicillin+clavulanic acid"; this project keys the same agent

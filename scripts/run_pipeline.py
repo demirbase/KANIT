@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Pipeline orchestrator — run the numbered steps in order for one target.
 
@@ -143,9 +142,9 @@ def main() -> None:
         # Just-in-time resolution for --antibiotic auto (after metadata is prepared)
         if sid >= "01" and env.get("AMR_ANTIBIOTIC") == "auto":
             try:
-                from lib.config import get_target
                 import pandas as pd
                 import yaml
+                from lib.config import get_target
                 
                 org, _ = get_target()
                 reg_path = PROJECT_ROOT / "config/registry/organisms.yaml"

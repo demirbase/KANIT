@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Annotate the CPSS-stable unitig set — Step 13b
 
@@ -36,7 +35,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from lib.config import load_config, resolve_path, resolve_tool, get_target  # noqa: E402
+from lib.config import get_target, load_config, resolve_path, resolve_tool  # noqa: E402
 
 _b = importlib.import_module("09_biological_summary")  # reuse tiering + ARO
 

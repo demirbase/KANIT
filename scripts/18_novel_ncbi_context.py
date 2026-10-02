@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Step 18 — genomic context for the KB's `strong_novel` biomarkers (NCBI nt pass).
 
@@ -150,7 +149,7 @@ def hits_for(tsv_path, wanted_qseqids):
         for row in csv.reader(fh, delimiter="\t"):
             if len(row) < len(TSV_COLS) or row[0] not in wanted_qseqids:
                 continue
-            r = dict(zip(TSV_COLS, row[:len(TSV_COLS) - 1] + ["\t".join(row[len(TSV_COLS) - 1:])]))
+            r = dict(zip(TSV_COLS, row[:len(TSV_COLS) - 1] + ["\t".join(row[len(TSV_COLS) - 1:])], strict=True))
             try:
                 r["bitscore"] = float(r["bitscore"])
                 r["pident"] = float(r["pident"])

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for the H3 gene-family overlap statistics (E2 framework).
 
 These guard the two claims the thesis makes about the test itself: that the

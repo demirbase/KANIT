@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Unit tests for the shared library (SCALE_MLOPS_PLAN.md §7.5).
 
@@ -17,9 +16,9 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from lib import registry, run_metadata           # noqa: E402
-from lib.chunking import get_y_chunk              # noqa: E402
-from lib.config import load_config, resolve_path, get_target  # noqa: E402
+from lib import registry, run_metadata  # noqa: E402
+from lib.chunking import get_y_chunk  # noqa: E402
+from lib.config import get_target, load_config, resolve_path  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +138,8 @@ def test_hash_files_stable(tmp_path):
 
 if __name__ == "__main__":
     # Minimal runner so the file works without pytest installed.
-    import tempfile, traceback
+    import tempfile
+    import traceback
     funcs = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     passed = failed = 0
     for fn in funcs:
@@ -165,21 +165,18 @@ if __name__ == "__main__":
 # meant jobs ran with laptop resources, slowly or OOM, with no clue in the logs.
 
 def test_resource_keys_default_to_laptop_safe_values(monkeypatch):
-    from lib.config import load_config
     monkeypatch.delenv("AMR_THREADS", raising=False)
     pre = load_config()["preprocessing"]
     assert pre["threads"] == 10
 
 
 def test_env_overrides_resource_keys(monkeypatch):
-    from lib.config import load_config
     monkeypatch.setenv("AMR_THREADS", "20")
     pre = load_config()["preprocessing"]
     assert pre["threads"] == 20
 
 
 def test_bad_resource_env_raises_instead_of_silently_defaulting(monkeypatch):
-    from lib.config import load_config
     monkeypatch.setenv("AMR_THREADS", "twenty")
     with pytest.raises(ValueError, match="AMR_THREADS"):
         load_config()
@@ -217,6 +214,7 @@ def test_excluded_organism_is_not_an_active_target():
 def test_validate_registry_rejects_an_unknown_status(monkeypatch):
     """A typo'd status must fail loudly, not quietly deactivate the organism."""
     import importlib.util
+
     from lib import registry
     spec = importlib.util.spec_from_file_location(
         "vr", PROJECT_ROOT / "scripts" / "validate_registry.py")
@@ -247,6 +245,7 @@ def test_collect_versions_captures_the_science_defining_tools():
 
 def test_pipeline_runs_has_tool_version_columns(tmp_path):
     import sqlite3
+
     from lib.kb_schema import create_schema
     c = sqlite3.connect(str(tmp_path / "k.db"))
     create_schema(c)
@@ -258,7 +257,9 @@ def test_pipeline_runs_has_tool_version_columns(tmp_path):
 
 
 def test_populate_run_writes_versions_including_pyseer_from_step14(tmp_path):
-    import sqlite3, importlib.util
+    import importlib.util
+    import sqlite3
+
     from lib.kb_schema import create_schema
     spec = importlib.util.spec_from_file_location(
         "pop", PROJECT_ROOT / "scripts" / "populate_database.py")

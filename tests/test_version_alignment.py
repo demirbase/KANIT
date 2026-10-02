@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Guard: every declared version must match lib.kb_schema.KB_SCHEMA_VERSION.
 
 Five files carry the project version, and copies drift. .zenodo.json matters

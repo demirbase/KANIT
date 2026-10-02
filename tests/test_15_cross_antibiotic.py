@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit/smoke tests for 15_cross_antibiotic.py (S1 cross-antibiotic overlap).
 
 Two layers, no external tools:

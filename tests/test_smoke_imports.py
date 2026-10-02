@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Smoke tests — load every numbered script and assert it imports cleanly.
 
@@ -42,7 +41,7 @@ def test_script_imports(load_script, script):
 @pytest.mark.smoke
 def test_lib_package_imports():
     """The shared lib package and its public API import cleanly."""
-    from lib import registry, config, chunking, io_utils, run_metadata  # noqa: F401
+    from lib import chunking, config, io_utils, registry, run_metadata  # noqa: F401
     assert callable(config.resolve_path)
     assert callable(registry.load_antibiotic_classes)
     assert callable(chunking.get_y_chunk)

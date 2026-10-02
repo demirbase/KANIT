@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Stamp a real Zenodo DOI into the KB (and report what else must change).
 
 Run this ONLY after the deposit exists. It refuses anything that is not a
@@ -14,7 +13,6 @@ import argparse
 import re
 import sqlite3
 import sys
-from pathlib import Path
 
 DOI_RE = re.compile(r"^10\.5281/zenodo\.\d{4,}$")
 # Every place the thesis names the DOI. Kept here so the stamp and the prose cannot

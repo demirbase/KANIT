@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 BV-BRC AMR table cleaning + binary pivoting (used by steps 00a / 00).
 

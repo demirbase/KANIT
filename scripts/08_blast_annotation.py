@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 BLAST Annotation Orchestrator — Step 08
 
@@ -37,12 +36,13 @@ Prerequisite Setup (CARD database):
 # ============================================================================
 # LIBRARY IMPORTS
 # ============================================================================
-import subprocess
-import shutil
-import sys
 import os
-import yaml
+import shutil
+import subprocess
+import sys
 from pathlib import Path
+
+import yaml
 
 # Ensure the conda environment's bin is on PATH so shutil.which() finds
 # blastn even when this script is launched via the full python interpreter
@@ -63,7 +63,7 @@ if not CONFIG_PATH.exists():
         f"Please ensure config.yaml exists in the config/ directory."
     )
 
-with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+with open(CONFIG_PATH, encoding='utf-8') as f:
     config = yaml.safe_load(f)
 
 from lib.config import get_target  # early: env>config target before module globals
@@ -211,8 +211,8 @@ def main() -> None:
 
     if not FASTA_INPUT.exists():
         print(f"  ✗ FASTA not found: {FASTA_INPUT}")
-        print(f"\n  Run feature extraction first:")
-        print(f"    python scripts/07_explainability.py")
+        print("\n  Run feature extraction first:")
+        print("    python scripts/07_explainability.py")
         sys.exit(1)
 
     fasta_lines = FASTA_INPUT.read_text(encoding='utf-8').strip().splitlines()
@@ -254,7 +254,7 @@ def main() -> None:
         if not ALLOW_MISSING_CARD_DB:
             sys.exit(f"ERROR: {msg}")
         print(f"  ⚠ {msg}")
-        print(f"    --allow-missing-card-db given — continuing with NCBI remote only.\n")
+        print("    --allow-missing-card-db given — continuing with NCBI remote only.\n")
     else:
         print(f"  ✓ CARD database   : {CARD_DB}")
 

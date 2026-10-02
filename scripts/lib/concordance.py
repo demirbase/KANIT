@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Binary concordance / clinical-error metrics for external validation (M13).
 
 Pure, dependency-light functions (scipy only for p-values, with a stdlib
@@ -26,7 +25,7 @@ def _pairs(y_true, y_pred):
     """Zip to aligned int pairs, dropping any position where either side is None
     (a genome the tool/phenotype has no call for)."""
     out = []
-    for t, p in zip(y_true, y_pred):
+    for t, p in zip(y_true, y_pred, strict=True):
         if t is None or p is None:
             continue
         out.append((int(t), int(p)))

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for 03u_unitig_matrix.py (rtab -> genome×unitig CSR transpose).
 
 These exercise the core logic without invoking unitig-caller: a synthetic rtab

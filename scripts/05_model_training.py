@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Final Model Training Module for AMR Prediction
 
@@ -26,32 +25,34 @@ Workflow:
 # ============================================================================
 # LIBRARY IMPORTS
 # ============================================================================
-import pandas as pd
+import datetime
+import gc
+import shutil
+import sys
+from pathlib import Path
+
 import numpy as np
+import pandas as pd
 import xgboost as xgb
 import yaml
-from pathlib import Path
+
+# MLOps model registry (SCALE_MLOPS_PLAN.md §7.2) — additive, best-effort.
+from lib import run_metadata as rm
+
+# Shared label-slicing helper (single source of truth)
+from lib.chunking import get_y_chunk
+from lib.config import env_bool, get_target, resolve_path
+
+# Streaming QuantileDMatrix construction (full-data boosting; bounded memory).
+from lib.xgb_data import build_quantile_dmatrix, global_pos_weight
 from scipy.sparse import load_npz
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
     confusion_matrix,
+    matthews_corrcoef,
     roc_auc_score,
-    matthews_corrcoef
 )
-import sys
-import gc
-import datetime
-import shutil
-
-# Shared label-slicing helper (single source of truth)
-from lib.chunking import get_y_chunk
-# Streaming QuantileDMatrix construction (full-data boosting; bounded memory).
-from lib.xgb_data import build_quantile_dmatrix, global_pos_weight
-# MLOps model registry (SCALE_MLOPS_PLAN.md §7.2) — additive, best-effort.
-from lib import run_metadata as rm
-from lib.config import resolve_path, env_bool, get_target
-
 
 # ============================================================================
 # LOAD CONFIGURATION FROM YAML
@@ -67,7 +68,7 @@ if not CONFIG_FILE.exists():
         f"Please ensure config.yaml exists in the config/ directory."
     )
 
-with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+with open(CONFIG_FILE, encoding='utf-8') as f:
     config = yaml.safe_load(f)
 
 # Extract configuration values
@@ -141,7 +142,7 @@ def load_optimized_hyperparameters():
         )
     
     try:
-        with open(antibiotic_config_path, 'r', encoding='utf-8') as f:
+        with open(antibiotic_config_path, encoding='utf-8') as f:
             antibiotic_config = yaml.safe_load(f)
         
         # Validate required sections
@@ -492,7 +493,7 @@ def main():
     try:
         antibiotic_config_path = resolve_path('experiment_config', organism=ORGANISM,
                                               antibiotic=TARGET_ANTIBIOTIC, config=config)
-        with open(antibiotic_config_path, 'r') as f:
+        with open(antibiotic_config_path) as f:
             antibiotic_config = yaml.safe_load(f)
         optuna_count = antibiotic_config.get('data_split', {}).get('optuna_count', 'N/A')
     except Exception:
@@ -565,7 +566,7 @@ def main():
         # silently strip the provenance banner.
         header_lines = []
         try:
-            with open(antibiotic_config_path, 'r', encoding='utf-8') as hf:
+            with open(antibiotic_config_path, encoding='utf-8') as hf:
                 for line in hf:
                     if line.startswith('#') or line.strip() == '':
                         header_lines.append(line)

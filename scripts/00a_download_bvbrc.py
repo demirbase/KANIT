@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Step 00a — Download + clean BV-BRC AMR data, then fetch genome assemblies.
 
@@ -74,9 +73,9 @@ except Exception:  # pragma: no cover - certifi always present per requirements
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from lib import registry                                  # noqa: E402
+from lib import registry  # noqa: E402
 from lib.bvbrc import clean_amr_table, standardise_columns  # noqa: E402
-from lib.config import load_config, resolve_path           # noqa: E402
+from lib.config import load_config, resolve_path  # noqa: E402
 
 API_URL = "https://www.bv-brc.org/api/genome_amr/"
 FTP_FASTA = "https://ftp.bv-brc.org/genomes/{gid}/{gid}.fna"
@@ -335,9 +334,9 @@ def download_one(gid, dest_dir, retries=3, timeout=120):
     # networks (e.g. TRUBA), whereas the API host (www.bv-brc.org) is reachable.
     # The API returns the full assembly as FASTA via the dna+fasta accept type.
     url = ("https://www.bv-brc.org/api/genome_sequence/"
-           "?eq(genome_id,%s)&limit(100000)" % gid)
+           f"?eq(genome_id,{gid})&limit(100000)")
     last = ""
-    for attempt in range(1, retries + 1):
+    for _ in range(retries):
         try:
             req = urllib.request.Request(url, headers={
                 "User-Agent": "amr-pipeline/00a",

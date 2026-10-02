@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Cross-antibiotic stable-unitig overlap (Should-have S1; ROADMAP §1.6 / H3).
 
 Runs *after* populate_database.py — it operates directly on the populated KB

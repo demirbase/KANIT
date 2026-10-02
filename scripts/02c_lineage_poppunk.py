@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Step 02c — PopPUNK lineage clustering (ROADMAP §0.1 M2).
 
 Clusters every assembly of an organism into a **lineage** (PopPUNK population
@@ -28,7 +27,6 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-
 from lib.io_utils import run_command
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -85,7 +83,7 @@ def normalize_clusters(clusters_csv, genome_ids, *,
         rev.setdefault(str(gid), str(gid))   # in case a name was not mangled
 
     rows, unmatched = [], []
-    for taxon, cluster in zip(df[taxon_col].astype(str), df[cluster_col].astype(str)):
+    for taxon, cluster in zip(df[taxon_col].astype(str), df[cluster_col].astype(str), strict=True):
         gid = rev.get(taxon)
         if gid is None:
             unmatched.append(taxon)

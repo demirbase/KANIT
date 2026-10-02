@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for 07b build_cv_splits — lineage-aware CV with 5-seed fallback (ROADMAP §0.1 M2).
 
 Verifies the scheme selection: lineage StratifiedGroupKFold when PopPUNK labels

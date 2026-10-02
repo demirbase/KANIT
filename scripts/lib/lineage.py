@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Lineage-aware cross-validation helpers (ROADMAP §0.1 M2).
 
 Random / chunk-level train-test splits let genomes from the SAME lineage (PopPUNK
@@ -68,7 +67,7 @@ def load_lineage(genomes_csv: str | Path, clusters_csv: str | Path, *,
                 f"(have: {cl.columns.tolist()})."
             )
     mapping = dict(zip(cl[clusters_genome_col].astype(str),
-                       cl[cluster_col].astype(str)))
+                       cl[cluster_col].astype(str), strict=True))
 
     missing = [g for g in genomes if g not in mapping]
     if missing and not allow_missing:

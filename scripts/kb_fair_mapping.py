@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Turn "FAIR-compliant" from a claim in the title into a table with evidence.
 
@@ -91,8 +90,8 @@ def rows(f):
 
         ("F3", "Metadata clearly and explicitly include the identifier of the data",
          "The DOI lives inside the database, not only beside it",
-         (f"kb_metadata.zenodo_doi is a column of kanit.db, so a copy of the file "
-          f"identifies its own published archive with no external manifest."
+         ("kb_metadata.zenodo_doi is a column of kanit.db, so a copy of the file "
+          "identifies its own published archive with no external manifest."
           if f['doi'] else
           "kb_metadata.zenodo_doi is a column of kanit.db but is currently empty, so a "
           "copy of the file does not identify its own archive until the next release "
@@ -171,11 +170,11 @@ def rows(f):
 
         ("R1.3", "(Meta)data meet domain-relevant community standards",
          "Closest available standards adopted; no standard exists for this artefact type",
-         f"CARD/ARO for resistance determinants, NCBI Taxonomy for organisms, WHO AWaRe for "
-         f"antibiotic stewardship class, PopPUNK for lineage nomenclature, CheckM2/QUAST for "
-         f"assembly quality reporting. There is no community exchange standard for "
-         f"unitig-resolution AMR biomarker knowledge bases, so no schema could be conformed "
-         f"to; this is stated rather than glossed.", "partial"),
+         "CARD/ARO for resistance determinants, NCBI Taxonomy for organisms, WHO AWaRe for "
+         "antibiotic stewardship class, PopPUNK for lineage nomenclature, CheckM2/QUAST for "
+         "assembly quality reporting. There is no community exchange standard for "
+         "unitig-resolution AMR biomarker knowledge bases, so no schema could be conformed "
+         "to; this is stated rather than glossed.", "partial"),
     ]
 
 

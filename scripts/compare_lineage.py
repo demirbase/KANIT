@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Compare two PopPUNK clusterings of the same genomes — the container-rebuild check.
 
 Rebuilding the pipeline container re-solves transitive dependencies. PopPUNK's

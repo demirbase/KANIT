@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for lib.lineage (lineage-aware grouped K-fold, ROADMAP §0.1 M2).
 
 The defining property: a lineage (PopPUNK cluster) never spans the train and
@@ -11,7 +10,6 @@ container needed.
 import numpy as np
 import pandas as pd
 import pytest
-
 from lib import lineage
 
 

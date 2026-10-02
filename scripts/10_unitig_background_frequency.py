@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Step 10 — unitig background frequency / discriminativeness (ROADMAP §1.1).
 
@@ -34,10 +33,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from lib.config import get_target, load_config, resolve_path
 from scipy.sparse import load_npz
 from scipy.stats import fisher_exact
-
-from lib.config import load_config, resolve_path, get_target
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Label-permutation significance test — Step 12b  (ROADMAP §1.7 / must-have M9)
 

@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Smoke test for scripts/kb_report.py build_report against a synthetic KB."""
 
 import sqlite3
 
 import pytest
-
 from lib import kb_queries as Q
 from lib.kb_schema import create_schema
 

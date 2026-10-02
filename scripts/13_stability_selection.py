@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Stability selection (CPSS) + SHAP — Step 13  (ROADMAP §0.1)
 
@@ -105,7 +104,7 @@ def cpss(X_k, y, params, total_trees, B, rng):
     counts = np.zeros(K, dtype=np.int64)
     n_selected = []
     half = n // 2
-    for b in range(B):
+    for _ in range(B):
         perm = rng.permutation(n)
         for rows in (perm[:half], perm[half:2 * half]):  # complementary pairs
             yr = y[rows]

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Populate the KANIT knowledge base from pipeline outputs (M8).
 
 Reads the per-antibiotic artefacts produced by the pipeline and loads them into
@@ -25,7 +24,6 @@ Usage:
 
 import argparse
 import datetime
-import glob
 import json
 import os
 import re
@@ -34,12 +32,11 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-
-from lib.config import load_config, resolve_path, get_target
+from lib.config import get_target, load_config, resolve_path
 from lib.kb_schema import KB_SCHEMA_VERSION, create_schema, ensure_unique_indexes
 from lib.registry import (
-    antibiotic_to_class,
     antibiotic_mechanism_type,
+    antibiotic_to_class,
     antibiotic_who_aware,
     load_organisms,
 )

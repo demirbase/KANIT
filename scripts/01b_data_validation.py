@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Exploratory Data Analysis (EDA) & Visualization Module for AMR Data
 
@@ -19,15 +18,16 @@ Visualizations generated:
 # ============================================================================
 # LIBRARY IMPORTS
 # ============================================================================
-import pandas as pd
-import numpy as np
-import yaml
-from pathlib import Path
-import matplotlib.pyplot as plt
-import seaborn as sns
+import gc
 import sys
 import warnings
-import gc
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import yaml
 
 # Suppress minor seaborn/matplotlib warnings for clean output
 warnings.filterwarnings('ignore')
@@ -46,12 +46,13 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
 
 # Shared antibiotic classification — single source of truth in
 # config/registry/antibiotics.yaml, accessed via the registry (SCALE_MLOPS_PLAN §3).
-from lib.registry import load_antibiotic_classes
 from lib.config import resolve_path
+from lib.registry import load_antibiotic_classes
+
 ANTIBIOTIC_CLASSES = load_antibiotic_classes()
 
 try:
-    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+    with open(CONFIG_PATH, encoding='utf-8') as f:
         config = yaml.safe_load(f)
     TARGET_ANTIBIOTIC = config.get('project', {}).get('target_antibiotic', 'unknown')
     ORGANISM = config.get('project', {}).get('organism', 'ecoli')
@@ -130,7 +131,7 @@ def plot_resistance_distribution(df_clean):
     sns.despine(left=True, bottom=True)
 
     # Highlight target antibiotic if it's in the top 25
-    for i, label in enumerate(ax.get_yticklabels()):
+    for label in ax.get_yticklabels():
         if label.get_text() == TARGET_ANTIBIOTIC:
             label.set_fontweight("bold")
             label.set_color("black")

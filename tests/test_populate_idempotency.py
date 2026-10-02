@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Audit Issue 3/24: populate must not duplicate blast_annotations /
 validation_evidence (candidates+cpss double-insert or re-populate)."""
 

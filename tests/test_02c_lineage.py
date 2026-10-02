@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Unit tests for 02c_lineage_poppunk.normalize_clusters (PopPUNK name un-mangling).
 
 PopPUNK rewrites '.'→'_' in sample names, so its raw Taxon column won't match the
@@ -29,7 +28,7 @@ def test_normalize_unmangles_dots(mod, tmp_path):
 
     out = mod.normalize_clusters(raw, genome_ids)
     assert list(out.columns) == ["Genome ID", "Cluster"]
-    mapping = dict(zip(out["Genome ID"], out["Cluster"]))
+    mapping = dict(zip(out["Genome ID"], out["Cluster"], strict=True))
     assert mapping == {"562.100036": "1", "562.100039": "1", "562.100004": "7"}
 
 
@@ -108,7 +107,6 @@ def test_registry_lineage_override_is_not_shadowed_by_argparse(mod):
     """--model/--refine default to None so lineage_params (config + REGISTRY) wins.
     They used to default to config's value, which silently shadowed the registry —
     A. baumannii's refine override would have been ignored."""
-    import argparse
     src = (PROJECT_ROOT / "scripts" / "02c_lineage_poppunk.py").read_text()
     assert 'ap.add_argument("--model", default=None' in src
     assert 'default=lin_cfg.get("model"' not in src

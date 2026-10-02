@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Guard: nothing may be tracked under the HPC's symlinked directories.
 
 On TRUBA, $AMR_HOME/{data,results,runs,models,logs} are symlinks to /arf/scratch.

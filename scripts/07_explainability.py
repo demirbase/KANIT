@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Feature Importance Extraction Module
 
@@ -24,13 +23,13 @@ Gain vs Other Metrics:
 # ============================================================================
 # LIBRARY IMPORTS
 # ============================================================================
-import xgboost as xgb
-import pandas as pd
-import numpy as np
-import yaml
-from pathlib import Path
 import sys
+from pathlib import Path
 
+import numpy as np
+import pandas as pd
+import xgboost as xgb
+import yaml
 
 # ============================================================================
 # LOAD CONFIGURATION FROM YAML
@@ -45,7 +44,7 @@ if not CONFIG_PATH.exists():
         f"Please ensure config.yaml exists in the config/ directory."
     )
 
-with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+with open(CONFIG_PATH, encoding='utf-8') as f:
     config = yaml.safe_load(f)
 
 from lib.config import get_target  # early: env>config target before module globals
@@ -61,6 +60,7 @@ MODEL_FILE = f"xgboost_{TARGET_ANTIBIOTIC}_final_v2.json"
 
 # Organism-aware paths (SCALE_MLOPS_PLAN §4.2)
 from lib.config import resolve_path
+
 MATRIX_DIR = resolve_path('matrix_dir', organism=ORGANISM, antibiotic=TARGET_ANTIBIOTIC, config=config)
 MODELS_DIR = resolve_path('models_dir', organism=ORGANISM, antibiotic=TARGET_ANTIBIOTIC, config=config)
 OUTPUT_DIR = resolve_path('dir_05_explainability', organism=ORGANISM,
@@ -218,7 +218,7 @@ def extract_top_features():
         # These correspond to line numbers in features.txt (0-indexed)
         # Extract the indices we need
         needed_indices = set()
-        for feat_name, score in sorted_importance:
+        for feat_name, _score in sorted_importance:
             # Parse feature index from name (e.g., 'f123' -> 123).
             # Use [1:] to strip ONLY the leading 'f' prefix. replace('f','')
             # would also delete any 'f' inside the token — harmless for the
@@ -241,7 +241,7 @@ def extract_top_features():
         # Read file line by line (memory efficient for large dictionaries)
         features_map = {}
         
-        with open(features_file, 'r', encoding='utf-8') as f:
+        with open(features_file, encoding='utf-8') as f:
             for line_idx, line in enumerate(f):
                 if line_idx in needed_indices:
                     # Format: "UNITIG_SEQUENCE COUNT"

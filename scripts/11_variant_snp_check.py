@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Step 11 — CARD variant-model SNP allele check of the candidate unitigs.
 
@@ -43,8 +42,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-
-from lib.config import load_config, resolve_path, resolve_tool, get_target
+from lib.config import get_target, load_config, resolve_path, resolve_tool
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -115,7 +113,7 @@ def query_codon_from_alignment(sstart, send, sstrand, qseq_aln, sseq_aln,
     subj = int(sstart)
     step = 1 if plus else -1
     collected = {}
-    for qc, sc in zip(str(qseq_aln), str(sseq_aln)):
+    for qc, sc in zip(str(qseq_aln), str(sseq_aln), strict=True):
         if sc == '-':                      # insertion in query vs subject: no subj advance
             continue
         if subj in wanted:

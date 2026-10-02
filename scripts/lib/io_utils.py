@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Safe subprocess execution — canonical single copy (SCALE_MLOPS_PLAN §5).
 
 run_command tokenises with shlex and runs with shell=False, eliminating the

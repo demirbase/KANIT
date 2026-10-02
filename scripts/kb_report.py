@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """One-command thesis-ready results summary from the KANIT knowledge base.
 
 Reads a populated ``kanit.db`` and renders a Markdown snapshot of everything the

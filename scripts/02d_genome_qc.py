@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Assembly-level genome QC — CheckM2 + QUAST (must-have M15; ROADMAP §0.2).
 
 Hybrid genome QC on the raw assemblies: **CheckM2** (completeness / contamination via a machine-learning

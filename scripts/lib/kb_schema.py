@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """KANIT knowledge-base schema (SQLite, stdlib only).
 
 The schema follows docs/ROADMAP.md §1.1. It is intentionally plain SQL via the

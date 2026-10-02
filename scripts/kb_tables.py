@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Export tidy, machine-readable CSV summary tables from the unified AMR-KB
 (+ a few per-run result JSONs the KB doesn't store: PFER, pyseer counts, H2).
@@ -20,8 +19,6 @@ Outputs (results/tables/):
 import argparse
 import glob
 import json
-import os
-import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -132,7 +129,6 @@ def main():
             "  FROM unitig_model_scores"
             "  WHERE model_id=? AND stable=1 AND selection_method='cpss')", (mid,)).fetchone()[0]
         n_conf = c.execute("SELECT COUNT(*) FROM blast_annotations WHERE model_id=? AND tier='confirmed'", (mid,)).fetchone()[0]
-        n_pysig = c.execute("SELECT COUNT(*) FROM validation_evidence WHERE evidence_type='pyseer_lmm' AND evidence_score<=0.05 AND pipeline_run_id=?", (rid,)).fetchone()[0]
         n_rsnp = c.execute("SELECT COUNT(*) FROM variant_snp_check WHERE model_id=? AND allele_class='resistant_allele'", (mid,)).fetchone()[0]
         overview.append(dict(
             model_id=mid, organism=org, antibiotic=ab, drug_class=cls_of.get(ab),

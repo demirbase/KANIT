@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Run metadata & reproducibility capture (SCALE_MLOPS_PLAN.md §7.1).
 

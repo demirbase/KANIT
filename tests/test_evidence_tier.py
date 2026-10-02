@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Composite evidence_tier: the per-(unitig, model) grade that
 folds the BLAST hit + the 5 statistical validation layers into one confidence
 level, and — the point of the feature — surfaces `strong_novel` biomarkers the
@@ -8,7 +7,6 @@ BLAST-only tier hides as `none`. See populate_database.classify_evidence_tier.""
 import sqlite3
 
 import pandas as pd
-
 from lib.kb_schema import create_schema
 from populate_database import classify_evidence_tier, populate_evidence_tier
 

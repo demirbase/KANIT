@@ -38,9 +38,8 @@ jobs:
       - name: Validate registry (organisms/antibiotics consistency)
         run: python scripts/validate_registry.py
 
-      - name: Type-check lib/ (mypy, advisory)
+      - name: Type-check lib/ (mypy)
         run: mypy
-        continue-on-error: true
 
       - name: Run tests (unit + smoke)
         run: pytest -ra

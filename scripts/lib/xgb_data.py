@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Streaming XGBoost DMatrix construction from on-disk genome×feature chunks.
 
 The columns are unitigs (03u). Replaces the legacy

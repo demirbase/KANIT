@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Shared pytest fixtures & helpers for the AMR pipeline test suite.
 

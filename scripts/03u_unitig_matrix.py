@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Unitig Feature Matrix Construction.
 
@@ -37,20 +36,19 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import yaml
-from scipy.sparse import csc_matrix, load_npz, save_npz, vstack
-
 from lib.io_utils import run_command
+from scipy.sparse import csc_matrix, load_npz, save_npz, vstack
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
 
-from lib.config import resolve_path, resolve_tool, get_target  # noqa: E402
+from lib.config import get_target, resolve_path, resolve_tool  # noqa: E402
 
 
 def _load_config():
     if not CONFIG_PATH.exists():
         raise FileNotFoundError(f"Configuration file not found: {CONFIG_PATH}")
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    with open(CONFIG_PATH, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -115,7 +113,7 @@ def select_genomes(config, organism, antibiotic):
 
     valid_genomes, valid_labels = [], []
     missing_fna = skipped_outliers = skipped_unclustered = 0
-    for gid, label in zip(meta["Genome ID"].values, meta[antibiotic].astype(int).values):
+    for gid, label in zip(meta["Genome ID"].values, meta[antibiotic].astype(int).values, strict=True):
         if gid in outlier_ids:
             skipped_outliers += 1
             continue
@@ -204,7 +202,7 @@ def rtab_to_chunks(rtab, valid_genomes, valid_labels, out_dir, antibiotic,
     n_genomes = len(valid_genomes)
     max_support = n_genomes - 1
 
-    with open(rtab, "r", encoding="utf-8") as fh:
+    with open(rtab, encoding="utf-8") as fh:
         header = fh.readline().rstrip("\n").split("\t")
         sample_ids = header[1:]  # first field is the 'Unitig_sequence' label
 

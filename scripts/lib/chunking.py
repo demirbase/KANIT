@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Contiguous chunk label slicing — canonical single copy (SCALE_MLOPS_PLAN §5)."""
 
 

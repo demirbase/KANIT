@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Centralised config loading + path resolution (SCALE_MLOPS_PLAN.md §4.2).
 
@@ -65,7 +64,7 @@ def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
     path = Path(config_path) if config_path else CONFIG_FILE
     if not path.exists():
         raise FileNotFoundError(f"Configuration file not found: {path}")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
 
     for (section, key), env_var in _ENV_RESOURCE_OVERRIDES.items():
@@ -169,7 +168,7 @@ def resolve_path(key: str, organism: str | None = None, antibiotic: str | None =
             f"Path template for '{key}' needs placeholder {missing} "
             f"but it was not provided (organism={organism}, "
             f"antibiotic={antibiotic}, run_id={run_id})."
-        )
+        ) from missing
 
     return PROJECT_ROOT / resolved
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Data Quality Assessment Module for AMR Prediction Project
 
@@ -23,14 +22,16 @@ Multi-Antibiotic Architecture:
 # ============================================================================
 import sys
 import traceback
+from pathlib import Path
+
 import pandas as pd
 import yaml
-from pathlib import Path
+from lib.config import resolve_path
 
 # Shared antibiotic classification — single source of truth in
 # config/registry/antibiotics.yaml, accessed via the registry (SCALE_MLOPS_PLAN §3).
 from lib.registry import load_antibiotic_classes
-from lib.config import resolve_path
+
 ANTIBIOTIC_CLASSES = load_antibiotic_classes()
 
 # ============================================================================
@@ -40,7 +41,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
 
 try:
-    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+    with open(CONFIG_PATH, encoding='utf-8') as f:
         config = yaml.safe_load(f)
     CURRENT_TARGET = config.get('project', {}).get('target_antibiotic', 'unknown')
 except Exception:
@@ -79,7 +80,7 @@ def log(message: str = "") -> None:
         try:
             _log_file.write(message + "\n")
             _log_file.flush()
-        except IOError as e:
+        except OSError as e:
             print(f"WARNING: Failed to write to log file: {e}")
 
 def validate_dataset_scientific(resistant_count: int, susceptible_count: int) -> tuple:

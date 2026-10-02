@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Registry access — single source of truth for organisms and antibiotic classes
 (SCALE_MLOPS_PLAN.md §3).
@@ -31,7 +30,7 @@ ANTIBIOTICS_FILE = PROJECT_ROOT / "config" / "registry" / "antibiotics.yaml"
 def _read_yaml(path):
     if not path.exists():
         raise FileNotFoundError(f"Registry file not found: {path}")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 

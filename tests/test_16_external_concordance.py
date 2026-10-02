@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Tests for 16_external_concordance.py parsers (M13), using the REAL output
 formats captured on TRUBA from AMRFinderPlus 4.2.7 (DB 2026-05-15.1) and
 ResFinder 4.5.0. Note the software/DB distinction: "2026-05-15.1" is the
@@ -92,7 +91,7 @@ def test_head_to_head_shared_genomes(mod):
     # AFP over-calls one S->R (a false resistant), RF perfect.
     genomes = ["g1", "g2", "g3", "g4", "gX"]   # gX has no model pred -> excluded
     pheno = {g: {"ampicillin": v} for g, v in
-             zip(genomes, [1, 1, 0, 0, 1])}
+             zip(genomes, [1, 1, 0, 0, 1], strict=True)}
     afp = {"g1": {"ampicillin": 1}, "g2": {"ampicillin": 1},
            "g3": {"ampicillin": 1}, "g4": {"ampicillin": 0}, "gX": {"ampicillin": 1}}
     rf = {"g1": {"ampicillin": 1}, "g2": {"ampicillin": 1},
@@ -134,8 +133,9 @@ def test_tokens_helper(mod):
 
 def test_write_kb_evidence(mod, tmp_path):
     import sqlite3
-    from lib.kb_schema import create_schema
+
     from lib import concordance as C
+    from lib.kb_schema import create_schema
     from lib.logging_utils import get_logger
     db = tmp_path / "kanit.db"
     conn = sqlite3.connect(str(db))
@@ -208,8 +208,9 @@ def test_write_kb_evidence_is_organism_scoped(mod, tmp_path):
     key runs by antibiotic alone and delete every concordance row on each call,
     so a six-organism sweep left only the last organism in the KB."""
     import sqlite3
-    from lib.kb_schema import create_schema
+
     from lib import concordance as C
+    from lib.kb_schema import create_schema
     from lib.logging_utils import get_logger
     db = tmp_path / "kanit.db"
     conn = sqlite3.connect(str(db))

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 KANIT explorer — a local Streamlit UI over the knowledge-base SQLite file.
 
@@ -208,7 +207,7 @@ with tab5:
     if not ext.empty:
         e = ext.copy()
         if not models.empty:
-            e["antibiyotik"] = e["model_id"].map(dict(zip(models["model_id"], models["antibiotic"])))
+            e["antibiyotik"] = e["model_id"].map(dict(zip(models["model_id"], models["antibiotic"], strict=True)))
         cols = [c for c in ["antibiyotik", "caller", "reference", "n_test", "sensitivity",
                             "specificity", "balanced_accuracy", "cohen_kappa",
                             "major_error_rate", "very_major_error_rate"] if c in e.columns]
