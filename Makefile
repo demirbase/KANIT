@@ -10,7 +10,7 @@ AB     ?= ampicillin
 
 .DEFAULT_GOAL := help
 .PHONY: help setup dev-install lint format typecheck test test-all \
-        pipeline data features train biology tables figures clean-pyc
+        pipeline data train biology tables figures clean-pyc
 
 # Thesis artefact paths. Override on the command line if the KB lives elsewhere,
 # e.g. `make figures KB=$$AMR_WORK/results/kb/amrk.db`.
@@ -28,7 +28,7 @@ help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 	  awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
-setup:  ## Create the conda environment (KMC/BLAST/Nextflow + Python deps)
+setup:  ## Create the conda environment (external tools + Python deps)
 	conda env create -f environment.yml
 
 dev-install:  ## Install the dev/QA toolchain (ruff, mypy, pre-commit, pytest)
@@ -47,7 +47,7 @@ typecheck:  ## Type-check the lib/ core with mypy
 test:  ## Run unit + smoke tests (fast)
 	$(PYTHON) -m pytest -ra
 
-test-all:  ## Run everything incl. the synthetic integration test (needs KMC/xgboost)
+test-all:  ## Run everything incl. the opt-in integration tests
 	$(PYTHON) -m pytest -m "unit or smoke or integration" -ra
 
 pipeline:  ## Run the analysis core (01->10) for ORG/AB from config
@@ -55,9 +55,6 @@ pipeline:  ## Run the analysis core (01->10) for ORG/AB from config
 
 data:  ## Acquire BV-BRC data + build the phenotype matrix (00a, 00)
 	$(PYTHON) scripts/run_pipeline.py --organism $(ORG) --only 00a 00
-
-features:  ## k-mer counting + matrix construction (02, 02b, 03)
-	$(PYTHON) scripts/run_pipeline.py --organism $(ORG) --only 02 02b 03
 
 train:  ## HPO + train + evaluate (04, 05, 06)
 	$(PYTHON) scripts/run_pipeline.py --organism $(ORG) --only 04 05 06

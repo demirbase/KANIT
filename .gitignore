@@ -84,20 +84,9 @@ data/external/**/metadata/
 config/experiments/**/config_*.yaml
 
 # ============================================================================
-# KMC DATABASE FILES
-# ============================================================================
-*.kmc_pre
-*.kmc_suf
-*.kmc_tmp
-
-# ============================================================================
 # FEATURE MATRICES & LABELS
 # ============================================================================
 *.npz
-# Large k-mer feature matrix files (exceed GitHub's 100MB limit).
-# Matches both the legacy layout (data/processed/{ab}/matrix/) and the new
-# organism layout (data/processed/{organism}/{ab}/matrix/).
-**/matrix/features.txt
 
 # Legacy / antibiotic-specific data directories (pre-Cookiecutter layout).
 # These hold generated per-antibiotic artefacts and must never be committed.
@@ -239,8 +228,6 @@ docs/TRUBA_Kurulum_ve_Calistirma_Rehberi.md
 docs/literature/
 docs/review/
 
-# macOS KMC fallback binaries — removed locally, not part of the release
-bin/
 
 # Per-organism result trees pulled from the HPC for local inspection
 /acinetobacter_baumannii/

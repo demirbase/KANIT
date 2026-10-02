@@ -88,45 +88,8 @@ def test_registry_targets_and_validation():
 # config / path resolution
 # ---------------------------------------------------------------------------
 def test_resolve_path_organism_antibiotic():
-    # Force the k-mer (base) layout so this templating check is independent of
-    # config.yaml's feature_repr default (now 'unitig'); the redirect itself is
-    # covered by test_resolve_path_feature_repr_switch below.
-    base = load_config()
-    cfg = {**base, "preprocessing": {**base.get("preprocessing", {}), "feature_repr": "kmer"}}
-    p = resolve_path("matrix_dir", organism="ecoli", antibiotic="gentamicin", config=cfg)
-    assert p.as_posix().endswith("data/processed/ecoli/gentamicin/matrix")
-
-
-def test_resolve_path_feature_repr_switch():
-    # The unitig pivot switch (ROADMAP §0 M12): feature_repr redirects ONLY the
-    # matrix_dir key, leaving every other path untouched. Use a synthetic config
-    # so the test is independent of the repo config.yaml's current value.
-    base = load_config()
-    cfg_kmer = {**base, "preprocessing": {**base.get("preprocessing", {}), "feature_repr": "kmer"}}
-    cfg_unitig = {**base, "preprocessing": {**base.get("preprocessing", {}), "feature_repr": "unitig"},
-                  "unitig": {"out_subdir": "matrix_unitig"}}
-
-    p_kmer = resolve_path("matrix_dir", organism="ecoli", antibiotic="ampicillin", config=cfg_kmer)
-    p_unitig = resolve_path("matrix_dir", organism="ecoli", antibiotic="ampicillin", config=cfg_unitig)
-    assert p_kmer.name == "matrix"
-    assert p_unitig.name == "matrix_unitig"
-    assert p_unitig.parent == p_kmer.parent          # same {antibiotic} dir, only leaf differs
-    # Non-matrix keys must be unaffected by the switch.
-    assert resolve_path("models_dir", organism="ecoli", antibiotic="ampicillin",
-                        config=cfg_unitig).name == "ampicillin"
-
-    # AMR_FEATURE_REPR env overrides config (HPC convenience).
-    import os
-    prev = os.environ.get("AMR_FEATURE_REPR")
-    try:
-        os.environ["AMR_FEATURE_REPR"] = "unitig"
-        assert resolve_path("matrix_dir", organism="ecoli", antibiotic="ampicillin",
-                            config=cfg_kmer).name == "matrix_unitig"
-    finally:
-        if prev is None:
-            os.environ.pop("AMR_FEATURE_REPR", None)
-        else:
-            os.environ["AMR_FEATURE_REPR"] = prev
+    p = resolve_path("matrix_dir", organism="ecoli", antibiotic="gentamicin")
+    assert p.as_posix().endswith("data/processed/ecoli/gentamicin/matrix_unitig")
 
 
 def test_resolve_path_run_id():
@@ -135,10 +98,10 @@ def test_resolve_path_run_id():
 
 
 def test_resolve_path_global_key_no_placeholder():
-    # A global key with no placeholder (kmc_bin) resolves directly, with or
+    # A global key with no placeholder (data_dir) resolves directly, with or
     # without organism/antibiotic supplied.
-    p = resolve_path("kmc_bin")
-    assert p.name == "kmc"
+    p = resolve_path("data_dir")
+    assert p.name == "data"
 
 
 def test_resolve_path_unknown_key():
@@ -197,24 +160,22 @@ if __name__ == "__main__":
 
 
 # ---- compute-resource env overrides ---------------------------------------
-# kmc_mem/threads describe machine size, not science. They used to be a hand-edit
+# threads describe machine size, not science. They used to be a hand-edit
 # on the HPC that `git reset --hard` wiped on every deploy — a forgotten re-edit
 # meant jobs ran with laptop resources, slowly or OOM, with no clue in the logs.
 
 def test_resource_keys_default_to_laptop_safe_values(monkeypatch):
     from lib.config import load_config
-    monkeypatch.delenv("AMR_KMC_MEM", raising=False)
     monkeypatch.delenv("AMR_THREADS", raising=False)
     pre = load_config()["preprocessing"]
-    assert pre["kmc_mem"] == 16 and pre["threads"] == 10
+    assert pre["threads"] == 10
 
 
 def test_env_overrides_resource_keys(monkeypatch):
     from lib.config import load_config
-    monkeypatch.setenv("AMR_KMC_MEM", "128")
     monkeypatch.setenv("AMR_THREADS", "20")
     pre = load_config()["preprocessing"]
-    assert pre["kmc_mem"] == 128 and pre["threads"] == 20
+    assert pre["threads"] == 20
 
 
 def test_bad_resource_env_raises_instead_of_silently_defaulting(monkeypatch):
@@ -272,9 +233,8 @@ def test_validate_registry_rejects_an_unknown_status(monkeypatch):
 
 
 # ---- tool-version provenance (schema 0.7.1) --------------------------------
-# The KB used to record kmc (a QC-only tool for the abandoned k-mer baseline) but
-# not unitig-caller (builds the features) or PopPUNK (defines the CV groups), so
-# it could not say what produced its own lineage labels. graph_tool is tracked
+# The KB records the tools the results depend on: unitig-caller (builds the
+# features) and PopPUNK (defines the CV groups). graph_tool is tracked
 # because pinning PopPUNK does NOT pin its behaviour: on 2026-07-15 a rebuild held
 # poppunk at 2.7.8 while graph-tool went 2.98 -> 3.0 and E. coli re-clustered.
 
@@ -328,7 +288,7 @@ def test_populate_run_writes_versions_including_pyseer_from_step14(tmp_path):
     run_meta = {"run_id": "R1", "versions": {
         "unitig_caller": "unitig-caller 1.3.2", "bcalm": "bcalm 2.2.3",
         "poppunk": "poppunk 2.7.8", "graph_tool": "3.0", "blastn": "blastn: 2.17.0+",
-        "kmc": "K-Mer Counter 3.2.4", "xgboost": "3.2.0"}}
+        "xgboost": "3.2.0"}}
     # pyseer comes from 14's summary, NOT from collect_versions (different container)
     pop.populate_run(c, "ecoli", "ampicillin", run_meta, "4.0.1", 5,
                      pyseer_version="pyseer 1.4.1")

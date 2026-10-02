@@ -726,8 +726,7 @@ def main():
         print(f"ERROR: {e}")
         print("\nPlease ensure you have run:")
         print("  1. Data validation: 01_data_validation.py")
-        print("  2. K-mer counting: 02_kmer_extraction.py")
-        print("  3. Matrix creation: 03_matrix_construction.py")
+        print("  2. Matrix creation: 03u_unitig_matrix.py")
         sys.exit(1)
     except Exception as e:
         print(f"ERROR: Unexpected error: {e}")
@@ -890,8 +889,7 @@ def main():
                         n_genomes = sum(1 for _ in open(_yp, encoding='utf-8')) - 1
                 except Exception:
                     pass
-                min_support = ((config.get('unitig', {}) or {}).get('min_support')
-                               or (config.get('preprocessing', {}) or {}).get('min_support'))
+                min_support = (config.get('unitig', {}) or {}).get('min_support')
                 meta = rm.build_run_metadata(
                     organism=organism,
                     antibiotic=TARGET_ANTIBIOTIC,

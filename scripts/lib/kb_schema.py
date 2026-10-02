@@ -11,14 +11,12 @@ both trivially swapped).
 Feature unit = **unitig** (compacted de Bruijn graph paths from unitig-caller over
 its Bifrost backend; ROADMAP §0.1). The tables are named accordingly (``unitigs``,
 ``unitig_model_scores`` …); ``sequence`` is the unitig DNA and ``k`` the de Bruijn k
-used to build it — **31**, unitig-caller's default, which 03u does not override. It
-is NOT preprocessing.k_length: that is the KMC baseline's 21, and stamping it here
-was a defect corrected by migrate_kb_unitig_k.py.
+used to build it — **31**, unitig-caller's default, which 03u does not override.
 
 Design notes
 ------------
 * ``pipeline_runs`` is the provenance anchor — every model/score/evidence row
-  links back to the exact run (git commit, CARD/KMC versions, config hash, seed)
+  links back to the exact run (git commit, CARD and tool versions, config hash, seed)
   so any KB record is reproducible (ROADMAP §1.3, must-haves M6/M10).
 * ``unitigs`` is the deduplicated unitig dictionary; everything else references it.
 * ``validation_evidence`` is the generic evidence ledger (M11): one row per
@@ -45,12 +43,9 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     git_commit      TEXT,                    -- 40-char pipeline commit
     git_dirty       INTEGER,                 -- 0/1 working tree clean?
     card_version    TEXT,                    -- e.g. 4.0.1 (BLAST annotation source)
-    kmc_version     TEXT,
     xgboost_version TEXT,
-    -- 0.7.1: the tools the RESULTS depend on. Until now this table recorded kmc
-    -- (a QC-only tool for the abandoned k-mer baseline) but not unitig-caller,
-    -- which builds the features, nor PopPUNK, which defines the CV groups — so
-    -- the KB could not say what produced its own lineage labels.
+    -- The tools the RESULTS depend on: unitig-caller builds the features and
+    -- PopPUNK defines the CV groups.
     unitig_caller_version TEXT,              -- builds the unitig features
     bcalm_version         TEXT,              -- compacted de Bruijn graph
     poppunk_version       TEXT,              -- defines the lineage-CV groups

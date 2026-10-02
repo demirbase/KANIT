@@ -78,12 +78,10 @@ def _pkg_version(name):
 def collect_versions(config=None):
     """Best-effort capture of language / library / external-tool versions.
 
-    The tools that DEFINE the science are recorded, not just the incidental ones.
-    This used to capture kmc (a QC-only tool for the abandoned k-mer baseline)
-    while omitting unitig-caller — which builds the features — and PopPUNK —
-    which defines the cross-validation groups. A KB that cannot say which PopPUNK
-    produced its lineage labels has a provenance chain broken exactly where it
-    matters.
+    The tools that DEFINE the science are recorded, not just the incidental ones:
+    unitig-caller builds the features and PopPUNK defines the cross-validation
+    groups. A KB that cannot say which PopPUNK produced its lineage labels has a
+    provenance chain broken exactly where it matters.
 
     graph-tool is here for a hard-won reason: on 2026-07-15 a container rebuild
     held poppunk pinned at 2.7.8 while graph-tool — PopPUNK's network backend —
@@ -102,7 +100,6 @@ def collect_versions(config=None):
         "scikit_learn": _pkg_version("sklearn"),
         "numpy": _pkg_version("numpy"),
         "scipy": _pkg_version("scipy"),
-        "kmc": _tool_version("kmc", "-h") or _tool_version("kmc"),
         "blastn": _tool_version("blastn", "-version"),
         # ── the tools the results actually depend on ──────────────────────────
         "unitig_caller": _tool_version("unitig-caller"),   # builds the features

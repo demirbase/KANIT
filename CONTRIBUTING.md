@@ -19,7 +19,7 @@ pre-commit install
    ```bash
    make lint        # ruff
    make test        # unit + smoke (seconds)
-   make test-all    # + integration (needs KMC/xgboost; minutes)
+   make test-all    # + opt-in integration tests
    ```
 4. Open a pull request. CI (GitHub Actions) runs ruff + the unit/smoke suite on Python 3.10–3.12.
 

@@ -136,26 +136,13 @@ def _s(x):
 # Per-table loaders
 # ---------------------------------------------------------------------------
 def _feature_k(config):
-    """The k to stamp on rows of `unitigs` — the k of the representation in force.
-
-    This used to read preprocessing.k_length unconditionally, which is the KMC
-    baseline's 21. The delivered run is the unitig representation, whose graph is
-    built at 31, so every unitig row carried the wrong k. The two paths have
-    genuinely different k and neither value is wrong for its own path; taking one
-    for the other is what was wrong.
-    """
-    import os
-    feat = os.environ.get("AMR_FEATURE_REPR") or \
-        (config.get("preprocessing", {}) or {}).get("feature_repr", "kmer")
-    if feat == "unitig":
-        k = (config.get("unitig", {}) or {}).get("k")
-        if k is None:
-            raise SystemExit(
-                "ERROR: feature_repr is 'unitig' but config has no unitig.k. Refusing to "
-                "fall back to preprocessing.k_length — that is the k-mer baseline's k and "
-                "stamping it on unitig rows is the defect this guard exists to prevent.")
-        return int(k)
-    return int(config["preprocessing"]["k_length"])
+    """The de Bruijn k the unitigs were built at (config ``unitig.k``), stamped on
+    rows of `unitigs`."""
+    k = (config.get("unitig", {}) or {}).get("k")
+    if k is None:
+        raise SystemExit("ERROR: config has no unitig.k; the k of the unitig graph "
+                         "must be recorded, not guessed.")
+    return int(k)
 
 
 def unitig_id(conn, sequence, k):
@@ -197,12 +184,12 @@ def populate_run(conn, organism, antibiotic, run_meta, card_version, min_support
     conn.execute(
         """INSERT OR REPLACE INTO pipeline_runs
            (run_id, organism, antibiotic, git_commit, git_dirty, card_version,
-            kmc_version, xgboost_version, unitig_caller_version, bcalm_version,
+            xgboost_version, unitig_caller_version, bcalm_version,
             poppunk_version, graph_tool_version, blast_version, pyseer_version,
             random_seed, config_hash, min_support, n_genomes, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (run_id, organism, antibiotic, rm.get("git_commit_hash"), _i(rm.get("git_dirty")),
-         card_version, versions.get("kmc"), versions.get("xgboost"),
+         card_version, versions.get("xgboost"),
          versions.get("unitig_caller"), versions.get("bcalm"),
          versions.get("poppunk"), versions.get("graph_tool"), versions.get("blastn"),
          pyseer_version or versions.get("pyseer"),

@@ -44,5 +44,5 @@ jobs:
 
       - name: Run tests (unit + smoke)
         run: pytest -ra
-        # Integration/slow tests need KMC/BLAST/Nextflow and are opt-in; they
+        # Integration/slow tests need the pipeline tools and are opt-in; they
         # run in the maintainer's local/HPC environment, not in CI.

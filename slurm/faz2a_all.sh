@@ -1,6 +1,6 @@
 #!/bin/bash
 export AMR_HOME=/arf/home/edemirbas/ML_AMR_Prediction_v2 AMR_WORK=/arf/scratch/edemirbas/amr
-export APPTAINER_BINDPATH=/arf AMR_FEATURE_REPR=unitig
+export APPTAINER_BINDPATH=/arf
 cd $AMR_HOME; SIF=$AMR_WORK/containers/amr.sif; LOG=$AMR_WORK/faz2a_all.log
 declare -A PANEL=(
   [ecoli]="ampicillin amoxicillin_clavulanic_acid cefotaxime ciprofloxacin gentamicin trimethoprim_sulfamethoxazole tetracycline chloramphenicol"

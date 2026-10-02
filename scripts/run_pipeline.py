@@ -46,13 +46,9 @@ ALL_STEPS: list[tuple[str, str]] = [
     ("00a", "00a_download_bvbrc.py"),
     ("00",  "00_prepare_metadata.py"),
     ("01",  "01_data_validation.py"),
-    ("02",  "02_kmer_extraction.py"),        # KMC (QC + k-mer baseline)
-    ("02b", "02b_global_qc_analysis.py"),
     ("02c", "02c_lineage_poppunk.py"),       # PopPUNK lineage (amr-pp.sif)
     ("02d", "02d_genome_qc.py"),             # CheckM2+QUAST QC (M15; --mode, multi-container)
-    ("03",  "03_matrix_construction.py"),    # raw k-mer matrix (baseline)
-    ("03u", "03u_unitig_matrix.py"),         # unitig matrix (CANONICAL; AMR_FEATURE_REPR=unitig)
-    ("03b", "03b_matrix_validation_qc.py"),
+    ("03u", "03u_unitig_matrix.py"),         # unitig matrix (unitig-caller)
     ("04",  "04_optimization.py"),
     ("05",  "05_model_training.py"),
     ("06",  "06_evaluation.py"),
@@ -72,13 +68,13 @@ ALL_STEPS: list[tuple[str, str]] = [
 ]
 # Steps that need SLURM + a specific container / env / --mode / internet and so
 # cannot be launched by this plain orchestrator (run them as SLURM jobs):
-#   02c (amr-pp.sif) · 02d (--mode + amr-checkm2/amr-tools) · 03u (AMR_FEATURE_REPR=unitig)
+#   02c (amr-pp.sif) · 02d (--mode + amr-checkm2/amr-tools) · 03u (unitig-caller container)
 #   08-NCBI (internet) · 14 (--mode + amr-tools) · 16 (--mode + amr-tools) · populate_database.py
 HPC_SLURM_STEPS = {"02c", "02d", "14", "16"}
 
-# Default plan: the local single-container analysis core (raw-k-mer baseline).
-# The canonical unitig run uses 03u (+ AMR_FEATURE_REPR=unitig) and runs on HPC.
-DEFAULT_PLAN = ["01", "02", "02b", "03", "04", "05", "06", "07b", "07", "09", "10"]
+# Default plan: the local single-container analysis core. The unitig matrix (03u)
+# is built beforehand on HPC.
+DEFAULT_PLAN = ["01", "04", "05", "06", "07b", "07", "09", "10"]
 
 
 def _index(step_id: str) -> int:

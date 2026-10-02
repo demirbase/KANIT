@@ -3,8 +3,8 @@
 # ============================================================================
 # These are the ACTUAL Python imports used across scripts/, scripts/lib/ and
 # tests/ (verified against the codebase). Minimum versions are listed; for a
-# fully reproducible environment INCLUDING the external tools (KMC / BLAST+ /
-# Nextflow) prefer conda + environment.yml (see "Setup" below).
+# fully reproducible environment INCLUDING the external tools (BLAST+ /
+# unitig-caller / Nextflow) prefer conda + environment.yml (see "Setup" below).
 #
 #   pip:   python -m venv .venv && source .venv/bin/activate
 #          pip install -r requirements.txt
@@ -51,25 +51,22 @@ pytest>=7.0.0            # tests/ (smoke / unit / integration)
 # ============================================================================
 # EXTERNAL TOOLS (NOT pip-installable) — required by some steps
 # ============================================================================
-# KMC >= 3.2      k-mer counting           steps 02, 03   (binaries under bin/bin/)
 # BLAST+ >= 2.12  homology search          step 08
 # Nextflow >= 22.10  workflow runner       step 08
 #
-# The conda environment.yml installs all three automatically (via bioconda).
+# The conda environment.yml installs them automatically (via bioconda).
 # Manual install per platform:
 #
 #   macOS (Homebrew):
-#       brew install brewsci/bio/kmc blast
+#       brew install blast
 #       curl -s https://get.nextflow.io | bash && sudo mv nextflow /usr/local/bin/
 #
 #   Linux / Ubuntu:
 #       sudo apt-get install -y ncbi-blast+ default-jre
-#       # KMC: download a release binary from
-#       #   https://github.com/refresh-bio/KMC/releases  (place under bin/bin/)
 #       curl -s https://get.nextflow.io | bash && sudo mv nextflow /usr/local/bin/
 #
 #   Any platform with conda (recommended, one command):
-#       conda install -c bioconda -c conda-forge kmc blast nextflow
+#       conda install -c bioconda -c conda-forge blast nextflow
 #
 #   Windows:
 #       Use WSL2 (Ubuntu) and follow the Linux instructions, or run the whole

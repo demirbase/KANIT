@@ -234,7 +234,7 @@ def extract_top_features():
         if not features_file.exists():
             raise FileNotFoundError(
                 f"Feature dictionary not found: {features_file}\n"
-                f"Please run matrix creation script first (03_matrix_construction.py)"
+                f"Please run matrix creation script first (03u_unitig_matrix.py)"
             )
         
         # Map indices to k-mer sequences

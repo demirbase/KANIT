@@ -12,7 +12,7 @@ genomes whose assembly (.fna) is actually present on disk.
 
 This step is RE-RUNNABLE: after retrying failed downloads (00a --retry-failed),
 run it again and the matrix is refreshed to include the newly arrived genomes.
-The labels (y_*.csv) are still materialised later, in 03_matrix_construction.py.
+The labels (y_*.csv) are materialised later, in 03u_unitig_matrix.py.
 """
 
 import argparse
@@ -98,7 +98,7 @@ def main():
     if n_written:
         counts = {c: int(wide[c].notna().sum()) for c in ab_cols}
         log.info(f"  tested counts per antibiotic: {counts}")
-    log.info("Done. Next: 01_data_validation.py / 02_kmer_extraction.py")
+    log.info("Done. Next: 01_data_validation.py / 02d_genome_qc.py")
 
 
 if __name__ == "__main__":

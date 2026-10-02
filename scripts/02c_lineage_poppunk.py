@@ -18,8 +18,8 @@ and writes the CANONICAL table the rest of the pipeline reads:
     data/processed/{organism}/lineage/poppunk_clusters.csv  (Genome ID, Cluster)
 
 Organism-level: clusters ALL assemblies in the organism's genomes dir (not the
-per-antibiotic subset) so one clustering is reused by every antibiotic. KMC/unitig
-feature steps are unaffected — this only produces the CV split labels.
+per-antibiotic subset) so one clustering is reused by every antibiotic. The
+unitig feature steps are unaffected — this only produces the CV split labels.
 """
 
 import argparse

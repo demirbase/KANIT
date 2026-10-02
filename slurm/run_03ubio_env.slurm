@@ -2,7 +2,7 @@
 #SBATCH -p barbun -N1 -c20 --mem=180G --time=1-00:00:00 --exclude=barbun45,barbun46
 #SBATCH -o /arf/scratch/edemirbas/amr/%x-%j.out -e /arf/scratch/edemirbas/amr/%x-%j.err
 set -euo pipefail
-export APPTAINER_BINDPATH=/arf AMR_FEATURE_REPR=unitig
+export APPTAINER_BINDPATH=/arf
 : "${AMR_ORGANISM:?}" "${AMR_ANTIBIOTIC:?}"
 W=/arf/scratch/edemirbas/amr; H=/arf/home/edemirbas/ML_AMR_Prediction_v2; SIF=$W/containers/amr.sif
 o=$AMR_ORGANISM; a=$AMR_ANTIBIOTIC; cd $H

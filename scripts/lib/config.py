@@ -34,12 +34,10 @@ CONFIG_FILE = PROJECT_ROOT / "config" / "config.yaml"
 # NOT science — they are how big the machine is — so they must not live only in a
 # hand-edited config.yaml: `git reset --hard` wipes such edits on every deploy,
 # and a forgotten re-edit means jobs silently run with laptop-sized resources
-# (kmc_mem 16 instead of 128) — slow or OOM, with nothing in the logs saying why.
-# Set AMR_KMC_MEM / AMR_THREADS in the SLURM script instead; the repo default
-# stays laptop-safe.
+# (threads 10 instead of 40) — slow, with nothing in the logs saying why.
+# Set AMR_THREADS in the SLURM script instead; the repo default stays laptop-safe.
 _ENV_RESOURCE_OVERRIDES = {
-    ("preprocessing", "kmc_mem"): "AMR_KMC_MEM",   # GB handed to KMC
-    ("preprocessing", "threads"): "AMR_THREADS",   # CPU threads (02/02b/03; 03u/02c fall back to it)
+    ("preprocessing", "threads"): "AMR_THREADS",   # CPU threads (03u and 02c fall back to it)
 }
 
 
@@ -174,23 +172,7 @@ def resolve_path(key: str, organism: str | None = None, antibiotic: str | None =
             f"antibiotic={antibiotic}, run_id={run_id})."
         )
 
-    result = PROJECT_ROOT / resolved
-
-    # Feature-representation switch (ROADMAP §0 M12 — single point, no per-script
-    # change). When preprocessing.feature_repr == 'unitig', the matrix directory
-    # transparently redirects to the unitig matrix produced by 03u
-    # (sibling 'unitig.out_subdir', default 'matrix_unitig'), so 03b/04/05/06/07/07b
-    # all consume unitigs. Default ('kmer') leaves the raw-k-mer path untouched.
-    if key == "matrix_dir":
-        # AMR_FEATURE_REPR env overrides config (lets an HPC job switch to the
-        # unitig matrix without editing a manually-tuned config.yaml).
-        feat = os.environ.get("AMR_FEATURE_REPR") or \
-            (cfg.get("preprocessing", {}) or {}).get("feature_repr", "kmer")
-        if feat == "unitig":
-            sub = (cfg.get("unitig", {}) or {}).get("out_subdir", "matrix_unitig")
-            result = result.parent / sub
-
-    return result
+    return PROJECT_ROOT / resolved
 
 
 def resolve_tool(config_key: str, command_name: str, config: dict[str, Any] | None = None,
@@ -201,7 +183,7 @@ def resolve_tool(config_key: str, command_name: str, config: dict[str, Any] | No
     Resolution order (first hit wins):
         1. Environment override (``env_var``, default ``AMR_<COMMAND>_BIN``).
         2. ``command_name`` on PATH (``shutil.which``) — the normal case on an
-           HPC / Linux box where KMC/BLAST come from conda or a loaded module.
+           HPC / Linux box where BLAST and the other tools come from conda or a loaded module.
         3. The project-bundled path from config (``paths`` / ``paths_organism``
            ``config_key``) — the macOS-only convenience binary under ``bin/bin/``.
            The bundle ships a macOS (Mach-O) build, so it is trusted ONLY on

@@ -1,32 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Unitig Feature Matrix Construction (ROADMAP §0.1 M12 — replaces raw k-mers).
+Unitig Feature Matrix Construction.
 
-This is the unitig-based alternative to 03_matrix_construction.py. Instead of a
-genome×k-mer presence/absence matrix it builds a genome×UNITIG presence/absence
-matrix, where unitigs are the maximal non-branching paths of the population
-compacted de Bruijn graph (unitig-caller, Bifrost backend). Unitigs are longer,
-fewer, BLAST-mappable and GWAS-standard, which dissolves the raw-k-mer
-speed/memory/min_support pressure while keeping the *downstream XGBoost unchanged*.
+Builds a genome×unitig presence/absence matrix, where unitigs are the maximal
+non-branching paths of the population compacted de Bruijn graph (unitig-caller,
+Bifrost backend). Unitigs are BLAST-mappable and the standard feature of
+bacterial GWAS.
 
-Drop-in output contract (identical to 03 so 03b/04/05/06/07/07b read it as-is):
-    <out_subdir>/
+Output contract (read by 04/05/06/07/07b):
+    <matrix_dir>/
         features.txt                 one line per unitig: "<unitig_seq>\\t1"
                                      (line index == matrix column index)
         y_{antibiotic}.csv           column 'label' (genome order == rows)
         genomes_{antibiotic}.csv     column 'Genome ID' (same order)
         X_{antibiotic}_part_{c}.npz  CSR int8 binary chunks of chunk_size genomes
 
-The ONLY semantic difference vs 03: features.txt rows are variable-length unitig
-sequences, not fixed 21-mers. Downstream steps that hard-assume k=21 (08 BLAST
-task, 09 coverage = aln_len/k, 11 SNP codon mapping) are handled in later
-ROADMAP §0 steps, NOT here — this script only produces the matrix.
-
-Output goes to a SEPARATE sibling dir (default 'matrix_unitig') so the working
-raw-k-mer 'matrix' (the baseline) is never overwritten.
-
-KMC (02/02b) stays for QC/spectra only; this step needs the raw .fna assemblies.
+features.txt rows are variable-length unitig sequences. This step needs the raw
+.fna assemblies.
 
 Two modes (unitigs are sequence features, independent of antibiotic):
   • --build-db : ORGANISM-LEVEL — run unitig-caller ONCE over ALL the organism's
@@ -66,8 +57,8 @@ def _load_config():
 def select_genomes(config, organism, antibiotic):
     """Genomes with a label for `antibiotic` AND a present .fna, minus QC outliers.
 
-    Returns (valid_genomes, valid_labels) in metadata order. Unlike 03 this does
-    NOT require a KMC database — unitig-caller consumes the .fna assemblies.
+    Returns (valid_genomes, valid_labels) in metadata order. unitig-caller
+    consumes the .fna assemblies.
     """
     metadata_file = resolve_path("metadata_file", organism=organism, config=config)
     raw_genomes_dir = resolve_path("raw_genomes_dir", organism=organism, config=config)
@@ -420,7 +411,6 @@ def main():
     # chunk_size MUST match the value 04/05/06 use (they slice y_{ab}.csv by it via
     # get_y_chunk), so it is sourced from the same preprocessing.chunk_size key.
     default_chunk = config["preprocessing"].get("chunk_size", 200)
-    default_out_subdir = unitig_cfg.get("out_subdir", "matrix_unitig")
     default_min_support = int(unitig_cfg.get("min_support", 1))
 
     ap = argparse.ArgumentParser(description="Build the genome×unitig binary matrix.")
@@ -428,10 +418,6 @@ def main():
     ap.add_argument("--antibiotic", default=default_ab)
     ap.add_argument("--threads", type=int, default=default_threads)
     ap.add_argument("--chunk-size", type=int, default=default_chunk)
-    ap.add_argument("--out-subdir", default=default_out_subdir,
-                    help="Sibling of the raw-k-mer 'matrix' dir (kept separate so "
-                         "the baseline matrix is never overwritten). "
-                         "Default from config unitig.out_subdir.")
     ap.add_argument("--min-support", type=int, default=default_min_support,
                     help="Drop unitigs carried by fewer than this many genomes "
                          "(absolute count; ROADMAP §0.7 recommends >=10 for the "
@@ -489,9 +475,8 @@ def main():
         return
 
     # ----- PER-ANTIBIOTIC matrix --------------------------------------------------
-    matrix_dir = resolve_path("matrix_dir", organism=organism, antibiotic=antibiotic,
-                              config=config)
-    out_dir = matrix_dir.parent / args.out_subdir
+    out_dir = resolve_path("matrix_dir", organism=organism, antibiotic=antibiotic,
+                           config=config)
     out_dir.mkdir(parents=True, exist_ok=True)
     print("=" * 80)
     print("UNITIG FEATURE MATRIX CONSTRUCTION")

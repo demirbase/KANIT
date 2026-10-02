@@ -54,20 +54,18 @@ DEFAULT_TIERS = {
     "weak":      {"min_identity": 80.0, "min_coverage": 0.60, "max_evalue": 50.0},
 }
 DEFAULT_REPORT_MAX_EVALUE = 50.0
-DEFAULT_KMER_LENGTH = 21
 
 
 def load_tiers(config):
-    """Return (tiers, report_max_evalue, weak_min_identity, weak_min_cov, k_length, stability_threshold)."""
+    """Return (tiers, report_max_evalue, weak_min_identity, weak_min_cov, stability_threshold)."""
     analysis = config.get("analysis", {}) or {}
     tiers = analysis.get("confidence_tiers", DEFAULT_TIERS) or DEFAULT_TIERS
     report_max = float(analysis.get("report_max_evalue", DEFAULT_REPORT_MAX_EVALUE))
     weak = tiers.get("weak", DEFAULT_TIERS["weak"])
     weak_min_ident = float(weak["min_identity"])
     weak_min_cov = float(weak.get("min_coverage", DEFAULT_TIERS["weak"]["min_coverage"]))
-    k_length = int(config.get("preprocessing", {}).get("k_length", DEFAULT_KMER_LENGTH))
     stability_threshold = float(analysis.get("stability_threshold", 0.6))
-    return tiers, report_max, weak_min_ident, weak_min_cov, k_length, stability_threshold
+    return tiers, report_max, weak_min_ident, weak_min_cov, stability_threshold
 
 
 def classify_confidence(pident, evalue, length, query_length, tiers):
@@ -75,9 +73,8 @@ def classify_confidence(pident, evalue, length, query_length, tiers):
     Grade a BLAST hit into confirmed / candidate / weak (best-first) or 'none'.
 
     The primary, database-size-independent criteria are IDENTITY and COVERAGE
-    (alignment length / QUERY length). ``query_length`` is k for a k-mer query
-    and the unitig length for a unitig query (08 emits `qlen`); using a fixed k
-    for unitigs would make coverage meaningless (always >1). E-value is only a
+    (alignment length / QUERY length). ``query_length`` is the unitig length
+    (08 emits `qlen`). E-value is only a
     loose secondary gate (scales with DB size; not comparable CARD vs NCBI nt).
     """
     try:
@@ -95,28 +92,18 @@ def classify_confidence(pident, evalue, length, query_length, tiers):
     return "none"
 
 
-# BLAST outfmt-6 columns. 08 now emits `qlen` (query length) before `stitle`;
-# older outputs lack it (handled by read_blast_tsv -> qlen = NaN -> k_length).
+# BLAST outfmt-6 columns as 08 writes them (`qlen` = query length, before `stitle`).
 TSV_COLS = ['qseqid', 'sseqid', 'pident', 'length', 'mismatch', 'gapopen',
             'qstart', 'qend', 'sstart', 'send', 'evalue', 'bitscore', 'qlen', 'stitle']
 
 
 def read_blast_tsv(path):
-    """Read a BLAST outfmt-6 TSV, tolerating presence/absence of the `qlen`
-    column (forward/backward compatible). Always returns a frame with all
-    TSV_COLS; a missing `qlen` is filled NaN so callers fall back to k_length.
-    """
+    """Read a BLAST outfmt-6 TSV written by 08 (columns TSV_COLS)."""
     df = pd.read_csv(path, sep='\t', header=None)
-    ncol = df.shape[1]
-    if ncol == len(TSV_COLS):
-        df.columns = TSV_COLS
-    elif ncol == len(TSV_COLS) - 1:                     # legacy: no qlen
-        df.columns = [c for c in TSV_COLS if c != 'qlen']
-        df['qlen'] = float('nan')
-    else:                                               # best effort
-        df.columns = (TSV_COLS + [f'extra{i}' for i in range(ncol)])[:ncol]
-        if 'qlen' not in df.columns:
-            df['qlen'] = float('nan')
+    if df.shape[1] != len(TSV_COLS):
+        raise ValueError(f"{path}: expected {len(TSV_COLS)} BLAST columns "
+                         f"({', '.join(TSV_COLS)}), found {df.shape[1]}")
+    df.columns = TSV_COLS
     return df
 
 
@@ -447,7 +434,7 @@ def main():
     config = load_config()
     antibiotic = get_target(config=config)[1]
     top_n = config.get('analysis', {}).get('top_n_features', 50)
-    tiers, report_max_evalue, weak_min_ident, weak_min_cov, k_length, stability_threshold = load_tiers(config)
+    tiers, report_max_evalue, weak_min_ident, weak_min_cov, stability_threshold = load_tiers(config)
 
     # Configure NCBI Entrez identity (email / api_key) from config — never a
     # hardcoded placeholder e-mail (NCBI ToS / ban risk).
@@ -492,8 +479,7 @@ def main():
         df_card['evalue'] = pd.to_numeric(df_card['evalue'], errors='coerce')
         df_card['length'] = pd.to_numeric(df_card['length'], errors='coerce')
         df_card['qlen']   = pd.to_numeric(df_card['qlen'], errors='coerce')
-        # Effective query length: the real qlen for unitigs, else k_length (k-mers).
-        df_card['qlen_eff'] = df_card['qlen'].where(df_card['qlen'] > 0, k_length)
+        df_card['qlen_eff'] = df_card['qlen'].where(df_card['qlen'] > 0)
         # Keep everything down to the weak tier (identity + coverage floors,
         # E ≤ report_max_evalue) and grade each hit. Weak hits are kept and
         # FLAGGED rather than dropped, for transparency (ROADMAP Risk-4 / §1.4).
@@ -521,7 +507,7 @@ def main():
         df_ncbi['evalue'] = pd.to_numeric(df_ncbi['evalue'], errors='coerce')
         df_ncbi['length'] = pd.to_numeric(df_ncbi['length'], errors='coerce')
         df_ncbi['qlen']   = pd.to_numeric(df_ncbi['qlen'], errors='coerce')
-        df_ncbi['qlen_eff'] = df_ncbi['qlen'].where(df_ncbi['qlen'] > 0, k_length)
+        df_ncbi['qlen_eff'] = df_ncbi['qlen'].where(df_ncbi['qlen'] > 0)
         df_ncbi['sstart'] = pd.to_numeric(df_ncbi['sstart'], errors='coerce').fillna(0).astype(int)
         df_ncbi['send']   = pd.to_numeric(df_ncbi['send'],   errors='coerce').fillna(0).astype(int)
         df_ncbi = df_ncbi[

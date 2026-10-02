@@ -8,7 +8,7 @@ def get_y_chunk(y_all, chunk_id, chunk_size, total_len):
     Extract the label subset corresponding to a specific data chunk.
 
     Chunks are contiguous, fixed-size slices of the full label array, matching
-    the row order written by 03_matrix_construction.py (k-mers) / 03u_unitig_matrix.py
+    the row order written by 03u_unitig_matrix.py
     (unitigs).
 
     Args:

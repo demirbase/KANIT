@@ -3,7 +3,7 @@
 #SBATCH -o /arf/scratch/edemirbas/amr/%x-%j.out -e /arf/scratch/edemirbas/amr/%x-%j.err
 #SBATCH --mail-type=END,FAIL --mail-user=eren0demirbas@gmail.com
 set -euo pipefail
-export APPTAINER_BINDPATH=/arf AMR_FEATURE_REPR=unitig
+export APPTAINER_BINDPATH=/arf
 : "${AMR_ORGANISM:?}"
 W=/arf/scratch/edemirbas/amr; H=/arf/home/edemirbas/ML_AMR_Prediction_v2
 cd $H

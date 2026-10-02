@@ -34,13 +34,10 @@ project:
 # Consumed by scripts/lib/config.py resolve_path(). Every numbered script now
 # resolves its paths from here. (The legacy single-organism `paths:` block was
 # removed 2026-07-13 — it was dead: paths_organism is a superset and resolve_path
-# checks it first, so the fallback never triggered.) External tools (kmc) prefer
-# PATH via resolve_tool; the kmc_bin entries are a Darwin-only bundled fallback.
+# checks it first, so the fallback never triggered.)
 paths_organism:
   # ── Global / shared (organism-independent — NOT moved by the migration) ────
   data_dir:               "data"
-  kmc_bin:                "bin/bin/kmc"
-  kmc_tools_bin:          "bin/bin/kmc_tools"
 
   # Global QC / validation outputs are now ORGANISM-SCOPED so two organisms do
   # not overwrite each other's validation_report.txt / global_qc_outliers.csv.
@@ -49,17 +46,15 @@ paths_organism:
   # ── Organism-scoped ────────────────────────────────────────────────────────
   raw_genomes_dir:  "data/raw/{organism}/genomes"
   metadata_file:    "data/external/{organism}/metadata/amr_phenotypes.csv"
-  kmc_outputs_dir:  "data/interim/{organism}/kmc_outputs"
   # PopPUNK lineage labels (02c) — organism-level, antibiotic-independent (one
   # clustering reused by every antibiotic's lineage-aware CV).
   lineage_dir:      "data/processed/{organism}/lineage"
 
   # ── Organism + antibiotic-scoped ───────────────────────────────────────────
-  matrix_dir:           "data/processed/{organism}/{antibiotic}/matrix"
+  matrix_dir:           "data/processed/{organism}/{antibiotic}/matrix_unitig"
   models_dir:           "models/{organism}/{antibiotic}"
   logs_dir:             "logs/{organism}/{antibiotic}"
   dir_01_data_exploration:   "results/{organism}/{antibiotic}/01_data_exploration"
-  dir_02_matrix_qc:          "results/{organism}/{antibiotic}/02_matrix_qc"
   dir_03_model_optimization: "results/{organism}/{antibiotic}/03_model_optimization"
   dir_04_evaluation:         "results/{organism}/{antibiotic}/04_evaluation"
   dir_05_explainability:     "results/{organism}/{antibiotic}/05_explainability"
@@ -96,66 +91,32 @@ metadata:
 # DATA PREPROCESSING PARAMETERS
 # ----------------------------------------------------------------------------
 preprocessing:
-  # K-mer counting configuration
-  k_length: 21  # K-mer length
-  # Minimum-support (rare-k-mer) filter — DATA-ADAPTIVE so it scales with dataset
-  # size across antibiotics/organisms (a fixed count would drop almost everything
-  # on a small dataset and under-filter on a large one). 03 derives the effective
-  # value as:
-  #     min_support = max(min_support_floor, ceil(min_prevalence * n_genomes))
-  # Biology: a k-mer below ~1% prevalence cannot reach step-10's discriminativeness
-  # threshold (|Δprev| >= 0.10 needs ~10% prevalence), so the 1% floor drops only
-  # the rare / lineage-specific / sequencing-error tail and keeps every k-mer that
-  # could individually be a real marker. Large sets get aggressive de-confounding
-  # (faster training); small sets fall back to the absolute floor (keep markers).
-  min_support: null        # explicit override (int) — null = auto-derive (below)
-  min_support_floor: 5     # absolute noise floor (drop k-mers in < this many genomes)
-  min_prevalence: 0.01     # fraction of genomes; auto min_support scales with data size
-
   # Computational resources — LAPTOP-SAFE DEFAULTS, overridden per machine via
   # the environment (lib/config._ENV_RESOURCE_OVERRIDES), NOT by editing this file:
-  #     AMR_KMC_MEM=128 AMR_THREADS=20    # e.g. a TRUBA barbun node (-c40)
+  #     AMR_THREADS=20    # e.g. a TRUBA barbun node (-c40)
   # These are machine size, not science, so they must not be a hand-edit that
   # `git reset --hard` silently reverts on the next deploy.
-  kmc_mem: 16  # GB handed to KMC          (env: AMR_KMC_MEM)
   threads: 10  # CPU threads               (env: AMR_THREADS)
   chunk_size: 200  # Genomes per matrix chunk (for RAM management)
   
-  # Feature engineering: unitig/k-mer features are ALWAYS binary presence/absence
-  # (03u writes a 0/1 matrix). An `encoding: binary` key here used to imply a
-  # frequency-based alternative existed; none does, and nothing read the key.
-
-  # Feature representation consumed DOWNSTREAM (03b/04/05/06/07/07b). This is the
-  # single switch for the unitig pivot (ROADMAP §0 M12):
-  #   "kmer"   -> resolve_path('matrix_dir') = …/{antibiotic}/matrix      (03, raw k-mers)
-  #   "unitig" -> resolve_path('matrix_dir') = …/{antibiotic}/<unitig.out_subdir> (03u)
-  # Flipping this makes the WHOLE HPO/train/eval chain run on unitigs with NO
-  # per-script change (resolve_path redirects the matrix dir). The raw-k-mer
-  # baseline under …/matrix is preserved either way (03u writes a separate dir).
-  feature_repr: "unitig"   # unitig (thesis method — default) | kmer (raw-k-mer baseline, opt-in)
+  # Features are binary presence/absence: 03u writes a 0/1 unitig matrix.
 
 # ----------------------------------------------------------------------------
-# UNITIG REPRESENTATION (ROADMAP §0.1 M12 — replaces raw k-mers downstream)
+# UNITIG REPRESENTATION
 # ----------------------------------------------------------------------------
 # Consumed by 03u_unitig_matrix.py. unitig-caller (Bifrost backend) builds the
 # population compacted de Bruijn graph and emits a genome×unitig presence/absence
-# matrix in the SAME chunked .npz contract as 03 (features.txt / y_{ab}.csv /
-# genomes_{ab}.csv / X_{ab}_part_*.npz), so 03b/04/05/06/07/07b read it unchanged.
-# KMC (02/02b) is kept for QC/spectra only. Output is written to a SEPARATE
-# sibling dir (out_subdir) so the raw-k-mer 'matrix' baseline is never overwritten.
+# matrix (features.txt / y_{ab}.csv / genomes_{ab}.csv / X_{ab}_part_*.npz) in
+# matrix_dir, which 04/05/06/07/07b read.
 unitig:
-  # The de Bruijn k the graph is actually built at. NOT preprocessing.k_length —
-  # that is the KMC baseline's 21, and the KB used to copy it onto unitig rows,
-  # which was wrong. 03u does not pass --kmer, so unitig-caller's own default
-  # stands, and that default is 31 (unitig_caller/__main__.py: --kmer default=31).
+  # The de Bruijn k the graph is actually built at. 03u does not pass --kmer, so
+  # unitig-caller's own default stands, and that default is 31
+  # (unitig_caller/__main__.py: --kmer default=31).
   # Confirmed three ways: the caller's argparse default, the absence of --kmer in
   # 03u's invocation, and the delivered store holding no unitig shorter than 31 bp.
   # Declared here so the value is recorded rather than inferred; changing it does
   # NOT change the graph — to do that, pass --kmer in 03u.
   k: 31
-  # Sibling of data/processed/{organism}/{antibiotic}/matrix. Keep distinct from
-  # "matrix" so the raw-k-mer baseline (for the thesis unitig-vs-k-mer table) stays.
-  out_subdir: "matrix_unitig"
   # ABSOLUTE minimum genome count to keep a unitig (ROADMAP §0.7 risk-4: use an
   # absolute floor, NOT a proportional one, so a rare-but-real plasmid unitig is
   # not dropped). Zero-variance core (present in every genome) is always dropped.
@@ -382,8 +343,8 @@ blast:
   evalue:       10                        # E-value threshold for reporting hits
   word_size:    11                        # Seed word size (11 is standard for short seqs)
   threads:      8                         # CPU threads for local BLAST only
-  # BLAST -task: null = auto from feature_repr (unitig -> 'blastn' for long queries,
-  # k-mer -> 'blastn-short' for <30 bp). Set explicitly to override.
+  # BLAST -task: null = chosen from the median query length (08 choose_blast_task:
+  # 'blastn-short' below 50 bp, otherwise 'blastn'). Set explicitly to override.
   task:         null
 
   # ── CARD variant/SNP data (step 11 — k-mer-centric SNP allele check) ──────

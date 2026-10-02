@@ -6,7 +6,7 @@
 #     conda env update -f environment.yml --prune
 #
 # This file captures BOTH the Python stack and the external bioinformatics
-# tools (KMC, BLAST+, bcalm/unitig-caller, PopPUNK) that pip cannot install, so
+# tools (BLAST+, bcalm/unitig-caller, PopPUNK) that pip cannot install, so
 # the whole pipeline is reproducible from a single command. It is the recipe
 # amr.def feeds to mamba, and therefore the definition of the ONE container the
 # pipeline runs in.
@@ -65,14 +65,13 @@ dependencies:
   # the working PopPUNK container carries setuptools 80.10.2.
   - setuptools=80.10.2
 
-  # ── External tools (bioconda) — required by steps 02/03 and 08 ────────────
-  - kmc=3.2.4          # k-mer counting (02/02b QC + raw-k-mer 03 baseline)
+  # ── External tools (bioconda) — required by step 08 ───────────────────────
   - blast=2.17.0       # step 08 BLAST (blastn via 08_blast_annotation.py subprocess)
 
-  # ── Unitig representation (ROADMAP §0.1 M12 — replaces raw k-mers) ─────────
+  # ── Unitig representation ───────────────────────────────────────────────────
   # bcalm builds the compacted de Bruijn graph (unitigs); unitig-caller (pyseer
   # ecosystem) calls per-sample unitig presence/absence -> binary matrix input
-  # for the same downstream XGBoost. KMC above is kept for QC/spectra only.
+  # for the downstream XGBoost.
   - bcalm=2.2.3
   - unitig-caller=1.3.2
 

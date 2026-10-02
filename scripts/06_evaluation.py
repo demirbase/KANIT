@@ -726,7 +726,7 @@ def main():
     except FileNotFoundError as e:
         print(f"ERROR: {e}")
         print("\nPlease ensure you have run:")
-        print("  1. Matrix creation: 03_matrix_construction.py")
+        print("  1. Matrix creation: 03u_unitig_matrix.py")
         print("  2. Model training: 05_model_training.py")
         sys.exit(1)
     except Exception as e:

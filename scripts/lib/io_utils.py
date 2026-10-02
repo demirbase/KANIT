@@ -17,7 +17,7 @@ def run_command(command, exit_on_error=True):
     Execute an external command safely (NO shell interpretation).
 
     Stdout is suppressed to keep console output clean; stderr is captured and
-    printed on failure to aid debugging KMC / kmc_tools errors.
+    printed on failure to aid debugging external tool errors.
 
     Args:
         command (str):       Command line to execute.

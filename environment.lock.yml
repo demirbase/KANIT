@@ -116,7 +116,6 @@ dependencies:
   - kernel-headers_linux-64=6.12.0=he073ed8_6
   - keyutils=1.6.3=hb9d3cd8_0
   - kiwisolver=1.5.0=py312h0a2e395_0
-  - kmc=3.2.4=haf24da9_3
   - krb5=1.22.2=hbde042b_1
   - lame=3.100=h166bdaf_1003
   - lcms2=2.19.1=h0c24ade_1

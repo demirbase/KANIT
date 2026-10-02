@@ -232,7 +232,7 @@ The target comes from the environment (`AMR_ORGANISM` / `AMR_ANTIBIOTIC`), falli
 back to `config.yaml`. Set it once and the whole chain follows:
 
 ```bash
-export AMR_ORGANISM=ecoli AMR_ANTIBIOTIC=cefotaxime AMR_FEATURE_REPR=unitig
+export AMR_ORGANISM=ecoli AMR_ANTIBIOTIC=cefotaxime
 
 # --- per organism, once ---
 python scripts/00a_download_bvbrc.py --organism $AMR_ORGANISM   # BV-BRC phenotypes + assemblies
@@ -288,7 +288,7 @@ The `slurm/` scripts are **env-parametric** — one script serves every
 (organism, antibiotic) pair, so the 45-model panel is a submit loop:
 
 ```bash
-sbatch --export=ALL,AMR_ORGANISM=kpneumoniae,AMR_ANTIBIOTIC=meropenem,AMR_FEATURE_REPR=unitig \
+sbatch --export=ALL,AMR_ORGANISM=kpneumoniae,AMR_ANTIBIOTIC=meropenem \
        slurm/run_03uml_env.slurm        # 03u -> 04 -> 05 -> 06 -> 07b
 ```
 

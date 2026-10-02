@@ -9,7 +9,6 @@ purely additive (SCALE_MLOPS_PLAN.md §7.5).
 """
 
 import importlib.util
-import random
 import sys
 from pathlib import Path
 
@@ -61,77 +60,3 @@ def load_script():
         return module
 
     return _load
-
-
-# ---------------------------------------------------------------------------
-# Synthetic mini-dataset
-# ---------------------------------------------------------------------------
-def _random_dna(rng, length):
-    return "".join(rng.choice("ACGT") for _ in range(length))
-
-
-@pytest.fixture
-def synthetic_dataset(tmp_path):
-    """
-    Build a tiny, deterministic genomic dataset for end-to-end testing.
-
-    16 genomes (~4 kb each), one binary phenotype ('gentamicin'). A short
-    "resistance motif" is planted into the 8 resistant genomes so a model can
-    learn real signal — letting the full 02→07 chain run in minutes instead of
-    days.
-
-    Returns a dict with: genomes_dir, metadata_file, organism, antibiotic,
-    ids, labels, k_length, motif.
-    """
-    rng = random.Random(1234)
-    organism = "testorg"
-    # Deliberately NOT a real antibiotic name: step 04 writes
-    # config/config_{antibiotic}.yaml, so using e.g. "gentamicin" would clobber
-    # the user's real config_gentamicin.yaml. "testdrug" cannot collide.
-    antibiotic = "testdrug"
-    k_length = 13            # small k for tiny genomes (config-driven downstream)
-    motif = "ACGTACGTACGTACGT"  # planted resistance signal (>= k_length)
-
-    genomes_dir = tmp_path / "genomes"
-    genomes_dir.mkdir(parents=True, exist_ok=True)
-
-    n = 16
-    ids, labels = [], []
-    for i in range(n):
-        gid = f"test.{i+1}"
-        # Interleave classes (R,S,R,S,…) so that every contiguous chunk the
-        # pipeline builds is class-balanced. This keeps the test set from being
-        # single-class (roc_auc needs both classes) and exercises the realistic
-        # mixed-chunk path. The pure-chunk edge case is covered separately by the
-        # base_score fix in 05_model_training.py.
-        resistant = 1 if i % 2 == 0 else 0
-        seq = _random_dna(rng, 4000)
-        if resistant:
-            # Insert the motif a few times so it clears any min_support filter.
-            for pos in (500, 1500, 2500):
-                seq = seq[:pos] + motif + seq[pos + len(motif):]
-        fna = genomes_dir / f"{gid}.fna"
-        with open(fna, "w") as f:
-            f.write(f">{gid} synthetic test genome\n")
-            for j in range(0, len(seq), 70):
-                f.write(seq[j:j + 70] + "\n")
-        ids.append(gid)
-        labels.append(resistant)
-
-    metadata_file = tmp_path / "amr_phenotypes.csv"
-    with open(metadata_file, "w") as f:
-        f.write(f"Genome ID,{antibiotic}\n")
-        for gid, lab in zip(ids, labels):
-            f.write(f"{gid},{lab}\n")
-
-    return {
-        "genomes_dir": genomes_dir,
-        "metadata_file": metadata_file,
-        "organism": organism,
-        "antibiotic": antibiotic,
-        "ids": ids,
-        "labels": labels,
-        "k_length": k_length,
-        "motif": motif,
-        "tmp": tmp_path,
-    }
