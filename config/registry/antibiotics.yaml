@@ -225,6 +225,35 @@ aliases:
   cefepime_taniborbactam: ["cefepime/taniborbactam"]
 
 # ============================================================================
+# REGISTRY CLASS -> CARD DRUG CLASS TERMS (lib.card_layer; protocol Appendix A)
+# ============================================================================
+# A CARD hit is class-concordant with a model when any drug class of its ARO is
+# listed here for the class of the modelled antibiotic. Terms are CARD's own
+# (checked against CARD 4.0.1). A beta-lactam combined with a beta-lactamase
+# inhibitor takes the class of the beta-lactam (it is registered there).
+card_drug_classes:
+  aminoglycosides: [aminoglycoside antibiotic]
+  carbapenems: [carbapenem]
+  cephalosporins: [cephalosporin, cephamycin]
+  folate_pathway_inhibitors: [sulfonamide antibiotic, diaminopyrimidine antibiotic]
+  glycopeptides: [glycopeptide antibiotic]
+  glycylcyclines: [glycylcycline]
+  lincosamides: [lincosamide antibiotic]
+  macrolides: [macrolide antibiotic]
+  monobactams: [monobactam]
+  nitrofurans: [nitrofuran antibiotic]
+  oxazolidinones: [oxazolidinone antibiotic]
+  penicillins: [penicillin beta-lactam]
+  phenicols: [phenicol antibiotic]
+  polymyxins: [peptide antibiotic]
+  quinolones: [fluoroquinolone antibiotic]
+  rifamycins: [rifamycin antibiotic]
+  tetracyclines: [tetracycline antibiotic]
+  fosfomycins: [phosphonic acid antibiotic]
+  lipopeptides: [peptide antibiotic]
+  fusidanes: [fusidane antibiotic]
+
+# ============================================================================
 # LABELS THAT ARE NOT A SINGLE DRUG (never modelled — lib.panel)
 # ============================================================================
 # Phenotype categories and drug-class names that appear in the antibiotic

@@ -26,42 +26,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-# CARD aro_drug_class keyword(s) that count as ON-TARGET for a registry class.
-# Drug class -> the ARO drug-class keywords that make a gene "on-target" for it.
-#
-# MUST cover every class in config/registry/organisms.yaml. A missing key silently
-# yields on_target=None, which drops the model from mechanisms.csv's on-target view
-# and from figure 04 — the panel curation split the old catch-all
-# `beta_lactams_carbapenems_others` into `carbapenems` + `monobactams` and added six
-# more classes, and until this map caught up figure 04 was hiding K. pneumoniae
-# KPC/NDM and the whole E. faecium vanA cluster, i.e. two of the four biology
-# headlines. `test_class_keyword_map_covers_registry` now fails if a class is added
-# without a keyword here.
-CLASS_TO_ARO_KEYWORD = {
-    "penicillins": ("penam", "penicillin"),
-    "cephalosporins": ("cephalosporin", "cephamycin"),
-    "carbapenems": ("carbapenem",),
-    "monobactams": ("monobactam",),
-    "quinolones": ("fluoroquinolone", "quinolone"),
-    "aminoglycosides": ("aminoglycoside",),
-    "tetracyclines": ("tetracycline",),
-    "glycylcyclines": ("glycylcycline", "tetracycline"),  # tigecycline: a tetracycline derivative
-    "glycopeptides": ("glycopeptide",),
-    "macrolides": ("macrolide",),
-    "lincosamides": ("lincosamide",),
-    "phenicols": ("phenicol",),
-    "polymyxins": ("peptide antibiotic", "polymyxin"),  # ARO files colistin under peptide antibiotic
-    "folate_pathway_inhibitors": ("sulfonamide", "diaminopyrimidine"),
-    # No model in the delivered 45-model panel falls in these five, but the registry
-    # declares them, so they are mapped now rather than after a future run silently
-    # drops them the way carbapenems and glycopeptides were dropped.
-    "oxazolidinones": ("oxazolidinone",),
-    "rifamycins": ("rifamycin",),
-    "fosfomycins": ("fosfomycin",),
-    "lipopeptides": ("lipopeptide",),
-    "nitrofurans": ("nitrofuran",),
-    "fusidanes": ("fusidane",),
-}
+from lib import registry  # noqa: E402
+from lib.card_layer import drug_classes  # noqa: E402
+
+# A CARD gene is ON-TARGET for a model when any of its ARO drug classes is a CARD
+# term of the model's drug class. The terms are the antibiotic registry's
+# card_drug_classes (protocol Appendix A), the single source shared with the CARD
+# layer; validate_registry fails when a class has none.
 
 
 def _org(run_id):
@@ -240,14 +211,13 @@ def main():
     for m in models:
         mid, ab = m["model_id"], m["antibiotic"]
         org = _org(m["run_id"])
-        kws = CLASS_TO_ARO_KEYWORD.get(cls_of.get(ab, ""), ())
+        targets = registry.card_drug_classes(ab)
         for r in c.execute(
             "SELECT gene_symbol, aro_gene_family, aro_drug_class, aro_resistance_mechanism, "
             "MAX(identity_pct) idp, MIN(evalue) ev, COUNT(*) n "
             "FROM blast_annotations WHERE model_id=? AND tier IN ('confirmed','candidate') "
             "AND gene_symbol IS NOT NULL GROUP BY gene_symbol ORDER BY n DESC", (mid,)):
-            adc = (r["aro_drug_class"] or "").lower()
-            on_target = any(k in adc for k in kws) if kws else None
+            on_target = bool(drug_classes(r["aro_drug_class"] or "") & targets) if targets else None
             mech.append(dict(
                 model_id=mid, organism=org, antibiotic=ab, drug_class=cls_of.get(ab),
                 gene_symbol=r["gene_symbol"], aro_gene_family=r["aro_gene_family"],

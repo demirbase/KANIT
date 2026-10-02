@@ -60,6 +60,11 @@ paths_organism:
   matrix_dir:           "data/processed/{organism}/{antibiotic}/model_matrix"
   # Nested cross-validation and final model of one pair (04_nested_cv.py).
   cv_dir:               "results/{organism}/{antibiotic}/cv"
+  # CARD layer: RGI database, RGI hits of every genome, candidates and their state.
+  rgi_db_dir:           "data/external/rgi_db"
+  rgi_dir:              "results/{organism}/rgi"
+  candidates_file:      "results/{organism}/{antibiotic}/candidates.csv"
+  card_layer_dir:       "results/{organism}/{antibiotic}/card_layer"
   models_dir:           "models/{organism}/{antibiotic}"
   logs_dir:             "logs/{organism}/{antibiotic}"
   dir_01_data_exploration:   "results/{organism}/{antibiotic}/01_data_exploration"
@@ -243,6 +248,15 @@ cv:
   threshold: 0.5        # decision threshold; never tuned
   n_bootstrap: 1000     # lineage-cluster bootstrap resamples
   reliability_bins: 10
+
+# ----------------------------------------------------------------------------
+# CARD LAYER (08_rgi.py, 09_card_layer.py, lib/card_layer.py)
+# ----------------------------------------------------------------------------
+card:
+  card_json: "data/external/card/card.json"   # the CARD release loaded into RGI
+  near_universal: 0.95      # a gene in at least this share of a model's genomes gives no b by homology
+  max_located_genomes: 3    # a candidate is located in at most this many carrier genomes
+  min_overlap: 0.5          # share of the unitig that must overlap an RGI hit
 
 # Hyperparameter search and training of every model (lib/train.py): Optuna TPE
 # with a median pruner on up to search_max_genomes genomes; trees by early

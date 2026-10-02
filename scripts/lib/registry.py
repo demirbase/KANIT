@@ -99,6 +99,14 @@ def antibiotic_to_class(ab_id):
     return _ab_to_class_index().get(str(ab_id).lower())
 
 
+def card_drug_classes(ab_id):
+    """CARD drug class terms that are class-concordant with an antibiotic (lowercase;
+    empty for an unregistered antibiotic)."""
+    cls = antibiotic_to_class(ab_id)
+    terms = (_antibiotics_doc().get("card_drug_classes") or {}).get(cls, []) if cls else []
+    return {str(x).strip().lower() for x in terms}
+
+
 @lru_cache(maxsize=1)
 def _not_single_drugs():
     return {str(x).strip().lower() for x in (_antibiotics_doc().get("not_single_drugs") or [])}

@@ -45,6 +45,15 @@ def _check_registry(errors: list[str], warnings: list[str]) -> None:
             if not _SLUG_RE.match(str(m)):
                 errors.append(f"antibiotic '{m}' is not a path-safe name ([a-z0-9_])")
 
+    # 1a) every class has its CARD drug class terms, and only known classes do
+    card_map = doc.get("card_drug_classes", {}) or {}
+    for cid in classes:
+        if not card_map.get(cid):
+            errors.append(f"class '{cid}' has no card_drug_classes entry")
+    for cid in card_map:
+        if cid not in classes:
+            errors.append(f"card_drug_classes lists unknown class '{cid}'")
+
     # 1b) a label that is not a single drug is never also a class member
     for label in (doc.get("not_single_drugs", []) or []):
         if str(label).lower() in seen:

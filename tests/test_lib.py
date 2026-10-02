@@ -220,6 +220,20 @@ def test_validate_registry_rejects_a_path_unsafe_name(monkeypatch):
     assert any("foo/bar acid" in e for e in errors), errors
 
 
+def test_validate_registry_rejects_a_class_without_card_terms(monkeypatch):
+    """A class without CARD terms would leave its models without b and on-target genes."""
+    vr = _validate_registry_module()
+    doc = dict(registry._antibiotics_doc())
+    doc["classes"] = {**doc["classes"],
+                      "testclass": {"display_name": "Test", "members": ["foo_acid"]}}
+    doc["card_drug_classes"] = {**doc["card_drug_classes"], "deadclass": ["x"]}
+    monkeypatch.setattr(vr.registry, "_antibiotics_doc", lambda: doc)
+    errors, warnings = [], []
+    vr._check_registry(errors, warnings)
+    assert any("'testclass' has no card_drug_classes" in e for e in errors), errors
+    assert any("unknown class 'deadclass'" in e for e in errors), errors
+
+
 # ---- tool-version provenance --------------------------------
 # The KB records the tools the results depend on: unitig-caller (builds the
 # features) and PopPUNK (defines the CV groups). graph_tool is tracked
