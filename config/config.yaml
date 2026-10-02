@@ -196,7 +196,7 @@ lineage:
   min_k: 15
   max_k: 35
   k_step: 2
-  sketch_size: 10000     # per-organism override in organisms.yaml (S. aureus needs 10^5)
+  sketch_size: 10000     # per-organism override in organisms.yaml (S. aureus 10^5 — read the note there: it is a choice, not a measured requirement)
 
   # ── Quality control (PopPUNK --qc-db, a SEPARATE mode) — E3 §3.4 ──────────
   # Contamination/length outliers corrupt the distance estimates and can make

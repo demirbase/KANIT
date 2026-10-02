@@ -84,10 +84,17 @@ organisms:
     # distinct class. cefoxitin+oxacillin are the MRSA/mecA flagship; erythromycin
     # is the panel's only macrolide.
     antibiotics: [cefoxitin, oxacillin, ciprofloxacin, erythromycin, clindamycin, gentamicin, tetracycline, trimethoprim_sulfamethoxazole]
-    # PopPUNK override (docs/literature/E3.md §4): S. aureus is the panel's most
-    # clonal species — core distances between strains are so small that the default
-    # 10^4 sketch cannot separate them, collapsing lineages and gutting the CV
-    # grouping. 10^5 costs runtime and buys single-nucleotide-level resolution.
+    # PopPUNK override. What IS established: S. aureus is the panel's most clonal
+    # collection — 2,633 assemblies resolve into 42 lineages, the fewest of any
+    # organism here (Ab 122, Ec 292, Efm 394, Kp 529, Pa 329).
+    # NOT MEASURED (2026-09-14 audit): no S. aureus fit at 10^4 was ever run, so this
+    # is a configuration choice, not a demonstrated requirement. The only sketch-size
+    # pair in the repo is A. baumannii — poppunk_clusters_s1e5.csv 61 lineages /
+    # largest 76.4% vs poppunk_clusters_bgmm.csv 59 / 76.3% — i.e. 10^5 changed
+    # almost nothing there (fit model not controlled, so not conclusive either).
+    # The old rationale cited docs/literature/E3.md §4, which traces back to the
+    # PopPUNK paper; that paper gives 10^5 for M. tuberculosis, not for S. aureus.
+    # Keep 10^5 for continuity with the delivered labels, not because a source requires it.
     lineage:
       sketch_size: 100000
 
