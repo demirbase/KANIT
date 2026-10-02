@@ -17,6 +17,8 @@ PIPELINE_SCRIPTS = [
     "01_data_validation.py",
     "01b_data_validation.py",
     "02c_lineage_poppunk.py",
+    "02d_genome_qc.py",
+    "02e_panel.py",
     "03u_unitig_matrix.py",
     "04_optimization.py",
     "05_model_training.py",

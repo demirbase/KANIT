@@ -47,6 +47,7 @@ ALL_STEPS: list[tuple[str, str]] = [
     ("01",  "01_data_validation.py"),
     ("02c", "02c_lineage_poppunk.py"),       # PopPUNK lineage (amr-pp.sif)
     ("02d", "02d_genome_qc.py"),             # CheckM2+QUAST QC (M15; --mode, multi-container)
+    ("02e", "02e_panel.py"),                 # panel rule over every organism
     ("03u", "03u_unitig_matrix.py"),         # unitig matrix (unitig-caller)
     ("04",  "04_optimization.py"),
     ("05",  "05_model_training.py"),
@@ -69,7 +70,7 @@ ALL_STEPS: list[tuple[str, str]] = [
 # cannot be launched by this plain orchestrator (run them as SLURM jobs):
 #   02c (amr-pp.sif) · 02d (--mode + amr-checkm2/amr-tools) · 03u (unitig-caller container)
 #   08-NCBI (internet) · 14 (--mode + amr-tools) · 16 (--mode + amr-tools) · populate_database.py
-HPC_SLURM_STEPS = {"02c", "02d", "14", "16"}
+HPC_SLURM_STEPS = {"02c", "02d", "02e", "14", "16"}
 
 # Default plan: the local single-container analysis core. The unitig matrix (03u)
 # is built beforehand on HPC.
@@ -139,47 +140,24 @@ def main() -> None:
                         "orchestrator. (Force by naming it explicitly in --only.)",
                         sid, script)
             continue
-        # Just-in-time resolution for --antibiotic auto (after metadata is prepared)
+        # --antibiotic auto: the panel pair of this organism with the largest
+        # minority class (02e). No fallback: without a panel there is no choice.
         if sid >= "01" and env.get("AMR_ANTIBIOTIC") == "auto":
-            try:
-                import pandas as pd
-                import yaml
-                from lib.config import get_target
-                
-                org, _ = get_target()
-                reg_path = PROJECT_ROOT / "config/registry/organisms.yaml"
-                with open(reg_path) as f:
-                    registry = yaml.safe_load(f)
-                
-                org_conf = registry["organisms"].get(org, {})
-                candidates = org_conf.get("antibiotics", [])
-                meta_file = PROJECT_ROOT / org_conf.get("metadata_file", f"data/external/{org}/metadata/amr_phenotypes.csv")
-                
-                if not meta_file.exists():
-                    best_ab = candidates[0] if candidates else "ampicillin"
-                    log.warning("Metadata %s not found. Auto-selecting '%s' fallback.", meta_file.name, best_ab)
-                else:
-                    df = pd.read_csv(meta_file)
-                    best_ab = candidates[0] if candidates else "ampicillin"
-                    best_score = -1
-                    for ab in candidates:
-                        if ab in df.columns:
-                            # amr_phenotypes.csv is binary 0/1 (00_prepare_metadata),
-                            # NOT the strings "Resistant"/"Susceptible" (audit Issue 6:
-                            # the old value_counts lookup always scored 0 -> auto always
-                            # picked candidates[0]).
-                            col = df[df[ab].notna()][ab]
-                            r = int((col == 1).sum())
-                            s = int((col == 0).sum())
-                            score = min(r, s)  # Maximize the minority class size
-                            if score > best_score:
-                                best_score = score
-                                best_ab = ab
-                    log.info("Auto-selected ideal antibiotic '%s' based on class balance (minority class size: %d).", best_ab, best_score)
-                env["AMR_ANTIBIOTIC"] = best_ab
-            except Exception as e:
-                log.warning("Failed to auto-select antibiotic, using fallback 'ampicillin': %s", e)
-                env["AMR_ANTIBIOTIC"] = "ampicillin"
+            from lib import panel
+            from lib.config import get_target, resolve_path
+
+            org, _ = get_target()
+            panel_csv = resolve_path("panel_dir") / "panel_decisions.csv"
+            if not panel_csv.exists():
+                sys.exit(f"--antibiotic auto needs the panel ({panel_csv}); run 02e first.")
+            df = panel.read_panel(panel_csv)
+            df = df[(df["organism"] == org) & (df["decision"] == panel.INCLUDED)]
+            if df.empty:
+                sys.exit(f"--antibiotic auto: no {org} pair is in the panel.")
+            best = df.sort_values(["minority", "antibiotic"], ascending=[False, True]).iloc[0]
+            env["AMR_ANTIBIOTIC"] = str(best["antibiotic"])
+            log.info("Auto-selected '%s' (largest minority in the panel: %d).",
+                     best["antibiotic"], int(best["minority"]))
 
         script_path = PROJECT_ROOT / "scripts" / script
         log.info("=== STEP %s : %s ===", sid, script)

@@ -18,8 +18,10 @@
 #      each their own mechanism class. A drug with too little data is left OUT
 #      of scope, never merged into a mixed-mechanism bucket (that makes the
 #      genotype→phenotype map non-learnable).
-# Generic/inhibitor tokens with no clean ML target (bare "beta-lactam",
-# "sulbactam") are intentionally UNCLASSIFIED (antibiotic_to_class -> None).
+# Canonical names are path components: lowercase letters, digits and "_" only;
+# other spellings go under `aliases:`. Labels that are not a single drug are
+# listed under `not_single_drugs:`. A single drug without a class here blocks
+# the panel once it passes the panel rule (lib.panel).
 # ============================================================================
 schema_version: "2.0"
 
@@ -36,7 +38,7 @@ classes:
       - oxacillin
       - carbenicillin
       - piperacillin
-      - "ticarcillin/clavulanic acid"
+      - ticarcillin_clavulanic_acid
 
   cephalosporins:
     display_name: "Cephalosporins"
@@ -52,14 +54,14 @@ classes:
       - ceftiofur
       - cefpodoxime
       - cefotetan
-      - "ceftazidime/avibactam"
+      - ceftazidime_avibactam
       - ceftaroline
       - cephalexin
       - cefpodoxime_clavulanic_acid
-      - "ceftolozane/tazobactam"
-      - "cefotaxime/clavulanic acid"
+      - ceftolozane_tazobactam
+      - cefotaxime_clavulanic_acid
       - cefpirome
-      - "cefepime/taniborbactam"
+      - cefepime_taniborbactam
 
   carbapenems:
     display_name: "Carbapenems"
@@ -68,7 +70,7 @@ classes:
       - imipenem
       - ertapenem
       - doripenem
-      - "meropenem/vaborbactam"
+      - meropenem_vaborbactam
 
   monobactams:
     display_name: "Monobactams"
@@ -93,7 +95,7 @@ classes:
       - ciprofloxacin
       - norfloxacin
       - levofloxacin
-      - "nalidixic acid"
+      - nalidixic_acid
       - moxifloxacin
       - ofloxacin
 
@@ -141,7 +143,7 @@ classes:
     display_name: "Polymyxins"
     members:
       - colistin
-      - "polymyxin B"
+      - polymyxin_b
 
   oxazolidinones:
     display_name: "Oxazolidinones"
@@ -173,6 +175,11 @@ classes:
     members:
       - nitrofurantoin
 
+  fusidanes:
+    display_name: "Fusidanes"
+    members:
+      - fusidic_acid
+
 # ============================================================================
 # ANTIBIOTIC NAME ALIASES (raw-source spelling variants / typos -> canonical)
 # ============================================================================
@@ -190,18 +197,22 @@ aliases:
   # sweep missed it — which broke A. baumannii's paths (ampicillin/sulbactam is a
   # key sulbactam-based therapy there, minority 405).
   ampicillin_sulbactam: ["ampicillin/sulbactam", "ampicillin-sulbactam", "amipicillin_sulbactam"]
+  cefotaxime_clavulanic_acid: ["cefotaxime/clavulanic acid"]
+  cephalexin: ["cefalexin"]
   cephalothin: ["cefalotin", "cefalothin"]
   cefpirome: ["cefpirom"]
   ceftaroline: ["ceftarolin"]
-  "ceftazidime/avibactam": ["ceftazidime-avibactam", "ceftazidime_avibactam"]
-  "ceftolozane/tazobactam": ["ceftolozane-tazobactam"]
+  ceftazidime_avibactam: ["ceftazidime/avibactam", "ceftazidime-avibactam"]
+  ceftolozane_tazobactam: ["ceftolozane/tazobactam", "ceftolozane-tazobactam"]
   fosfomycin: ["phosphomycin"]
+  fusidic_acid: ["fusidic acid"]
   gentamicin: ["geamycin"]
   piperacillin_tazobactam: ["piperacillin/tazobactam", "piperacillin-tazobactam", "tazobactam_piperacillin"]
-  "polymyxin B": ["polymyxin b", "polymyxin_b"]
+  nalidixic_acid: ["nalidixic acid"]
+  polymyxin_b: ["polymyxin b"]
   rifampin: ["rifampicin"]
   tetracycline: ["tetracyklin"]
-  tigecycline: ["tigecyklin"]
+  tigecycline: ["tigecyklin", "tgecycline"]
   trimethoprim: ["trimotheprim"]
   trimethoprim_sulfamethoxazole:
     - "trimethoprim/sulfamethoxazole"
@@ -209,9 +220,22 @@ aliases:
     - "co_trimoxazole"
     - "trimethoprim-sulfamethoxazole"
     - "sulfamethoxazole/trimethoprim"
-  "ticarcillin/clavulanic acid": ["ticarcillin_clavulanate"]
-  "meropenem/vaborbactam": ["meropenem-vaborbactam"]
-  "cefepime/taniborbactam": ["cefepime_taniborbactam"]
+  ticarcillin_clavulanic_acid: ["ticarcillin/clavulanic acid", "ticarcillin_clavulanate"]
+  meropenem_vaborbactam: ["meropenem/vaborbactam", "meropenem-vaborbactam"]
+  cefepime_taniborbactam: ["cefepime/taniborbactam"]
+
+# ============================================================================
+# LABELS THAT ARE NOT A SINGLE DRUG (never modelled — lib.panel)
+# ============================================================================
+# Phenotype categories and drug-class names that appear in the antibiotic
+# field of AST records. They are excluded from the panel whatever their counts.
+not_single_drugs:
+  - extended spectrum beta lactamase
+  - beta-lactam
+  - aminoglycosides
+  - aminogycosides
+  - fluoroquinolones
+  - sulfonamides
 
 # ============================================================================
 # AMRFinderPlus Class/Subclass -> antibiotic keyword map (M13 concordance;
@@ -357,7 +381,7 @@ who_aware:
   linezolid: Reserve
   daptomycin: Reserve
   colistin: Reserve
-  "polymyxin B": Reserve
+  polymyxin_b: Reserve
   chloramphenicol: Access
   rifampin: Watch
   fosfomycin: Access

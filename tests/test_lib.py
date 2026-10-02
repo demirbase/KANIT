@@ -70,17 +70,16 @@ def test_registry_metadata_accessors():
     assert registry.antibiotic_who_aware("not_a_real_drug") is None
 
 
-def test_registry_targets_and_validation():
-    targets = registry.list_targets(enabled_only=True)
-    # ecoli + kpneumoniae are status: done -> active targets (schema 2.0)
-    assert ("ecoli", "gentamicin") in targets
-    assert ("kpneumoniae", "meropenem") in targets
-    # eskapee_phase filter: pseudomonas is phase 2, excluded from phase-1 list
-    phase1 = registry.list_targets(phase=1)
-    assert ("ecoli", "gentamicin") in phase1
-    assert all(org != "pseudomonas_aeruginosa" for org, _ab in phase1)
-    assert registry.validate_target("ecoli", "gentamicin") is True
-    assert registry.validate_target("ecoli", "meropenem") is False
+def test_registry_single_drugs_and_path_safe_names():
+    # labels that are not a single drug never enter the panel
+    assert registry.is_single_drug("extended spectrum beta lactamase") is False
+    assert registry.is_single_drug("Fluoroquinolones") is False
+    assert registry.is_single_drug("ciprofloxacin") is True
+    # canonical names are path components; other spellings fold onto them
+    assert registry.normalize_antibiotic("Ceftazidime/Avibactam") == "ceftazidime_avibactam"
+    assert registry.normalize_antibiotic("polymyxin B") == "polymyxin_b"
+    assert registry.normalize_antibiotic("fusidic acid") == "fusidic_acid"
+    assert registry.antibiotic_to_class("fusidic_acid") == "fusidanes"
 
 
 # ---------------------------------------------------------------------------
@@ -192,42 +191,33 @@ def test_env_int_helper(monkeypatch):
     assert env_int("AMR_TEST_INT", 7) == 7
 
 
-# ---- organism status vocabulary -------------------------------------------
-# is_active() just tests set membership, so an unknown status silently drops the
-# organism from the panel with nothing raising. validate_registry pins it shut.
+# ---- registry validation ---------------------------------------------------
 
-def test_status_vocabulary_is_closed():
-    from lib import registry
-    assert registry.VALID_STATUS == {
-        "done", "in_progress", "planned", "excluded_insufficient_data"}
-
-
-def test_excluded_organism_is_not_an_active_target():
-    from lib import registry
-    ent = registry.get_organism("enterobacter_cloacae")
-    assert ent["status"] == "excluded_insufficient_data"
-    assert not registry.is_active(ent)          # recorded negative finding, not pending work
-    active = {o for o, _ in registry.list_targets(enabled_only=True)}
-    assert "enterobacter_cloacae" not in active
-
-
-def test_validate_registry_rejects_an_unknown_status(monkeypatch):
-    """A typo'd status must fail loudly, not quietly deactivate the organism."""
+def _validate_registry_module():
     import importlib.util
-
-    from lib import registry
     spec = importlib.util.spec_from_file_location(
         "vr", PROJECT_ROOT / "scripts" / "validate_registry.py")
     vr = importlib.util.module_from_spec(spec); spec.loader.exec_module(vr)
+    return vr
 
-    orgs = {k: dict(v) for k, v in registry.load_organisms().items()}
-    orgs["ecoli"]["status"] = "in_progres"      # plausible typo
-    monkeypatch.setattr(registry, "load_organisms", lambda: orgs)
-    monkeypatch.setattr(vr.registry, "load_organisms", lambda: orgs)
 
+def test_validate_registry_passes_on_the_repository():
+    vr = _validate_registry_module()
     errors, warnings = [], []
     vr._check_registry(errors, warnings)
-    assert any("in_progres" in e for e in errors), errors
+    assert errors == [], errors
+
+
+def test_validate_registry_rejects_a_path_unsafe_name(monkeypatch):
+    """A slash or space in a canonical name would split or break the model's paths."""
+    vr = _validate_registry_module()
+    doc = dict(registry._antibiotics_doc())
+    doc["classes"] = {**doc["classes"],
+                      "testclass": {"display_name": "Test", "members": ["foo/bar acid"]}}
+    monkeypatch.setattr(vr.registry, "_antibiotics_doc", lambda: doc)
+    errors, warnings = [], []
+    vr._check_registry(errors, warnings)
+    assert any("foo/bar acid" in e for e in errors), errors
 
 
 # ---- tool-version provenance --------------------------------

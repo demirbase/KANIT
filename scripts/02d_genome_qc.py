@@ -56,9 +56,8 @@ logger = get_logger("m15-genome-qc")
 def _qc_dirs(organism, config):
     """Resolve the (genomes_dir, qc_out_dir) pair, both organism-scoped."""
     genomes_dir = resolve_path("raw_genomes_dir", organism=organism, config=config)
-    base = resolve_path("dir_global_exploration", organism=organism, config=config)
-    qc_out = Path(base) / "genome_qc"
-    return Path(genomes_dir), qc_out
+    qc_out = resolve_path("genome_qc_dir", organism=organism, config=config)
+    return Path(genomes_dir), Path(qc_out)
 
 
 def do_prep(organism, config):
@@ -122,10 +121,11 @@ def _read_quast(quast_out):
 def classify_row(gid, comp, cont, n50, nctg, tlen, thr):
     """Apply thresholds to one genome's metrics -> row dict.
 
-    A check passes if its metric is present AND within threshold; a MISSING
-    metric is ``None`` (its tool didn't run) and is not counted as a failure.
+    A check passes if its metric is present AND within threshold; a missing
+    metric is ``None``.
 
-    ``pass_overall`` (the EXCLUSION gate) is CheckM2 completeness+contamination ONLY.
+    ``pass_overall`` (the EXCLUSION gate) is CheckM2 completeness+contamination ONLY,
+    and a genome without CheckM2 values fails it: it cannot be shown to meet the gate.
     QUAST N50/contigs are reported for information but are ADVISORY, not exclusion
     criteria: unitig features are ~30-60 bp and survive fragmented assemblies intact,
     so contiguity says little about presence/absence AMR content. Gating on N50 (>=50 kb)
@@ -136,11 +136,8 @@ def classify_row(gid, comp, cont, n50, nctg, tlen, thr):
     pass_cont = None if cont is None else cont <= thr["contamination_max"]
     pass_n50 = None if n50 is None else n50 >= thr["n50_min"]   # advisory only
     pass_ctg = None if nctg is None else nctg <= thr["max_contigs"]  # advisory only
-    # Fail ONLY if a CheckM2 gate is affirmatively violated. A missing metric (None,
-    # e.g. CheckM2 didn't assess this genome) does not fail — "missing metric is not a
-    # failure" — and N50/contigs never gate (advisory). In the real run CheckM2 is
-    # present for every genome, so this is exactly "completeness>=95 AND contamination<=5".
-    overall = (pass_comp is not False) and (pass_cont is not False)
+    # Exactly "completeness >= 95 AND contamination <= 5"; N50/contigs never gate.
+    overall = (pass_comp is True) and (pass_cont is True)
     return {
         "genome_id": gid, "completeness": comp, "contamination": cont,
         "n50": n50, "n_contigs": nctg, "total_length": tlen,
@@ -153,12 +150,10 @@ def do_post(organism, config, thr):
     genomes_dir, qc_out = _qc_dirs(organism, config)
     checkm2 = _read_checkm2(qc_out / "checkm2")
     quast = _read_quast(qc_out / "quast")
-    if checkm2 is None and quast is None:
-        logger.error("neither CheckM2 nor QUAST reports found under %s — run the "
-                     "tools first (see module docstring / SLURM).", qc_out)
-        sys.exit(1)
     if checkm2 is None:
-        logger.warning("CheckM2 report missing — completeness/contamination skipped.")
+        logger.error("CheckM2 report not found under %s — it is the quality gate; "
+                     "run CheckM2 first (see module docstring / SLURM).", qc_out)
+        sys.exit(1)
     if quast is None:
         logger.warning("QUAST report missing — N50/contig checks skipped.")
 

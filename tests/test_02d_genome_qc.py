@@ -2,8 +2,8 @@
 """Unit tests for 02d_genome_qc.py (M15 CheckM2 + QUAST genome QC).
 
 Exercise the pure logic without the tools: the CheckM2/QUAST TSV readers on
-hand-written reports, and classify_row's threshold gating (incl. the "missing
-metric is not a failure" rule)."""
+hand-written reports, and classify_row's threshold gating (a genome without
+CheckM2 values fails; QUAST is advisory)."""
 
 import pytest
 
@@ -36,19 +36,16 @@ def test_classify_row_boundaries_inclusive(mod):
     assert r["pass_overall"] is True
 
 
-def test_classify_row_missing_metric_not_a_failure(mod):
-    # QUAST only (CheckM2 absent): completeness/contamination None, still passes
-    # on the present QUAST checks.
+def test_classify_row_without_checkm2_fails_and_quast_is_advisory(mod):
+    # CheckM2 is the quality gate: a genome it did not assess cannot be shown to
+    # meet it, whatever QUAST says.
     r = mod.classify_row("g", None, None, 120000, 50, 5_000_000, THR)
     assert r["pass_completeness"] is None and r["pass_contamination"] is None
-    assert r["pass_overall"] is True
-    # All metrics missing -> still a pass: exclusion requires AFFIRMATIVE evidence of
-    # low quality, never absence of evidence. The old semantics (no present check ->
-    # fail) meant that if CheckM2's report were missing, EVERY genome became a QC
-    # outlier and 03u would drop the entire organism. The real guard against a
-    # missing tool is do_post, which hard-errors when neither report exists.
-    empty = mod.classify_row("g", None, None, None, None, None, THR)
-    assert empty["pass_overall"] is True
+    assert r["pass_overall"] is False
+    assert mod.classify_row("g", None, None, None, None, None, THR)["pass_overall"] is False
+    # QUAST missing, CheckM2 within thresholds -> pass
+    ok = mod.classify_row("g", 99.0, 1.0, None, None, None, THR)
+    assert ok["pass_n50"] is None and ok["pass_overall"] is True
 
 
 def test_read_checkm2_and_quast(mod, tmp_path):

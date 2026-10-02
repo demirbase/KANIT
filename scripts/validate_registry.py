@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Registry consistency guard (M1 — "watertight registry").
+Registry consistency guard.
 
 Checks the registry files (config/registry/{organisms,antibiotics}.yaml) for the
 invariants the pipeline relies on, and — with --db — that the KB agrees with the
@@ -33,7 +33,8 @@ def _check_registry(errors: list[str], warnings: list[str]) -> None:
     doc = registry._antibiotics_doc()
     classes = doc.get("classes", {})
 
-    # 1) every member belongs to exactly one class
+    # 1) every member belongs to exactly one class, under a path-safe name
+    #    (canonical names become directory names; other spellings are aliases)
     seen: dict[str, str] = {}
     for cid, block in classes.items():
         for m in block.get("members", []):
@@ -41,6 +42,13 @@ def _check_registry(errors: list[str], warnings: list[str]) -> None:
             if key in seen:
                 errors.append(f"antibiotic '{m}' is in two classes: {seen[key]} and {cid}")
             seen[key] = cid
+            if not _SLUG_RE.match(str(m)):
+                errors.append(f"antibiotic '{m}' is not a path-safe name ([a-z0-9_])")
+
+    # 1b) a label that is not a single drug is never also a class member
+    for label in (doc.get("not_single_drugs", []) or []):
+        if str(label).lower() in seen:
+            errors.append(f"not_single_drugs lists '{label}', which is a class member")
 
     # 2) every alias canonical is a member
     for canonical in (doc.get("aliases", {}) or {}):
@@ -66,24 +74,13 @@ def _check_registry(errors: list[str], warnings: list[str]) -> None:
         if str(ab).lower() not in seen:
             warnings.append(f"amrfinder_keywords lists '{ab}' which is not a class member")
 
-    # 6) organisms: lowercase slugs, valid status, priority_classes exist,
-    #    antibiotics classified
+    # 6) organisms: lowercase slugs and the fields the pipeline reads
     for slug, block in registry.load_organisms().items():
         if not _SLUG_RE.match(slug):
             errors.append(f"organism slug '{slug}' is not lowercase snake_case")
-        # An unknown status silently makes the organism INACTIVE (is_active() just
-        # tests membership), so a typo would quietly drop it from the panel with
-        # nothing failing. Pin the vocabulary shut.
-        status = block.get("status")
-        if status is not None and status not in registry.VALID_STATUS:
-            errors.append(f"organism '{slug}' status '{status}' not in "
-                          f"{sorted(registry.VALID_STATUS)}")
-        for cid in block.get("priority_classes", []) or []:
-            if cid not in classes:
-                errors.append(f"organism '{slug}' priority_class '{cid}' is not a known class")
-        for ab in block.get("antibiotics", []) or []:
-            if registry.antibiotic_to_class(ab) is None:
-                warnings.append(f"organism '{slug}' target '{ab}' has no registry class")
+        for field in ("display_name", "taxid", "gram_stain", "phylum"):
+            if block.get(field) in (None, ""):
+                errors.append(f"organism '{slug}' has no {field}")
 
 
 def _check_kb(db: Path, errors: list[str], warnings: list[str]) -> None:

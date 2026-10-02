@@ -60,6 +60,7 @@ CLASS_TO_ARO_KEYWORD = {
     "fosfomycins": ("fosfomycin",),
     "lipopeptides": ("lipopeptide",),
     "nitrofurans": ("nitrofuran",),
+    "fusidanes": ("fusidane",),
 }
 
 

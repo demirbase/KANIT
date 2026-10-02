@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Registry access — single source of truth for organisms and antibiotic classes
-(SCALE_MLOPS_PLAN.md §3).
+Registry access — single source of truth for organisms and antibiotic classes.
 
 Reads:
     config/registry/organisms.yaml
@@ -11,9 +10,12 @@ Public API:
     load_organisms()                        -> dict   (raw organisms block)
     load_antibiotic_classes()               -> dict   {DisplayName: [members]}
     antibiotic_to_class(ab_id)              -> class_id | None
-    list_targets()                          -> [(organism_id, antibiotic_id), ...]
-    validate_target(organism_id, ab_id)     -> bool
+    is_single_drug(name)                    -> bool
+    normalize_antibiotic(name)              -> canonical name
     get_organism(organism_id)               -> dict
+
+The panel (which organism–antibiotic pairs are modelled) is not part of the
+registry: it follows from the panel rule (lib.panel, step 02e).
 """
 
 from functools import lru_cache
@@ -98,6 +100,17 @@ def antibiotic_to_class(ab_id):
 
 
 @lru_cache(maxsize=1)
+def _not_single_drugs():
+    return {str(x).strip().lower() for x in (_antibiotics_doc().get("not_single_drugs") or [])}
+
+
+def is_single_drug(name):
+    """False for a label listed under `not_single_drugs:` (a phenotype category or
+    a drug-class name), True otherwise."""
+    return str(name).strip().lower() not in _not_single_drugs()
+
+
+@lru_cache(maxsize=1)
 def _class_mechanism_index():
     """{class_id: 'acquired'|'target_snp'} from the class_mechanism_type block."""
     return dict(_antibiotics_doc().get("class_mechanism_type", {}) or {})
@@ -125,7 +138,7 @@ def clear_cache():
     """Drop all registry lru_caches — call in tests that mutate the registry YAML
     files at runtime so a stale cached parse is not reused."""
     for fn in (_organisms_doc, _antibiotics_doc, _ab_to_class_index, _alias_index,
-               _class_mechanism_index, _who_aware_index):
+               _class_mechanism_index, _who_aware_index, _not_single_drugs):
         fn.cache_clear()
 
 
@@ -167,56 +180,3 @@ def normalize_antibiotic(name):
     if not key:
         return None
     return _alias_index().get(key.lower(), key)
-
-
-# Organism `status:` vocabulary (schema 2.0). VALID_STATUS is the closed set —
-# validate_registry rejects anything else, because an unknown value (a typo like
-# "in_progres") would silently make the organism inactive with nothing raising.
-#   done        — pipeline run, models in the KB
-#   in_progress — genomes downloaded and/or partially run
-#   planned     — on the panel, not started
-#   excluded_insufficient_data — checked and REJECTED: not enough
-#       laboratory-confirmed AST to train on. Deliberately not "planned": it is a
-#       recorded negative finding, not pending work. See the Enterobacter block in
-#       organisms.yaml for the measurement behind such a call.
-_ACTIVE_STATUS = {"done", "in_progress", "planned"}
-_INACTIVE_STATUS = {"excluded_insufficient_data"}
-VALID_STATUS = _ACTIVE_STATUS | _INACTIVE_STATUS
-
-
-def is_active(block):
-    """True if an organism block is an active target. Prefers the new
-    ``status:`` field (schema 2.0); falls back to the legacy ``enabled:`` bool."""
-    status = block.get("status")
-    if status is not None:
-        return status in _ACTIVE_STATUS
-    return bool(block.get("enabled", False))
-
-
-def list_targets(enabled_only=True, phase=None):
-    """
-    Return [(organism_id, antibiotic_id), ...] across the registry.
-
-    Args:
-        enabled_only: if True, only ACTIVE organisms are included (``status`` in
-            done/in_progress/planned, or legacy ``enabled: true``).
-        phase: optional int — restrict to organisms with this ``eskapee_phase``.
-    """
-    targets = []
-    for org_id, block in load_organisms().items():
-        if enabled_only and not is_active(block):
-            continue
-        if phase is not None and block.get("eskapee_phase") != phase:
-            continue
-        for ab in block.get("antibiotics", []):
-            targets.append((org_id, ab))
-    return targets
-
-
-def validate_target(organism_id, antibiotic_id):
-    """True if (organism_id, antibiotic_id) is a registered target."""
-    organisms = load_organisms()
-    block = organisms.get(organism_id)
-    if not block:
-        return False
-    return antibiotic_id in block.get("antibiotics", [])

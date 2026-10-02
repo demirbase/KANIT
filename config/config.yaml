@@ -42,6 +42,10 @@ paths_organism:
   # Global QC / validation outputs are now ORGANISM-SCOPED so two organisms do
   # not overwrite each other's validation_report.txt / global_qc_outliers.csv.
   dir_global_exploration: "results/{organism}/global_exploration"
+  # CheckM2 + QUAST per-genome QC (02d); 02e reads its table.
+  genome_qc_dir:          "results/{organism}/global_exploration/genome_qc"
+  # The panel (02e): one decision per organism–antibiotic pair.
+  panel_dir:              "results/panel"
 
   # ── Organism-scoped ────────────────────────────────────────────────────────
   raw_genomes_dir:  "data/raw/{organism}/genomes"
@@ -85,6 +89,15 @@ metadata:
   #   susceptible -> fold Intermediate into Susceptible
   # The chosen policy is stamped into download_manifest.json for provenance.
   intermediate_policy: "drop"
+
+# ----------------------------------------------------------------------------
+# PANEL (step 02e — lib/panel.py)
+# ----------------------------------------------------------------------------
+# A pair enters the panel when, after quality control and lineage assignment,
+# the smaller of the resistant and susceptible classes holds at least this many
+# genomes (five-fold CV then gives each test fold at least 30 on average).
+panel:
+  min_minority: 150
 
 # ----------------------------------------------------------------------------
 # DATA PREPROCESSING PARAMETERS
