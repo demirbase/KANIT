@@ -226,6 +226,22 @@ lineage:
 # ----------------------------------------------------------------------------
 # MACHINE LEARNING TRAINING PARAMETERS
 # ----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# NESTED CROSS-VALIDATION (lib/folds.py, lib/oof_metrics.py)
+# ----------------------------------------------------------------------------
+# Two arms (lineage-aware, lineage-blind) x n_repeats x n_folds outer folds.
+# Repeat r takes the first seed of 1000*r + j whose every test fold holds at
+# least min_minority_per_test_fold genomes of the minority class, trying at most
+# max_seed_attempts seeds.
+cv:
+  n_repeats: 5
+  n_folds: 5
+  min_minority_per_test_fold: 10
+  max_seed_attempts: 20
+  threshold: 0.5        # decision threshold; never tuned
+  n_bootstrap: 1000     # lineage-cluster bootstrap resamples
+  reliability_bins: 10
+
 training:
   # Data splitting (Scale-Invariant Fractional Method)
   random_seed: 42  # For reproducible train/test splits
