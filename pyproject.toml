@@ -13,8 +13,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kanit-amr"
-version = "0.7.1"
-description = "Explainable, FAIR, multi-organism AMR unitig-biomarker knowledge-base pipeline (ESKAPEE)"
+version = "1.0.0"
+description = "An evidence-graded knowledge base of antimicrobial resistance biomarkers in the ESKAPEE pathogens"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 license = { file = "LICENSE" }

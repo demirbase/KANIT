@@ -29,7 +29,7 @@ Design notes
 Bump ``KB_SCHEMA_VERSION`` (semantic versioning) on any schema change.
 """
 
-KB_SCHEMA_VERSION = "0.7.1"
+KB_SCHEMA_VERSION = "1.0.0"
 
 # Ordered DDL — parent tables before the children that reference them.
 SCHEMA_SQL = """

@@ -1,17 +1,12 @@
 cff-version: 1.2.0
-message: "If you use this software or the AMRK-DB knowledge base, please cite it using these metadata."
-title: "ML_AMR_Prediction_v2 / AMRK-DB: an explainable, multi-organism, FAIR, unitig-resolution AMR biomarker Knowledge Base pipeline for ESKAPEE pathogens"
+message: "If you use KANIT, please cite it using these metadata."
+title: "KANIT: an evidence-graded knowledge base of antimicrobial resistance biomarkers in the ESKAPEE pathogens"
 abstract: >-
-  An alignment-free, out-of-core machine-learning pipeline that predicts
-  antimicrobial resistance (AMR) in ESKAPEE pathogens from whole-genome
-  assemblies using unitig (compacted de Bruijn graph) presence/absence features
-  and XGBoost, then reverse-translates the most important unitigs into biology
-  via CPSS stability selection (B=100, pi>=0.6, PFER-bounded), lineage-aware
-  cross-validation (PopPUNK + GroupKFold), CARD/NCBI BLAST confidence tiering
-  with ARO ontology mapping, resistant-versus-susceptible discriminativeness
-  (Fisher + BH-FDR), CARD variant-model SNP allele checks, permutation tests and
-  pyseer LMM significance — building a queryable, confidence-tiered, FAIR AMR
-  biomarker knowledge base with full per-run provenance.
+  KANIT is a knowledge base of genomic biomarkers associated with antimicrobial
+  resistance in the ESKAPEE pathogens. The biomarkers are unitigs that
+  gradient-boosted models select under lineage-aware cross-validation. Each
+  biomarker is examined by independent lines of evidence, which a fixed rule
+  combines into one evidence grade.
 type: software
 authors:
   - family-names: "Demirbaş"
@@ -19,24 +14,17 @@ authors:
     email: "eren0demirbas@gmail.com"
 repository-code: "https://github.com/demirbase/ML_AMR_Prediction_v2"
 license: MIT
-version: "0.7.1"
-date-released: "2026-08-04"
+version: "1.0.0"
 keywords:
   - antimicrobial resistance
   - machine learning
   - unitig
-  - k-mer
   - XGBoost
   - stability selection
   - lineage-aware validation
   - pyseer
   - knowledge base
+  - evidence grading
   - ESKAPEE
   - CARD
-  - ARO ontology
-  - reproducible research
   - FAIR
-identifiers:
-  - type: doi
-    value: "10.5281/zenodo.21789464"
-    description: "Archived AMRK-DB knowledge base (45 models, 6 ESKAPEE organisms, schema 0.7.1)"
