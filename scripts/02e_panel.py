@@ -35,16 +35,6 @@ from lib import panel, registry  # noqa: E402
 from lib.config import load_config, resolve_path  # noqa: E402
 
 
-def _inputs(organism, config):
-    qc_dir = resolve_path("genome_qc_dir", organism=organism, config=config)
-    lineage_dir = resolve_path("lineage_dir", organism=organism, config=config)
-    return {
-        "phenotypes": resolve_path("metadata_file", organism=organism, config=config),
-        "qc_table": qc_dir / f"02d_genome_qc_{organism}.csv",
-        "clusters": lineage_dir / "poppunk_clusters.csv",
-    }
-
-
 def _sha256(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -69,7 +59,7 @@ def main():
     if unknown:
         sys.exit(f"ERROR: not in the organism registry: {', '.join(unknown)}")
 
-    inputs = {org: _inputs(org, config) for org in args.organisms}
+    inputs = {org: panel.input_paths(org, config) for org in args.organisms}
     missing = [f"{org}: {name} {path}" for org, files in inputs.items()
                for name, path in files.items() if not Path(path).exists()]
     if missing:
@@ -89,9 +79,7 @@ def main():
     print("=" * 78)
     rows, organisms = [], {}
     for org, files in inputs.items():
-        phenotypes = pd.read_csv(files["phenotypes"], dtype={"Genome ID": str}, encoding="utf-8")
-        qc = pd.read_csv(files["qc_table"], dtype={"genome_id": str}, encoding="utf-8")
-        clusters = pd.read_csv(files["clusters"], dtype={"Genome ID": str}, encoding="utf-8")
+        phenotypes, qc, clusters = panel.read_inputs(org, config)
         eligible = panel.eligible_genomes(qc, clusters)
         org_rows = panel.pair_rows(org, phenotypes, eligible, min_minority=args.min_minority)
         rows.extend(org_rows)

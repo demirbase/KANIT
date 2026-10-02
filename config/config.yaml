@@ -55,7 +55,9 @@ paths_organism:
   lineage_dir:      "data/processed/{organism}/lineage"
 
   # ── Organism + antibiotic-scoped ───────────────────────────────────────────
-  matrix_dir:           "data/processed/{organism}/{antibiotic}/matrix_unitig"
+  # Organism unitig store and per-model pattern matrices (03u, lib/matrix_store.py).
+  unitig_store_dir:     "data/processed/{organism}/unitig_store"
+  matrix_dir:           "data/processed/{organism}/{antibiotic}/model_matrix"
   models_dir:           "models/{organism}/{antibiotic}"
   logs_dir:             "logs/{organism}/{antibiotic}"
   dir_01_data_exploration:   "results/{organism}/{antibiotic}/01_data_exploration"
@@ -117,31 +119,18 @@ preprocessing:
 # UNITIG REPRESENTATION
 # ----------------------------------------------------------------------------
 # Consumed by 03u_unitig_matrix.py. unitig-caller (Bifrost backend) builds the
-# population compacted de Bruijn graph and emits a genome×unitig presence/absence
-# matrix (features.txt / y_{ab}.csv / genomes_{ab}.csv / X_{ab}_part_*.npz) in
-# matrix_dir, which 04/05/06/07/07b read.
+# population compacted de Bruijn graph of each organism; 03u parses its presence
+# table into the organism store (unitig_store_dir) and builds one pattern matrix
+# per panel pair (matrix_dir). Formats: lib/matrix_store.py.
 unitig:
-  # The de Bruijn k the graph is actually built at. 03u does not pass --kmer, so
-  # unitig-caller's own default stands, and that default is 31
-  # (unitig_caller/__main__.py: --kmer default=31).
-  # Confirmed three ways: the caller's argparse default, the absence of --kmer in
-  # 03u's invocation, and the delivered store holding no unitig shorter than 31 bp.
-  # Declared here so the value is recorded rather than inferred; changing it does
-  # NOT change the graph — to do that, pass --kmer in 03u.
+  # The de Bruijn k of the graph; 03u passes it to unitig-caller as --kmer.
   k: 31
-  # ABSOLUTE minimum genome count to keep a unitig (ROADMAP §0.7 risk-4: use an
-  # absolute floor, NOT a proportional one, so a rare-but-real plasmid unitig is
-  # not dropped). Zero-variance core (present in every genome) is always dropped.
-  # NOTE: this is tuned for the full ~4000-genome run; lower it (e.g. --min-support
-  # 1) for tiny datasets/smoke tests via the CLI flag.
+  # Frequency filter, absolute and applied to both sides: a unitig is kept when it
+  # is present in at least min_support genomes AND absent from at least
+  # min_support. The organism store applies it over all the organism's genomes
+  # (a unitig failing there fails in every subset); each model matrix applies it
+  # again over the model's genomes.
   min_support: 10
-  # Organism-level store (03u --build-db): run unitig-caller ONCE over all the
-  # organism's assemblies, then each antibiotic SUBSETS the store (no re-run).
-  # db_min_support is the store's absolute floor; keep it <= every antibiotic's
-  # min_support so nothing a per-antibiotic filter would keep is pre-dropped
-  # (2 = drop only singletons, always safe since they can never reach support>=2
-  # in any subset).
-  db_min_support: 2
   # unitig-caller thread count. null -> fall back to preprocessing.threads.
   threads: null
 

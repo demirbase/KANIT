@@ -87,7 +87,7 @@ def test_registry_single_drugs_and_path_safe_names():
 # ---------------------------------------------------------------------------
 def test_resolve_path_organism_antibiotic():
     p = resolve_path("matrix_dir", organism="ecoli", antibiotic="gentamicin")
-    assert p.as_posix().endswith("data/processed/ecoli/gentamicin/matrix_unitig")
+    assert p.as_posix().endswith("data/processed/ecoli/gentamicin/model_matrix")
 
 
 def test_resolve_path_run_id():

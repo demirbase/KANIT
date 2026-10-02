@@ -14,11 +14,46 @@ from pathlib import Path
 import pandas as pd
 
 from lib import registry
+from lib.config import resolve_path
 
 INCLUDED, EXCLUDED, BLOCKED = "included", "excluded", "blocked"
 
 COLUMNS = ["organism", "antibiotic", "drug_class", "n_tested", "n_eligible",
            "n_resistant", "n_susceptible", "minority", "decision", "reason"]
+
+
+def input_paths(organism: str, config: dict) -> dict[str, Path]:
+    """The three inputs of the panel rule: 00's phenotype matrix, 02d's QC table
+    and 02c's lineage table."""
+    qc_dir = resolve_path("genome_qc_dir", organism=organism, config=config)
+    lineage_dir = resolve_path("lineage_dir", organism=organism, config=config)
+    return {
+        "phenotypes": resolve_path("metadata_file", organism=organism, config=config),
+        "qc_table": qc_dir / f"02d_genome_qc_{organism}.csv",
+        "clusters": lineage_dir / "poppunk_clusters.csv",
+    }
+
+
+def read_inputs(organism: str, config: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """(phenotypes, qc_table, clusters) with genome identifiers as strings."""
+    paths = input_paths(organism, config)
+    return (pd.read_csv(paths["phenotypes"], dtype={"Genome ID": str}, encoding="utf-8"),
+            pd.read_csv(paths["qc_table"], dtype={"genome_id": str}, encoding="utf-8"),
+            pd.read_csv(paths["clusters"], dtype={"Genome ID": str}, encoding="utf-8"))
+
+
+def pair_genomes(phenotypes: pd.DataFrame, qc_table: pd.DataFrame, clusters: pd.DataFrame,
+                 antibiotic: str) -> pd.DataFrame:
+    """Genome ID, label and lineage of the genomes of one pair: eligible and
+    tested for the antibiotic, sorted by Genome ID."""
+    eligible = eligible_genomes(qc_table, clusters)
+    sel = phenotypes.loc[phenotypes["Genome ID"].astype(str).isin(eligible)
+                         & phenotypes[antibiotic].notna(), ["Genome ID", antibiotic]]
+    lineage = dict(zip(clusters["Genome ID"].astype(str), clusters["Cluster"], strict=True))
+    out = pd.DataFrame({"Genome ID": sel["Genome ID"].astype(str),
+                        "label": sel[antibiotic].astype(int)})
+    out["lineage"] = out["Genome ID"].map(lineage)
+    return out.sort_values("Genome ID").reset_index(drop=True)
 
 
 def decide(n_resistant: int, n_susceptible: int, *, single_drug: bool,
