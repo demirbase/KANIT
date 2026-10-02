@@ -17,6 +17,10 @@ AMR_Project_Analysis.md
 # Standalone presentation generator (not part of the pipeline)
 amr_sunum.js
 
+# Internal planning notes (not for the public repository)
+docs/V1_PLAN.md
+docs/V1_PROTOKOL.md*
+
 # ============================================================================
 # GENERATED OUTPUTS (reproducible from the pipeline — not version-controlled)
 # ============================================================================
