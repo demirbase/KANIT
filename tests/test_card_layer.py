@@ -204,12 +204,16 @@ def test_annotate_end_to_end(genome, tmp_path):
     for u, p in zip(m["unitig_index"], m["pattern_id"], strict=True):
         pid[next(k for k, s in unitigs.items() if s == seq_of[u])] = p
 
-    def run(targets):
+    def run(targets, column="allele_aware_state"):
         _, pats, _ = cl.annotate(sorted(pid.values()), mm, store, qc, hits, lambda g: contigs,
                                  targets)
-        st = dict(zip(pats["pattern_id"], pats["allele_aware_state"], strict=True))
+        st = dict(zip(pats["pattern_id"], pats[column], strict=True))
         return {k: st[p] for k, p in pid.items()}
 
     assert run(QUINOLONE) == {"S83": cl.B1, "FAR": cl.HIT_NO_B, "CTX": cl.HIT_NO_B, "FREE": cl.NO_HIT}
+    assert run(QUINOLONE, "allele_aware_reasons") == {
+        "S83": "", "FAR": cl.ALLELE_NOT_IN, "CTX": cl.CO_CARRIED, "FREE": ""}
+    assert run(QUINOLONE, "homolog_only_state")["S83"] == cl.HIT_NO_B
+    assert run(QUINOLONE, "homolog_only_reasons")["S83"] == cl.VARIANT_NOT_COUNTED
     assert run(CEPHALOSPORIN) == {"S83": cl.HIT_NO_B, "FAR": cl.HIT_NO_B, "CTX": cl.B1,
                                   "FREE": cl.NO_HIT}

@@ -30,6 +30,7 @@ PIPELINE_SCRIPTS = [
     "09_biological_summary.py",
     "10_unitig_background_frequency.py",
     "11_variant_snp_check.py",
+    "14b_grading.py",
 ]
 
 

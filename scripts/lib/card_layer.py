@@ -309,7 +309,8 @@ def annotate(patterns, mm, store, qc_table: pd.DataFrame, hits: pd.DataFrame, co
     """CARD state of every member unitig of the candidate patterns of one model.
 
     Returns (unitigs, patterns, summary): one row per unitig and per pattern, each
-    with the state, reasons and AROs of both modes."""
+    with the state, reasons and AROs of both modes. A pattern's reasons are those of
+    its members and are kept only when it has a CARD hit without b."""
     members = mm.members()
     genomes = mm.genomes["Genome ID"].astype(str).to_numpy()
     near = near_universal_aros(hits, genomes, near_universal_share)
@@ -334,7 +335,10 @@ def annotate(patterns, mm, store, qc_table: pd.DataFrame, hits: pd.DataFrame, co
         prow: dict[str, int | str] = {"pattern_id": int(pid),
                                       "n_members": len(member_states["allele_aware"])}
         for mode, ss in member_states.items():
-            prow[f"{mode}_state"] = pattern_state(x.state for x in ss)
+            state = pattern_state(x.state for x in ss)
+            prow[f"{mode}_state"] = state
+            prow[f"{mode}_reasons"] = (";".join(sorted({r for x in ss for r in x.reasons}))
+                                       if state == HIT_NO_B else "")
             prow[f"{mode}_aros"] = ";".join(sorted({a for x in ss for a in x.aros}))
         prows.append(prow)
     unitigs, pats = pd.DataFrame(urows), pd.DataFrame(prows)

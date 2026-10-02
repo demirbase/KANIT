@@ -65,6 +65,9 @@ paths_organism:
   rgi_dir:              "results/{organism}/rgi"
   candidates_file:      "results/{organism}/{antibiotic}/candidates.csv"
   card_layer_dir:       "results/{organism}/{antibiotic}/card_layer"
+  # Statistical layers (<layer>.csv: pattern_id, passes) and the grades (14b_grading.py).
+  layers_dir:           "results/{organism}/{antibiotic}/layers"
+  grades_dir:           "results/{organism}/{antibiotic}/grades"
   models_dir:           "models/{organism}/{antibiotic}"
   logs_dir:             "logs/{organism}/{antibiotic}"
   dir_01_data_exploration:   "results/{organism}/{antibiotic}/01_data_exploration"
@@ -257,6 +260,12 @@ card:
   near_universal: 0.95      # a gene in at least this share of a model's genomes gives no b by homology
   max_located_genomes: 3    # a candidate is located in at most this many carrier genomes
   min_overlap: 0.5          # share of the unitig that must overlap an RGI hit
+
+# ----------------------------------------------------------------------------
+# GRADING RULE (14b_grading.py, lib/grading.py; protocol §9)
+# ----------------------------------------------------------------------------
+grading:
+  rule: allele_aware        # grading_rule reported as `grade`: allele_aware | homolog_only (both stored)
 
 # Hyperparameter search and training of every model (lib/train.py): Optuna TPE
 # with a median pruner on up to search_max_genomes genomes; trees by early
