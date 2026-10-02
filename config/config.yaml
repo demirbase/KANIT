@@ -58,6 +58,8 @@ paths_organism:
   # Organism unitig store and per-model pattern matrices (03u, lib/matrix_store.py).
   unitig_store_dir:     "data/processed/{organism}/unitig_store"
   matrix_dir:           "data/processed/{organism}/{antibiotic}/model_matrix"
+  # Nested cross-validation and final model of one pair (04_nested_cv.py).
+  cv_dir:               "results/{organism}/{antibiotic}/cv"
   models_dir:           "models/{organism}/{antibiotic}"
   logs_dir:             "logs/{organism}/{antibiotic}"
   dir_01_data_exploration:   "results/{organism}/{antibiotic}/01_data_exploration"
@@ -241,6 +243,18 @@ cv:
   threshold: 0.5        # decision threshold; never tuned
   n_bootstrap: 1000     # lineage-cluster bootstrap resamples
   reliability_bins: 10
+
+# Hyperparameter search and training of every model (lib/train.py): Optuna TPE
+# with a median pruner on up to search_max_genomes genomes; trees by early
+# stopping on an inner fifth of the training set, then a refit on all of it.
+hpo:
+  n_trials: 30
+  search_max_genomes: 1000
+  pruner_startup_trials: 5    # no pruning before this many trials have completed
+  pruner_warmup_rounds: 50    # ... or before this boosting round
+  early_stopping_rounds: 50
+  max_rounds: 5000
+  batch_rows: 128             # rows per batch when building an XGBoost matrix
 
 training:
   # Data splitting (Scale-Invariant Fractional Method)

@@ -49,8 +49,7 @@ ALL_STEPS: list[tuple[str, str]] = [
     ("02d", "02d_genome_qc.py"),             # CheckM2+QUAST QC (M15; --mode, multi-container)
     ("02e", "02e_panel.py"),                 # panel rule over every organism
     ("03u", "03u_unitig_matrix.py"),         # unitig matrix (unitig-caller)
-    ("04",  "04_optimization.py"),
-    ("05",  "05_model_training.py"),
+    ("04",  "04_nested_cv.py"),              # nested CV + final model (subcommand: all)
     ("06",  "06_evaluation.py"),
     ("07b", "07b_feature_stability.py"),
     ("07",  "07_explainability.py"),
@@ -70,11 +69,13 @@ ALL_STEPS: list[tuple[str, str]] = [
 # cannot be launched by this plain orchestrator (run them as SLURM jobs):
 #   02c (amr-pp.sif) · 02d (--mode + amr-checkm2/amr-tools) · 03u (unitig-caller container)
 #   08-NCBI (internet) · 14 (--mode + amr-tools) · 16 (--mode + amr-tools) · populate_database.py
+# Arguments a step needs beyond the environment.
+STEP_ARGS = {"04": ["all"]}
 HPC_SLURM_STEPS = {"02c", "02d", "02e", "14", "16"}
 
 # Default plan: the local single-container analysis core. The unitig matrix (03u)
 # is built beforehand on HPC.
-DEFAULT_PLAN = ["01", "04", "05", "06", "07b", "07", "09", "10"]
+DEFAULT_PLAN = ["01", "04", "06", "07b", "07", "09", "10"]
 
 
 def _index(step_id: str) -> int:
@@ -162,7 +163,8 @@ def main() -> None:
         script_path = PROJECT_ROOT / "scripts" / script
         log.info("=== STEP %s : %s ===", sid, script)
         t0 = time.time()
-        rc = subprocess.run([sys.executable, str(script_path)], env=env).returncode
+        rc = subprocess.run([sys.executable, str(script_path), *STEP_ARGS.get(sid, [])],
+                            env=env).returncode
         dt = time.time() - t0
         if rc == 0:
             log.info("STEP %s done in %.1fs", sid, dt)

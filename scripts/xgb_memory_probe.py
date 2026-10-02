@@ -14,7 +14,6 @@ The rule: a peak of at most 300 GB means one file per model, otherwise row shard
 import argparse
 import json
 import platform
-import resource
 import sys
 import time
 from datetime import datetime, timezone
@@ -29,12 +28,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 from lib import matrix_store  # noqa: E402
 from lib.config import load_config  # noqa: E402
-
-
-def peak_rss_gb():
-    """Peak resident memory of this process so far (ru_maxrss: bytes on macOS, KiB on Linux)."""
-    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    return rss / (1 << 30) if platform.system() == "Darwin" else rss / (1 << 20)
+from lib.run_metadata import peak_rss_gb  # noqa: E402
 
 
 class RowBatches(xgb.DataIter):

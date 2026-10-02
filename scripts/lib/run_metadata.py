@@ -15,6 +15,8 @@ run_id format (SCALE_MLOPS_PLAN.md §2):
 import datetime
 import hashlib
 import json
+import platform
+import resource
 import subprocess
 import sys
 from pathlib import Path
@@ -185,3 +187,10 @@ def write_json(path, payload):
     except Exception as e:
         print(f"  ⚠ Could not write {path}: {e}")
         return False
+
+
+def peak_rss_gb():
+    """Peak resident memory of this process so far, in GiB (ru_maxrss is bytes on
+    macOS and KiB on Linux)."""
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return rss / (1 << 30) if platform.system() == "Darwin" else rss / (1 << 20)

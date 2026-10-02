@@ -185,33 +185,6 @@ def test_clean_ncbi_stitle(load_script):
 
 
 # ---------------------------------------------------------------------------
-# 04_optimization — √p colsample range & feature counting
-# (module imports xgboost -> load_script skips when unavailable)
-# ---------------------------------------------------------------------------
-@pytest.mark.unit
-def test_colsample_range_brackets_sqrt_p(load_script):
-    m = load_script("04_optimization.py")
-    lower, upper = m.compute_colsample_range(1_000_000)   # 1/sqrt(p) = 1e-3
-    assert lower < 1e-3 < upper
-    assert 0 < lower < upper <= 1.0
-
-
-@pytest.mark.unit
-def test_colsample_range_fallback(load_script):
-    m = load_script("04_optimization.py")
-    assert m.compute_colsample_range(0) == (1e-4, 1e-1)
-
-
-@pytest.mark.unit
-def test_count_features(load_script, tmp_path):
-    m = load_script("04_optimization.py")
-    feats = tmp_path / "features.txt"
-    feats.write_text("AAA 3\nCCC 5\nGGG 1\n")
-    assert m.count_features(tmp_path) == 3
-    assert m.count_features(tmp_path / "nope") == 0
-
-
-# ---------------------------------------------------------------------------
 # 06_evaluation — bootstrap CI (module imports xgboost -> may skip)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
