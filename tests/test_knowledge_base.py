@@ -48,7 +48,8 @@ def _config(root: Path) -> dict:
         "grades_dir": "{organism}/{antibiotic}/grades", "cpss_dir": "{organism}/{antibiotic}/cpss",
         "pyseer_dir": "{organism}/{antibiotic}/pyseer",
         "label_permutation_dir": "{organism}/{antibiotic}/lp", "cross_model_dir": "cross",
-        "external_dir": "{organism}/external", "kb_dir": "kb"}.items()}
+        "external_dir": "{organism}/external", "context_dir": "{organism}/context",
+        "kb_dir": "kb"}.items()}
     text = PROJECT_ROOT / "docs" / "V1_PROTOKOL.md"
     return {
         "paths_organism": t,
@@ -213,6 +214,14 @@ def built(tmp_path_factory):
     (ext / "versions.json").write_text(json.dumps({"amrfinderplus": "4.2.7",
                                                    "amrfinderplus_database": "2025-07-16.1",
                                                    "resfinder": "4.5.0"}))
+    # 18 by hand: the SIGNAL unitig was searched and sits on a plasmid in half of its hits
+    p["context_dir"].mkdir(parents=True)
+    pd.DataFrame([{"unitig_id": kb.unitig_id(seqs["SIGNAL"])[0], "organism_id": ORG,
+                   "source": "ncbi_nt_remote", "queried_on": "2026-10-03", "nt_release": "x",
+                   "n_hits": 2, "best_accession": "CP000001", "best_title": "E. coli plasmid",
+                   "best_identity": 100.0, "best_coverage": 1.0, "best_evalue": 1e-20,
+                   "gene": "gyrA", "product": "DNA gyrase subunit A", "plasmid_share": 0.5}]
+                 ).to_csv(p["context_dir"] / "unitig_context.csv", index=False)
     out = p["kb_dir"] / "kanit.sqlite"
     report = _script("build_kb.py").build(config, out, kb_version="1.0.0-test")
     return config, p, mm, seqs, report, out
@@ -245,6 +254,7 @@ def test_build_loads_every_layer_and_rechecks_the_grades(built):
         assert conn.execute("SELECT count(*) FROM external_comparison WHERE assessable = 0"
                             ).fetchone()[0] == 4
         assert json.loads(rel[2])["resfinder"] == "4.5.0"
+        assert conn.execute("SELECT gene FROM unitig_context").fetchone()[0] == "gyrA"
 
 
 def test_signal_is_graded_from_its_card_variant_hit(built):

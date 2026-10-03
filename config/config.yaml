@@ -77,6 +77,8 @@ paths_organism:
   # AMRFinderPlus and other genotype-based calls of every genome (16): amrfinder_calls.csv
   # (genome_id, element_symbol, type, subtype, scope, class, subclass), amrfinder_genomes.csv.
   external_dir:         "results/{organism}/external"
+  # NCBI context of the candidate unitigs (18): cache/ and unitig_context.csv.
+  context_dir:          "results/{organism}/context"
   # Knowledge base (build_kb.py; docs/V1_BILGI_TABANI.md).
   kb_dir:               "results/kb"
   models_dir:           "models/{organism}/{antibiotic}"
@@ -303,6 +305,13 @@ pyseer:                     # 14_pyseer.py, lib/pyseer_lmm.py (protocol §8.5)
   kinship_every: 100        # every 100th unitig of the model builds the kinship matrix
   alpha: 0.05               # Bonferroni: alpha / number of patterns tested
   background_max: 5000      # λ diagnostic: at most this many unitigs between the kinship sample
+
+context:                    # 18_ncbi_context.py, lib/ncbi_context.py (protocol §12; not evidence)
+  word_size: 11
+  max_target_seqs: 50       # HITLIST_SIZE of the BLAST URL API
+  evalue: 10
+  max_members: 10           # a pattern with more members contributes its longest
+  batch_size: 100           # unitigs per BLAST submission
 
 # Label permutation test of every model (12b_label_permutation.py; protocol §8.6)
 label_permutation:

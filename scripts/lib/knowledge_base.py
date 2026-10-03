@@ -276,20 +276,22 @@ CREATE TABLE grade (                    -- §9, both rules
 );
 
 -- Context (not evidence; §12) -------------------------------------------------------
-CREATE TABLE unitig_context (
-    unitig_id      TEXT NOT NULL REFERENCES unitig,
-    source         TEXT NOT NULL,           -- e.g. ncbi_nt_remote
-    rank           INTEGER NOT NULL,
-    accession      TEXT NOT NULL,
-    taxid          INTEGER,
-    organism_name  TEXT,
-    description    TEXT,
-    identity       REAL,
-    coverage       REAL,
-    evalue         REAL,
-    bitscore       REAL,
-    queried_on     TEXT NOT NULL,
-    PRIMARY KEY (unitig_id, source, rank)
+CREATE TABLE unitig_context (           -- NCBI nt, searched within the organism
+    unitig_id       TEXT NOT NULL REFERENCES unitig,
+    organism_id     TEXT NOT NULL REFERENCES organism,
+    source          TEXT NOT NULL,          -- ncbi_nt_remote
+    queried_on      TEXT NOT NULL,
+    nt_release      TEXT,                   -- 'Posted date' of the BLAST report
+    n_hits          INTEGER NOT NULL,
+    best_accession  TEXT,
+    best_title      TEXT,
+    best_identity   REAL,
+    best_coverage   REAL,
+    best_evalue     REAL,
+    gene            TEXT,
+    product         TEXT,
+    plasmid_share   REAL,                   -- share of the hits on plasmid records
+    PRIMARY KEY (unitig_id, organism_id, source)
 );
 
 -- Comparison with genotype-based prediction (§11) ------------------------------------
@@ -378,13 +380,17 @@ SELECT m.model_id, m.organism_id, m.antibiotic_id, m.n_genomes, m.n_resistant, m
   LEFT JOIN label_permutation lp ON lp.model_id = m.model_id;
 
 CREATE VIEW v_novel AS                  -- context is shown beside, never as evidence
-SELECT b.model_id, b.pattern_id, b.n_members, b.layers_passed,
-       (SELECT pm.unitig_id FROM pattern_member pm JOIN unitig u ON u.unitig_id = pm.unitig_id
-         WHERE pm.model_id = b.model_id AND pm.pattern_id = b.pattern_id
-         ORDER BY u.length DESC, u.unitig_id LIMIT 1) AS longest_unitig_id,
+SELECT n.*, c.best_title AS context_best_title, c.gene AS context_gene,
+       c.product AS context_product, c.plasmid_share AS context_plasmid_share,
        0 AS context_is_evidence
-  FROM v_biomarker b
- WHERE b.grade = 'strong_novel';
+  FROM (SELECT b.model_id, b.organism_id, b.pattern_id, b.n_members, b.layers_passed,
+               (SELECT pm.unitig_id FROM pattern_member pm JOIN unitig u ON u.unitig_id = pm.unitig_id
+                 WHERE pm.model_id = b.model_id AND pm.pattern_id = b.pattern_id
+                 ORDER BY u.length DESC, u.unitig_id LIMIT 1) AS longest_unitig_id
+          FROM v_biomarker b
+         WHERE b.grade = 'strong_novel') n
+  LEFT JOIN unitig_context c ON c.unitig_id = n.longest_unitig_id
+                            AND c.organism_id = n.organism_id;
 """
 
 # The protocol's thresholds: (parameter name, config path, protocol section).

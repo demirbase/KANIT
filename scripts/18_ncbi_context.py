@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Step 18 — genomic context of an organism's candidate unitigs from NCBI
+(protocol §12). Context is not evidence: no grade depends on it.
+
+Subcommands:
+
+  query  searches the unitigs that are not yet in the cache (remote blastn, then
+         Entrez for the best hit of each); it needs internet, so it runs on a
+         login node, and it can be stopped and run again
+  build  the context table from the cache alone (unitig_context.csv)
+  all    query and build
+
+Inputs: the CARD layer of every panel model of the organism (09's
+card_unitigs.csv: the candidate unitigs and their sequences). The rules are in
+lib/ncbi_context.py. Outputs: paths_organism.context_dir (cache/, unitig_context.csv).
+"""
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
+from lib import knowledge_base as kb  # noqa: E402
+from lib import ncbi_context as nc  # noqa: E402
+from lib import panel, registry  # noqa: E402
+from lib.config import load_config, resolve_path  # noqa: E402
+
+
+def candidate_members(organism: str, config: dict) -> pd.DataFrame:
+    """model_id, pattern_id, unitig_id and canonical sequence of every candidate unitig."""
+    d = panel.read_panel(resolve_path("panel_dir", config=config) / "panel_decisions.csv")
+    parts = []
+    for ab in sorted(d.loc[(d["organism"] == organism) & (d["decision"] == panel.INCLUDED),
+                           "antibiotic"]):
+        f = resolve_path("card_layer_dir", organism=organism, antibiotic=ab,
+                         config=config) / "card_unitigs.csv"
+        if not f.exists():
+            continue                                   # not evaluable: no candidates
+        cu = pd.read_csv(f, usecols=["pattern_id", "sequence"])
+        ids = [kb.unitig_id(s) for s in cu["sequence"]]
+        parts.append(pd.DataFrame({"model_id": f"{organism}__{ab}", "pattern_id": cu["pattern_id"],
+                                   "unitig_id": [i for i, _ in ids],
+                                   "sequence": [c for _, c in ids]}))
+    cols = ["model_id", "pattern_id", "unitig_id", "sequence"]
+    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=cols)
+
+
+def blast_params(organism: str, cfg: dict) -> dict:
+    taxid = int(registry.get_organism(organism)["taxid"])
+    return {"ENTREZ_QUERY": f"txid{taxid}[Organism:exp]", "WORD_SIZE": cfg["word_size"],
+            "HITLIST_SIZE": cfg["max_target_seqs"], "EXPECT": cfg["evalue"]}
+
+
+def query(organism: str, config: dict, out_dir: Path, client: nc.Ncbi) -> dict:
+    cfg = config["context"]
+    params = blast_params(organism, cfg)
+    todo = nc.select_unitigs(candidate_members(organism, config), cfg["max_members"])
+    cache = out_dir / "cache"
+    done = set()
+    for meta in (cache / "blast").glob("*/meta.json"):
+        done |= set(json.loads(meta.read_text())["unitig_ids"])
+    pending = todo[~todo["unitig_id"].isin(done)]
+    size = cfg["batch_size"]
+    for s in range(0, len(pending), size):
+        nc.query_batch(client, cache, pending.iloc[s:s + size], params)
+        print(f"  ✓ BLAST {min(s + size, len(pending))}/{len(pending)}")
+    n_fetched = 0
+    for meta in sorted((cache / "blast").glob("*/meta.json")):
+        hits = nc.parse_xml((meta.parent / "report.xml").read_text())
+        for acc, a, b in hits.loc[hits["rank"] == 1, ["accession", "hit_start", "hit_stop"]
+                                  ].itertuples(index=False):
+            f = nc.genbank_file(cache, acc, int(a), int(b))
+            if not f.exists():
+                f.parent.mkdir(parents=True, exist_ok=True)
+                f.write_text(client.genbank(acc, int(a), int(b)))
+                n_fetched += 1
+    return {"n_unitigs": len(todo), "n_searched_now": len(pending), "n_genbank_now": n_fetched}
+
+
+def build(organism: str, out_dir: Path) -> pd.DataFrame:
+    t = nc.build_table(out_dir / "cache", organism)
+    t.to_csv(out_dir / "unitig_context.csv", index=False)
+    return t
+
+
+def main():
+    config = load_config()
+    ap = argparse.ArgumentParser(description="NCBI context of an organism's candidate unitigs.")
+    ap.add_argument("command", choices=["query", "build", "all"])
+    ap.add_argument("--organism", required=True)
+    args = ap.parse_args()
+    out_dir = resolve_path("context_dir", organism=args.organism, config=config)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    print(f"NCBI CONTEXT — {args.organism} — {args.command}")
+    if args.command in ("query", "all"):
+        n = config["ncbi"]
+        print(f"  {query(args.organism, config, out_dir, nc.Ncbi(n['entrez_email'], n.get('api_key') or ''))}")
+    if args.command in ("build", "all"):
+        t = build(args.organism, out_dir)
+        print(f"  {len(t)} unitigs, {int((t['n_hits'] > 0).sum())} with a hit")
+
+
+if __name__ == "__main__":
+    main()

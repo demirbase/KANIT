@@ -250,7 +250,8 @@ def aro_table(org: str, config: dict, src: Sources) -> tuple[pd.DataFrame, dict]
 
 
 # ---- build ----------------------------------------------------------------------
-def build(config: dict, out_file: Path, *, kb_version: str) -> dict:
+def build(config: dict, out_file: Path, *, kb_version: str,
+          allow_missing_context: bool = False) -> dict:
     src = Sources()
     decisions = src.csv(resolve_path("panel_dir", config=config) / "panel_decisions.csv")
     included = decisions[decisions["decision"] == panel.INCLUDED]
@@ -265,7 +266,7 @@ def build(config: dict, out_file: Path, *, kb_version: str) -> dict:
         g, ph = genomes_of(org, config, src)
         add("genome", g)
         phenos.append(ph)
-    ext_versions = []
+    ext_versions, no_context = [], []
     for org in sorted(set(included["organism"])):
         a, rgi_summaries[org] = aro_table(org, config, src)
         add("aro", a)
@@ -275,6 +276,11 @@ def build(config: dict, out_file: Path, *, kb_version: str) -> dict:
         add("external_call", calls.assign(call_index=calls.groupby("genome_id").cumcount()))
         add("external_comparison", src.csv(ext / "comparison.csv"))
         ext_versions.append(src.json(ext / "versions.json"))
+        ctx = resolve_path("context_dir", organism=org, config=config) / "unitig_context.csv"
+        if ctx.exists() or not allow_missing_context:
+            add("unitig_context", src.csv(ctx))
+        else:
+            no_context.append(org)
     for row in included.itertuples():
         for name, df in model_tables(row.organism, row.antibiotic, config, src).items():
             add(name, df)
@@ -289,6 +295,9 @@ def build(config: dict, out_file: Path, *, kb_version: str) -> dict:
         "decision": decisions["decision"], "reason": decisions["reason"],
         "n_resistant": decisions["n_resistant"], "n_susceptible": decisions["n_susceptible"]}))
     frames = {k: pd.concat(v, ignore_index=True) for k, v in tables.items()}
+    if "unitig_context" in frames:          # cache rows of unitigs that are no longer candidates
+        ctx = frames["unitig_context"]
+        frames["unitig_context"] = ctx[ctx["unitig_id"].isin(set(frames["unitig"]["unitig_id"]))]
     for key, cols in (("unitig", ["unitig_id"]), ("aro", ["aro_accession"])):
         if key in frames:
             frames[key] = frames[key].drop_duplicates()
@@ -324,7 +333,8 @@ def build(config: dict, out_file: Path, *, kb_version: str) -> dict:
                  "model", "model_genome", "model_metric", "label_permutation", "unitig",
                  "pattern", "pattern_member", "candidate", "prevalence_result", "mda_result",
                  "mda_cluster", "cpss_result", "pyseer_result", "card_hit", "card_annotation",
-                 "grade", "external_call", "external_comparison", "parameter"]
+                 "unitig_context", "grade", "external_call", "external_comparison",
+                 "parameter"]
         with conn:
             for name in order:
                 if name in frames:
@@ -346,7 +356,7 @@ def build(config: dict, out_file: Path, *, kb_version: str) -> dict:
     conn.close()
     os.replace(tmp, out_file)
     report = {"kb_version": kb_version, "file": str(out_file),
-              "sha256": sha256_file(out_file), **report}
+              "sha256": sha256_file(out_file), "organisms_without_context": no_context, **report}
     (out_file.parent / "kb_report.json").write_text(json.dumps(report, indent=2) + "\n")
     return report
 
@@ -355,11 +365,14 @@ def main():
     config = load_config()
     ap = argparse.ArgumentParser(description="Build the KANIT knowledge base.")
     ap.add_argument("--kb-version", default="1.0.0")
+    ap.add_argument("--allow-missing-context", action="store_true",
+                    help="build without the NCBI context of an organism (development only)")
     ap.add_argument("--out", type=Path, default=None,
                     help="SQLite file (default: paths_organism.kb_dir/kanit.sqlite)")
     args = ap.parse_args()
     out = args.out or resolve_path("kb_dir", config=config) / "kanit.sqlite"
-    r = build(config, out, kb_version=args.kb_version)
+    r = build(config, out, kb_version=args.kb_version,
+              allow_missing_context=args.allow_missing_context)
     t = r["tables"]
     print(f"KANIT {args.kb_version} -> {out}: {t['model']} models, {t['candidate']} candidates, "
           f"{t['unitig']} unitigs; {r['grades_rechecked']} grades rechecked")
