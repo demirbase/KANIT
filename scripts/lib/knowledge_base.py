@@ -292,6 +292,37 @@ CREATE TABLE unitig_context (
     PRIMARY KEY (unitig_id, source, rank)
 );
 
+-- Comparison with genotype-based prediction (§11) ------------------------------------
+CREATE TABLE external_call (            -- AMRFinderPlus calls, the reference of H7 and H6
+    genome_id       TEXT NOT NULL REFERENCES genome,
+    call_index      INTEGER NOT NULL,
+    element_symbol  TEXT NOT NULL,
+    type            TEXT NOT NULL,
+    subtype         TEXT NOT NULL,
+    scope           TEXT NOT NULL,
+    class           TEXT NOT NULL,
+    subclass        TEXT NOT NULL,
+    PRIMARY KEY (genome_id, call_index)
+);
+CREATE TABLE external_comparison (
+    model_id               TEXT NOT NULL REFERENCES model,
+    tool                   TEXT NOT NULL CHECK (tool IN ('amrfinderplus', 'resfinder', 'rgi_all',
+                                                         'rgi_without_near_universal', 'model')),
+    assessable             INTEGER NOT NULL CHECK (assessable IN (0, 1)),
+    n                      INTEGER,
+    n_resistant            INTEGER,
+    tp                     INTEGER,
+    fp                     INTEGER,
+    tn                     INTEGER,
+    fn                     INTEGER,
+    sensitivity            REAL,
+    specificity            REAL,
+    balanced_accuracy      REAL,
+    very_major_error_rate  REAL,
+    major_error_rate       REAL,
+    PRIMARY KEY (model_id, tool)
+);
+
 -- Views -----------------------------------------------------------------------------
 CREATE VIEW v_biomarker AS
 SELECT c.model_id, m.organism_id, m.antibiotic_id, c.pattern_id, p.n_members, p.n_present,
@@ -445,6 +476,10 @@ def validate(conn: sqlite3.Connection) -> dict:
     ).fetchone()[0]
     if bad:
         problems.append(f"{bad} candidate(s) without exactly one primary grade")
+    bad = conn.execute("SELECT count(*) FROM model m WHERE (SELECT count(*) FROM "
+                       "external_comparison e WHERE e.model_id = m.model_id) != 5").fetchone()[0]
+    if bad:
+        problems.append(f"{bad} model(s) without the five rows of the external comparison")
     missing = conn.execute(
         "SELECT count(*) FROM pattern_member pm WHERE NOT EXISTS (SELECT 1 FROM card_annotation ca "
         "WHERE ca.model_id = pm.model_id AND ca.unitig_id = pm.unitig_id)").fetchone()[0]

@@ -35,6 +35,7 @@ PIPELINE_SCRIPTS = [
     "13_cpss.py",
     "14_pyseer.py",
     "14b_grading.py",
+    "16_external.py",
     "build_kb.py",
     "hypotheses.py",
 ]

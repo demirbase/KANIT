@@ -10,6 +10,8 @@
 #
 # Fields:
 #   display_name        scientific name, as shown in tables and figures
+#   amrfinder_organism  AMRFinderPlus --organism (enables its point mutations; step 16)
+#   resfinder_species   ResFinder -s (selects its PointFinder database; step 16)
 #   taxid               NCBI taxonomy ID of the organism
 #   gram_stain, phylum  reference data for the knowledge base
 #   lineage             optional PopPUNK overrides of config.yaml `lineage:`
@@ -20,18 +22,24 @@ schema_version: "3.0"
 organisms:
   ecoli:
     display_name: "Escherichia coli"
+    amrfinder_organism: Escherichia
+    resfinder_species: "Escherichia coli"
     taxid: 562
     gram_stain: negative
     phylum: Pseudomonadota
 
   kpneumoniae:
     display_name: "Klebsiella pneumoniae"
+    amrfinder_organism: Klebsiella_pneumoniae
+    resfinder_species: "Klebsiella"
     taxid: 573
     gram_stain: negative
     phylum: Pseudomonadota
 
   staphylococcus_aureus:
     display_name: "Staphylococcus aureus"
+    amrfinder_organism: Staphylococcus_aureus
+    resfinder_species: "Staphylococcus aureus"
     taxid: 1280
     gram_stain: positive
     phylum: Bacillota
@@ -51,6 +59,8 @@ organisms:
 
   acinetobacter_baumannii:
     display_name: "Acinetobacter baumannii"
+    amrfinder_organism: Acinetobacter_baumannii
+    resfinder_species: "Acinetobacter baumannii"
     taxid: 470
     gram_stain: negative
     phylum: Pseudomonadota
@@ -81,18 +91,24 @@ organisms:
 
   pseudomonas_aeruginosa:
     display_name: "Pseudomonas aeruginosa"
+    amrfinder_organism: Pseudomonas_aeruginosa
+    resfinder_species: "Pseudomonas aeruginosa"
     taxid: 287
     gram_stain: negative
     phylum: Pseudomonadota
 
   enterococcus_faecium:
     display_name: "Enterococcus faecium"
+    amrfinder_organism: Enterococcus_faecium
+    resfinder_species: "Enterococcus faecium"
     taxid: 1352
     gram_stain: positive
     phylum: Bacillota
 
   enterobacter_cloacae:
     display_name: "Enterobacter cloacae complex"
+    amrfinder_organism: Enterobacter_cloacae
+    resfinder_species: "Enterobacter cloacae"
     taxid: 550
     gram_stain: negative
     phylum: Pseudomonadota

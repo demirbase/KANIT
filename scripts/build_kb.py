@@ -265,9 +265,16 @@ def build(config: dict, out_file: Path, *, kb_version: str) -> dict:
         g, ph = genomes_of(org, config, src)
         add("genome", g)
         phenos.append(ph)
+    ext_versions = []
     for org in sorted(set(included["organism"])):
         a, rgi_summaries[org] = aro_table(org, config, src)
         add("aro", a)
+        ext = resolve_path("external_dir", organism=org, config=config)
+        calls = src.csv(ext / "amrfinder_calls.csv", dtype={"genome_id": str},
+                        keep_default_na=False)
+        add("external_call", calls.assign(call_index=calls.groupby("genome_id").cumcount()))
+        add("external_comparison", src.csv(ext / "comparison.csv"))
+        ext_versions.append(src.json(ext / "versions.json"))
     for row in included.itertuples():
         for name, df in model_tables(row.organism, row.antibiotic, config, src).items():
             add(name, df)
@@ -296,6 +303,10 @@ def build(config: dict, out_file: Path, *, kb_version: str) -> dict:
     if text.exists() and sha256_file(text) != protocol["sha256"]:
         raise ValueError("config protocol.sha256 is not the checksum of docs/V1_PROTOKOL.md")
     tools = {f"rgi ({o})": s.get("rgi_version") for o, s in sorted(rgi_summaries.items())}
+    for v in ext_versions:
+        versions = pd.concat([versions, pd.DataFrame(
+            [{"tool": t, "version": v.get(t)} for t in ("amrfinderplus", "amrfinderplus_database",
+                                                      "resfinder")])], ignore_index=True)
     for tool, vs in versions.groupby("tool")["version"]:
         if vs.nunique() > 1:
             raise ValueError(f"models were built with different {tool} versions: {sorted(set(vs))}")
@@ -313,7 +324,7 @@ def build(config: dict, out_file: Path, *, kb_version: str) -> dict:
                  "model", "model_genome", "model_metric", "label_permutation", "unitig",
                  "pattern", "pattern_member", "candidate", "prevalence_result", "mda_result",
                  "mda_cluster", "cpss_result", "pyseer_result", "card_hit", "card_annotation",
-                 "grade", "parameter"]
+                 "grade", "external_call", "external_comparison", "parameter"]
         with conn:
             for name in order:
                 if name in frames:

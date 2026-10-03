@@ -48,7 +48,7 @@ def _config(root: Path) -> dict:
         "grades_dir": "{organism}/{antibiotic}/grades", "cpss_dir": "{organism}/{antibiotic}/cpss",
         "pyseer_dir": "{organism}/{antibiotic}/pyseer",
         "label_permutation_dir": "{organism}/{antibiotic}/lp", "cross_model_dir": "cross",
-        "kb_dir": "kb"}.items()}
+        "external_dir": "{organism}/external", "kb_dir": "kb"}.items()}
     text = PROJECT_ROOT / "docs" / "V1_PROTOKOL.md"
     return {
         "paths_organism": t,
@@ -200,6 +200,19 @@ def built(tmp_path_factory):
         m14b.main()
     finally:
         sys.argv = saved
+    # 16 by hand: one AMRFinderPlus call and the model's row of the comparison
+    from lib import external as ex
+    ext = p["external_dir"]
+    ext.mkdir(parents=True)
+    pd.DataFrame([(ids[0], "gyrA_S83L", "AMR", "POINT", "core", "QUINOLONE", "QUINOLONE")],
+                 columns=ex.CALL_COLUMNS).to_csv(ext / "amrfinder_calls.csv", index=False)
+    pd.DataFrame({"genome_id": ids}).to_csv(ext / "amrfinder_genomes.csv", index=False)
+    oof = pd.read_csv(p["cv_dir"] / "oof_predictions.csv", dtype={"genome_id": str})
+    ex.compare_model(MID, pd.Series(y, index=ids), {"model": ex.predict_model(oof, ids, 0.5)}
+                     ).to_csv(ext / "comparison.csv", index=False)
+    (ext / "versions.json").write_text(json.dumps({"amrfinderplus": "4.2.7",
+                                                   "amrfinderplus_database": "2025-07-16.1",
+                                                   "resfinder": "4.5.0"}))
     out = p["kb_dir"] / "kanit.sqlite"
     report = _script("build_kb.py").build(config, out, kb_version="1.0.0-test")
     return config, p, mm, seqs, report, out
@@ -226,6 +239,12 @@ def test_build_loads_every_layer_and_rechecks_the_grades(built):
         auc = conn.execute("SELECT roc_auc_lineage_aware, flag FROM v_model").fetchone()
         assert auc[0] > 0.7 and auc[1] in ("", "permutation_not_significant")
         assert conn.execute("SELECT count(*) FROM source_file").fetchone()[0] > 15
+        ba = conn.execute("SELECT assessable, balanced_accuracy FROM external_comparison "
+                          "WHERE tool = 'model'").fetchone()
+        assert ba[0] == 1 and ba[1] > 0.7
+        assert conn.execute("SELECT count(*) FROM external_comparison WHERE assessable = 0"
+                            ).fetchone()[0] == 4
+        assert json.loads(rel[2])["resfinder"] == "4.5.0"
 
 
 def test_signal_is_graded_from_its_card_variant_hit(built):

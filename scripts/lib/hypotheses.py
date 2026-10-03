@@ -180,7 +180,8 @@ def map_symbol(symbol: str, idx: dict[str, set[str]]) -> set[str]:
     return set(next(iter(found))) if len(found) == 1 else set()
 
 
-def _tokens(field) -> set[str]:
+def class_tokens(field) -> set[str]:
+    """Upper-case tokens of an AMRFinderPlus Class or Subclass cell."""
     s = str(field or "")
     if s.upper() in ("", "NA", "NAN"):
         return set()
@@ -190,7 +191,7 @@ def _tokens(field) -> set[str]:
 def reference_calls(calls: pd.DataFrame, keywords: set[str]) -> pd.DataFrame:
     """AMRFinderPlus calls that count for an antibiotic: Type AMR, Scope core, and a
     class or subclass token among the antibiotic's keywords."""
-    matching = np.array([bool((_tokens(c) | _tokens(s)) & keywords)
+    matching = np.array([bool((class_tokens(c) | class_tokens(s)) & keywords)
                          for c, s in zip(calls["class"], calls["subclass"], strict=True)],
                         dtype=bool)
     keep = (calls["type"].astype(str).str.upper().eq("AMR").to_numpy()
