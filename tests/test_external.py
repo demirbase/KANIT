@@ -114,22 +114,37 @@ def test_step_end_to_end(tmp_path):
     script = (ext / "run_external.sh").read_text()
     assert "--organism Escherichia" in script and '-s "Escherichia coli"' in script
     assert "--point --ignore_missing_species" in script and "ReferenceGeneCatalog.txt" in script
-    # what run_external.sh leaves behind
-    (ext / "amrfinder").mkdir()
-    (ext / "resfinder").mkdir()
-    for i, g in enumerate(ids):
-        _afp(ext / "amrfinder" / f"{g}.tsv",
-             [("gyrA_S83L", "core", "POINT", "QUINOLONE", "QUINOLONE")] if i < 5 else [])
-        (ext / "resfinder" / g).mkdir()
-        (ext / "resfinder" / g / "pheno_table_escherichia_coli.txt").write_text(
-            f"ciprofloxacin\tquinolone\t{'Resistant' if i < 4 else 'No resistance'}\t1\tx\n")
-        for tool in ("amrfinder", "resfinder"):
-            (ext / tool / f"{g}.done").write_text("")
-    (ext / "amrfinder_version.txt").write_text("4.2.7\n")
-    (ext / "amrfinder_database_version.txt").write_text(
-        "Software version: 4.2.7\nDatabase directory: '/db'\nDatabase version: 2025-07-16.1\n")
-    (ext / "resfinder_version.txt").write_text("4.5.0\n")
-    (ext / "amrfinder_catalog.tsv").write_text("class\tsubclass\nQUINOLONE\tQUINOLONE\n")
+    # run_external.sh in two shards, with stand-ins for the two tools
+    db = root / "afpdb"
+    db.mkdir()
+    (db / "ReferenceGeneCatalog.txt").write_text("class\tsubclass\nQUINOLONE\tQUINOLONE\n")
+    fake = root / "fake_amrfinder"
+    fake.write_text(f"""#!/usr/bin/env bash
+case "$1" in
+  --version) echo 4.2.7 ;;
+  --database_version) printf "Software version: 4.2.7\\nDatabase directory: '{db}'\\nDatabase version: 2025-07-16.1\\n" ;;
+  *) while [ $# -gt 0 ]; do case "$1" in --name) g=$2 ;; --output) o=$2 ;; esac; shift; done
+     n=${{g#g}}
+     printf '{AFP_V4.strip()}\\n' > "$o"
+     if [ "$n" -lt 5 ]; then printf 'NA\\tc1\\t1\\t9\\t+\\tgyrA_S83L\\tname\\tcore\\tAMR\\tPOINT\\tQUINOLONE\\tQUINOLONE\\tEXACTX\\n' >> "$o"; fi ;;
+esac
+""")
+    fake_rf = root / "fake_resfinder"
+    fake_rf.write_text("""#!/usr/bin/env bash
+if [ "$1" = --version ]; then echo 4.5.0; exit 0; fi
+while [ $# -gt 0 ]; do case "$1" in -o) o=$2 ;; -ifa) f=$2 ;; esac; shift; done
+mkdir -p "$o"; g=$(basename "$f" .fna); n=${g#g}
+if [ "$n" -lt 4 ]; then r=Resistant; else r='No resistance'; fi
+printf 'ciprofloxacin\\tquinolone\\t%s\\t1\\tx\\n' "$r" > "$o/pheno_table_escherichia_coli.txt"
+""")
+    for f in (fake, fake_rf):
+        f.chmod(0o755)
+    import os
+    import subprocess
+    env = {**os.environ, "AMRFINDER": str(fake), "RESFINDER": str(fake_rf)}
+    for k in (1, 0):
+        subprocess.run(["bash", str(ext / "run_external.sh"), str(k), "2"], check=True, env=env)
+    assert len(list((ext / "amrfinder").glob("*.done"))) == 12
     v = m.collect("ecoli", config, ext)
     assert v["amrfinderplus_database"] == "2025-07-16.1" and v["n_genomes"] == 12
     assert len(pd.read_csv(ext / "amrfinder_calls.csv")) == 5

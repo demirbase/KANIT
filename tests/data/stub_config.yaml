@@ -1,0 +1,5 @@
+# Fan-out sizes for small -stub-run tests (e.g. the queue test on TRUBA); the steps
+# themselves always read config/config.yaml.
+cv: {n_repeats: 1, n_folds: 2}
+cpss: {n_pairs: 2, chunk: 2}
+label_permutation: {n_permutations: 2, chunk: 2}

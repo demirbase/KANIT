@@ -8,7 +8,9 @@
         "input": {
             "title": "Input",
             "type": "object",
-            "required": ["organisms"],
+            "required": [
+                "organisms"
+            ],
             "properties": {
                 "organisms": {
                     "type": "string",
@@ -53,12 +55,22 @@
                     "type": "string",
                     "format": "directory-path",
                     "description": "Where the trace, report, timeline and DAG are written."
+                },
+                "external_shards": {
+                    "type": "integer",
+                    "default": 20,
+                    "minimum": 1,
+                    "description": "AMRFinderPlus and ResFinder tasks per organism."
                 }
             }
         }
     },
     "allOf": [
-        {"$ref": "#/$defs/input"},
-        {"$ref": "#/$defs/execution"}
+        {
+            "$ref": "#/$defs/input"
+        },
+        {
+            "$ref": "#/$defs/execution"
+        }
     ]
 }

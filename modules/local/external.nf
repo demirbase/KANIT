@@ -25,23 +25,23 @@ process EXTERNAL_PREP {
 }
 
 process EXTERNAL_RUN {
-    tag "${org}"
+    tag "${org} ${shard}/${n}"
     label 'tools'
 
     input:
-    tuple val(org), path(script)
+    tuple val(org), path(script), val(shard), val(n)
 
     output:
     tuple val(org), path('receipt.json'), emit: done
 
     script:
     """
-    bash ${script}
-    ${receipt('external_tools', org)}
+    bash ${script} ${shard} ${n}
+    ${receipt('external_tools', "${org} ${shard}/${n}")}
     """
 
     stub:
-    stubReceipt('external_tools', org)
+    stubReceipt('external_tools', "${org} ${shard}/${n}")
 }
 
 process EXTERNAL_COLLECT {
