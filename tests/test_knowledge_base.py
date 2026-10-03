@@ -49,6 +49,7 @@ def _config(root: Path) -> dict:
         "pyseer_dir": "{organism}/{antibiotic}/pyseer",
         "label_permutation_dir": "{organism}/{antibiotic}/lp", "cross_model_dir": "cross",
         "external_dir": "{organism}/external", "context_dir": "{organism}/context",
+        "unitig_store_dir": "{organism}/store", "databases_manifest": "databases.json",
         "kb_dir": "kb"}.items()}
     text = PROJECT_ROOT / "docs" / "V1_PROTOKOL.md"
     return {
@@ -114,9 +115,11 @@ def built(tmp_path_factory):
         f.write("Unitig_sequence\t" + "\t".join(ids) + "\n")
         for seq, bits in rows:
             f.write(seq + "\t" + "\t".join(map(str, bits)) + "\n")
-    matrix_store.build_store(root / "u.rtab", root / "store", min_support=5)
+    (root / "versions.json").write_text(json.dumps({"unitig_caller": "1.3.1"}))
+    matrix_store.build_store(root / "u.rtab", p["unitig_store_dir"], min_support=5)
     genomes = pd.DataFrame({"Genome ID": ids, "label": y, "lineage": np.arange(n) // 5})
-    matrix_store.build_model_matrix(root / "store", genomes, p["matrix_dir"], min_support=5)
+    matrix_store.build_model_matrix(p["unitig_store_dir"], genomes, p["matrix_dir"],
+                                    min_support=5)
     mm = matrix_store.ModelMatrix(p["matrix_dir"])
     r04 = _script("04_nested_cv.py")
     assert r04.run_folds(mm, p["cv_dir"], config["cv"])["evaluable"]
@@ -158,7 +161,7 @@ def built(tmp_path_factory):
              layers_dir=p["layers_dir"])
     # 08/09 by hand: the SIGNAL unitig lies in gyrA (a variant hit carrying the allele)
     cands = pd.read_csv(p["candidates_file"])["pattern_id"].astype(int)
-    store = matrix_store.Store(root / "store")
+    store = matrix_store.Store(p["unitig_store_dir"])
     members = mm.members()
     members = members[members["pattern_id"].isin(set(cands))]
     seq = store.sequences(members["unitig_index"])
@@ -222,6 +225,12 @@ def built(tmp_path_factory):
                    "best_identity": 100.0, "best_coverage": 1.0, "best_evalue": 1e-20,
                    "gene": "gyrA", "product": "DNA gyrase subunit A", "plasmid_share": 0.5}]
                  ).to_csv(p["context_dir"] / "unitig_context.csv", index=False)
+    (p["lineage_dir"] / "versions.json").write_text(json.dumps({"poppunk": "2.7.8",
+                                                                 "graph_tool": "2.98"}))
+    (root / "card").mkdir()
+    (root / "card" / "card.json").write_text(json.dumps({"_version": "4.0.1"}))
+    from lib import databases
+    databases.record(p["databases_manifest"], "card", root / "card", downloaded_on="2026-11-02")
     out = p["kb_dir"] / "kanit.sqlite"
     report = _script("build_kb.py").build(config, out, kb_version="1.0.0-test")
     return config, p, mm, seqs, report, out
@@ -255,6 +264,11 @@ def test_build_loads_every_layer_and_rechecks_the_grades(built):
                             ).fetchone()[0] == 4
         assert json.loads(rel[2])["resfinder"] == "4.5.0"
         assert conn.execute("SELECT gene FROM unitig_context").fetchone()[0] == "gyrA"
+        tools = json.loads(rel[2])
+        assert tools["graph_tool"] == "2.98" and tools["unitig_caller"] == "1.3.1"
+        assert tools["rgi"] == "6.0.8" and "xgboost" in tools
+        assert conn.execute("SELECT version, downloaded_on FROM reference_database").fetchone() \
+            == ("4.0.1", "2026-11-02")
 
 
 def test_signal_is_graded_from_its_card_variant_hit(built):

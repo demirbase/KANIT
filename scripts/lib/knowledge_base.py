@@ -39,6 +39,14 @@ CREATE TABLE source_file (              -- every step output the build read
     sha256  TEXT NOT NULL,
     bytes   INTEGER NOT NULL
 );
+CREATE TABLE reference_database (       -- databases.py manifest (§13)
+    name           TEXT PRIMARY KEY,
+    version        TEXT NOT NULL,           -- read from the database itself
+    downloaded_on  TEXT NOT NULL,
+    source         TEXT,
+    n_files        INTEGER NOT NULL,
+    sha256         TEXT NOT NULL            -- of the sorted per-file checksums
+);
 CREATE TABLE parameter (                -- every threshold of the protocol
     name              TEXT PRIMARY KEY,
     value             TEXT NOT NULL,

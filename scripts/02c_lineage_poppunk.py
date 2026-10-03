@@ -34,6 +34,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 from lib import registry  # noqa: E402
 from lib.config import load_config, resolve_path, resolve_tool  # noqa: E402
 from lib.lineage import lineage_summary  # noqa: E402
+from lib.run_metadata import _pkg_version, _tool_version, write_versions  # noqa: E402
 
 
 def lineage_params(organism, config):
@@ -304,6 +305,9 @@ def main():
 
     out_path = lineage_dir / args.out_name
     out_df.to_csv(out_path, index=False, encoding="utf-8")
+    # graph-tool, PopPUNK's network backend, changes the clustering on its own (§13)
+    write_versions(lineage_dir / "versions.json",
+                   {"poppunk": _tool_version("poppunk"), "graph_tool": _pkg_version("graph_tool")})
 
     groups = out_df["Cluster"].to_numpy()
     summ = lineage_summary(groups)

@@ -30,6 +30,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from lib import matrix_store, panel  # noqa: E402
 from lib.config import get_target, load_config, resolve_path, resolve_tool  # noqa: E402
 from lib.io_utils import run_logged  # noqa: E402
+from lib.run_metadata import _tool_version, write_versions  # noqa: E402
 
 
 def _included(organism, config):
@@ -71,6 +72,7 @@ def call_unitigs(genome_ids, genomes_dir, work_dir, *, threads, k, tool):
                work_dir / "unitig_caller.log")
     if not rtab.exists():
         sys.exit(f"ERROR: unitig-caller did not write {rtab}")
+    write_versions(work_dir / "versions.json", {"unitig_caller": _tool_version(tool)})
     done.write_text(datetime.now(timezone.utc).isoformat(timespec="seconds") + "\n")
     return rtab
 

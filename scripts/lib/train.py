@@ -229,6 +229,13 @@ def predict_sparse(booster: xgb.Booster, mm, rows) -> np.ndarray:
                       dtype=float)
 
 
+def versions() -> dict:
+    """Versions of the packages a trained model depends on."""
+    import sklearn
+    return {"xgboost": xgb.__version__, "scikit_learn": sklearn.__version__,
+            "optuna": optuna.__version__, "numpy": np.__version__}
+
+
 def train(mm, rows, y, groups, arm: str, seed: int, cfg: dict, threads: int) -> dict:
     """search -> tree_count -> fit for one training set; returns the model and its record."""
     s = search(mm, rows, y, groups, arm, seed, n_trials=cfg["n_trials"],
@@ -243,4 +250,5 @@ def train(mm, rows, y, groups, arm: str, seed: int, cfg: dict, threads: int) -> 
     trials = s.pop("trials")
     return {"booster": booster, "trials": trials,
             "record": {**s, "n_trees": n_trees, "seed": seed, "arm": arm,
+                       "versions": versions(),
                        "n_train": int(len(rows))}}

@@ -30,6 +30,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 from lib import card_layer  # noqa: E402
 from lib.config import get_target, load_config, resolve_path, resolve_tool  # noqa: E402
+from lib.databases import card_version  # noqa: E402
 from lib.io_utils import run_logged  # noqa: E402
 from lib.matrix_store import Store  # noqa: E402
 
@@ -104,7 +105,11 @@ def collect(organism, config):
         "hits_by_cut_off": hits["cut_off"].value_counts().to_dict(),
         "rgi_version": _version([_rgi(), "main", "--version"], db),
         "card_version": _version([_rgi(), "database", "--version", "--local"], db),
+        "card_json_version": card_version(PROJECT_ROOT / config["card"]["card_json"]),
     }
+    if summary["card_version"] != summary["card_json_version"]:
+        sys.exit(f"ERROR: RGI's database is CARD {summary['card_version']}, card.json is "
+                 f"{summary['card_json_version']}; run `08_rgi.py load` again.")
     (out / "rgi_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(f"  ✓ {len(hits):,} hits in {len(genomes):,} genomes -> {out / 'rgi_hits.csv'}")
 

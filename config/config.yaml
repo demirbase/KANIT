@@ -79,6 +79,8 @@ paths_organism:
   external_dir:         "results/{organism}/external"
   # NCBI context of the candidate unitigs (18): cache/ and unitig_context.csv.
   context_dir:          "results/{organism}/context"
+  # Reference databases: version, download date and checksums (databases.py, §13).
+  databases_manifest:   "data/external/databases.json"
   # Knowledge base (build_kb.py; docs/V1_BILGI_TABANI.md).
   kb_dir:               "results/kb"
   models_dir:           "models/{organism}/{antibiotic}"
@@ -100,15 +102,6 @@ paths_organism:
 protocol:
   version: "1.0"
   sha256: "1ea947269eaa8745fc797e82553705c9f28c73be5a28592021b4e7679156360f"
-
-provenance:
-  card_version:     "4.0.1"   # CARD DB version used for BLAST annotation (citeable)
-  # kb_schema_version deliberately NOT here: it lives in code
-  # (lib/kb_schema.KB_SCHEMA_VERSION) and collect_versions reads it from there.
-  # As a config key it drifted from the schema, and run_metadata copied the stale
-  # value INTO the KB, so the KB misreported its own schema. One source, not two.
-  # NCBI Entrez identity is configured under the `ncbi:` section below
-  # (entrez_email / api_key); it is the single source for Step 09.
 
 # ----------------------------------------------------------------------------
 # METADATA / PHENOTYPE LABELLING (step 00a cleaning — lib/bvbrc.clean_amr_table)

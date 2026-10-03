@@ -168,7 +168,9 @@ def model_tables(org: str, ab: str, config: dict, src: Sources) -> dict[str, pd.
     pyseer = src.json(path("pyseer_dir") / "pyseer_summary.json")
     if pyseer["n_tested"] != len(tested):
         raise ValueError(f"{mid}: pyseer_tested.csv disagrees with pyseer_summary.json")
-    out["tool_versions"] = pd.DataFrame([{"tool": "pyseer", "version": pyseer["pyseer_version"]}])
+    out["tool_versions"] = pd.DataFrame(
+        [{"tool": "pyseer", "version": pyseer["pyseer_version"]}]
+        + [{"tool": t, "version": v} for t, v in final.get("versions", {}).items()])
     card_u = src.csv(path("card_layer_dir") / "card_unitigs.csv", keep_default_na=False)
     grades = src.csv(path("grades_dir") / "grades_patterns.csv", keep_default_na=False)
     for name, d in (("prevalence", prev), ("mda", mda), ("mda clusters", clus),
@@ -276,6 +278,11 @@ def build(config: dict, out_file: Path, *, kb_version: str,
         add("external_call", calls.assign(call_index=calls.groupby("genome_id").cumcount()))
         add("external_comparison", src.csv(ext / "comparison.csv"))
         ext_versions.append(src.json(ext / "versions.json"))
+        ext_versions.append(src.json(resolve_path("lineage_dir", organism=org, config=config)
+                                     / "versions.json"))
+        ext_versions.append(src.json(resolve_path("unitig_store_dir", organism=org,
+                                                  config=config) / "store_summary.json"
+                                     ).get("tools", {}))
         ctx = resolve_path("context_dir", organism=org, config=config) / "unitig_context.csv"
         if ctx.exists() or not allow_missing_context:
             add("unitig_context", src.csv(ctx))
@@ -311,17 +318,27 @@ def build(config: dict, out_file: Path, *, kb_version: str,
     text = PROJECT_ROOT / "docs" / "V1_PROTOKOL.md"
     if text.exists() and sha256_file(text) != protocol["sha256"]:
         raise ValueError("config protocol.sha256 is not the checksum of docs/V1_PROTOKOL.md")
-    tools = {f"rgi ({o})": s.get("rgi_version") for o, s in sorted(rgi_summaries.items())}
+    tools: dict = {}
+    rows = [{"tool": "rgi", "version": s.get("rgi_version")} for s in rgi_summaries.values()]
     for v in ext_versions:
-        versions = pd.concat([versions, pd.DataFrame(
-            [{"tool": t, "version": v.get(t)} for t in ("amrfinderplus", "amrfinderplus_database",
-                                                      "resfinder")])], ignore_index=True)
+        rows += [{"tool": t, "version": x} for t, x in v.items() if t != "n_genomes"]
+    versions = pd.concat([versions, pd.DataFrame(rows, columns=["tool", "version"])],
+                         ignore_index=True)
     for tool, vs in versions.groupby("tool")["version"]:
         if vs.nunique() > 1:
             raise ValueError(f"models were built with different {tool} versions: {sorted(set(vs))}")
         tools[tool] = vs.iloc[0]
     frames["parameter"] = pd.DataFrame(kb.parameters(config),
                                        columns=["name", "value", "protocol_section"])
+    manifest = src.json(resolve_path("databases_manifest", config=config))
+    frames["reference_database"] = pd.DataFrame([{
+        "name": n, "version": e["version"], "downloaded_on": e["downloaded_on"],
+        "source": e.get("source"), "n_files": len(e["files"]),
+        "sha256": hashlib.sha256(json.dumps(e["files"], sort_keys=True).encode()).hexdigest()}
+        for n, e in sorted(manifest.items())])
+    if "card" in manifest and cards and manifest["card"]["version"] not in cards:
+        raise ValueError(f"RGI ran with CARD {cards}, the manifest records "
+                         f"{manifest['card']['version']}")
 
     out_file.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_file.with_name(out_file.name + ".tmp")
@@ -334,7 +351,7 @@ def build(config: dict, out_file: Path, *, kb_version: str,
                  "pattern", "pattern_member", "candidate", "prevalence_result", "mda_result",
                  "mda_cluster", "cpss_result", "pyseer_result", "card_hit", "card_annotation",
                  "unitig_context", "grade", "external_call", "external_comparison",
-                 "parameter"]
+                 "reference_database", "parameter"]
         with conn:
             for name in order:
                 if name in frames:
@@ -355,8 +372,10 @@ def build(config: dict, out_file: Path, *, kb_version: str,
         raise
     conn.close()
     os.replace(tmp, out_file)
+    days = sorted({e["downloaded_on"] for e in manifest.values()})
     report = {"kb_version": kb_version, "file": str(out_file),
-              "sha256": sha256_file(out_file), "organisms_without_context": no_context, **report}
+              "sha256": sha256_file(out_file), "organisms_without_context": no_context,
+              "databases_downloaded_on": days, **report}
     (out_file.parent / "kb_report.json").write_text(json.dumps(report, indent=2) + "\n")
     return report
 

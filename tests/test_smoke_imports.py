@@ -39,6 +39,7 @@ PIPELINE_SCRIPTS = [
     "18_ncbi_context.py",
     "build_kb.py",
     "hypotheses.py",
+    "databases.py",
 ]
 
 

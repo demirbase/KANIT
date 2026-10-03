@@ -122,10 +122,18 @@ def collect_versions(config=None):
         versions["kb_schema_version"] = KB_SCHEMA_VERSION
     except Exception:
         versions["kb_schema_version"] = None
-    if config is not None:
-        prov = config.get("provenance", {}) or {}
-        versions["card_version"] = prov.get("card_version")
+    # CARD's version comes from CARD's own card.json, never from a typed config value.
+    versions["card_version"] = None
+    if config is not None and (config.get("card") or {}).get("card_json"):
+        from lib.databases import card_version
+        card_json = PROJECT_ROOT / config["card"]["card_json"]
+        versions["card_version"] = card_version(card_json) if card_json.exists() else None
     return versions
+
+
+def write_versions(path, versions: dict) -> None:
+    """versions.json of a step: {tool: version} of the tools it ran."""
+    Path(path).write_text(json.dumps(versions, indent=2, sort_keys=True) + "\n")
 
 
 def make_run_id(organism, antibiotic):

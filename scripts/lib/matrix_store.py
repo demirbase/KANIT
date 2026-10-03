@@ -132,6 +132,8 @@ def build_store(rtab: str | Path, out_dir: str | Path, *, min_support: int,
         "n_genomes": n, "n_unitigs_seen": n_seen, "n_unitigs": n_kept,
         "min_support": min_support,
         "presence_shape": [n_kept, _nbytes(n)],
+        "tools": (json.loads((rtab.parent / "versions.json").read_text())
+                  if (rtab.parent / "versions.json").exists() else {}),
     }
     (out_dir / "store_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     return summary
