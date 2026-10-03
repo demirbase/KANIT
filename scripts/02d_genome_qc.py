@@ -8,7 +8,7 @@ covers all antibiotics.
 
 CheckM2 lives in ``amr-checkm2.sif`` (pins python<3.9) and QUAST in
 ``amr-tools.sif``; the config-driven Python prep/post needs ``amr.sif``
-(yaml+pandas). So — like 14_pyseer_lmm.py — this script runs only the Python
+(yaml+pandas). So — like 14_pyseer.py — this script runs only the Python
 halves and the SLURM job chains the tool CLIs between them:
 
     amr.sif:       02d_genome_qc.py --mode prep   # genome dir + out dirs -> paths.sh

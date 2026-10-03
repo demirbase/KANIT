@@ -68,6 +68,9 @@ paths_organism:
   # Statistical layers (<layer>.csv: pattern_id, passes) and the grades (14b_grading.py).
   layers_dir:           "results/{organism}/{antibiotic}/layers"
   grades_dir:           "results/{organism}/{antibiotic}/grades"
+  # Stability selection (13) and pyseer (14) of one pair.
+  cpss_dir:             "results/{organism}/{antibiotic}/cpss"
+  pyseer_dir:           "results/{organism}/{antibiotic}/pyseer"
   # Label permutation test of one pair (12b) and the results across models.
   label_permutation_dir: "results/{organism}/{antibiotic}/label_permutation"
   cross_model_dir:      "results/cross_model"
@@ -275,6 +278,20 @@ mda:                        # 12_mda.py, lib/mda.py
   seed: 0                   # the draws of every test fold are seeded by (seed, repeat, fold)
   alpha: 0.05               # BH q over the model's candidates
   cluster_r: 0.9            # sensitivity analysis: |r| that links candidates into one group
+
+cpss:                       # 13_cpss.py, lib/cpss.py (protocol §8.4)
+  prefilter: 5000           # patterns with the largest chi2 over all genomes of the model
+  n_pairs: 100              # B pairs of disjoint half-samples -> 2B fits
+  q: 50                     # patterns a fit selects (highest total gain)
+  pi_threshold: 0.6         # stable at this selection frequency or above
+  seed: 0                   # pair b is split with the seed (seed, b)
+  chunk: 10                 # pairs per task
+candidates:                 # protocol §7 (written by 13_cpss.py select)
+  top_gain: 50              # the final model's patterns with the highest total gain
+pyseer:                     # 14_pyseer.py, lib/pyseer_lmm.py (protocol §8.5)
+  kinship_every: 100        # every 100th unitig of the model builds the kinship matrix
+  alpha: 0.05               # Bonferroni: alpha / number of patterns tested
+  background_max: 5000      # λ diagnostic: at most this many unitigs between the kinship sample
 
 # Label permutation test of every model (12b_label_permutation.py; protocol §8.6)
 label_permutation:

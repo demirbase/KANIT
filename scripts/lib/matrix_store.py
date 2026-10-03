@@ -287,6 +287,19 @@ class ModelMatrix:
                          shape=tuple(self.summary["patterns_shape"]))
         return np.unpackbits(np.asarray(pmap[pattern_id]))[:self.n_genomes]
 
+    def present_in(self, genome_mask, block: int = 1 << 15) -> np.ndarray:
+        """Number of genomes in ``genome_mask`` (one bool per genome) carrying each pattern."""
+        mask = np.asarray(genome_mask, dtype=bool)
+        if mask.shape != (self.n_genomes,):
+            raise ValueError("genome_mask needs one value per genome")
+        pmap = np.memmap(self.dir / "patterns.bin", dtype=np.uint8, mode="r",
+                         shape=tuple(self.summary["patterns_shape"]))
+        out = np.empty(self.n_patterns, dtype=np.int64)
+        for s in range(0, self.n_patterns, block):
+            bits = np.unpackbits(np.asarray(pmap[s:s + block]), axis=1)[:, :self.n_genomes]
+            out[s:s + block] = bits[:, mask].sum(axis=1, dtype=np.int64)
+        return out
+
     def columns(self, pattern_ids) -> np.ndarray:
         """Dense uint8 0/1 block (n_genomes × len(pattern_ids)) of the given patterns."""
         ids = np.asarray(pattern_ids, dtype=np.int64)
