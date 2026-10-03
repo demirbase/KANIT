@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""Knowledge base (lib.knowledge_base, build_kb.py) built from the real outputs of
+the steps on a small synthetic organism (the CARD layer and pyseer's association
+table are written by hand)."""
+import importlib.util
+import json
+import shutil
+import sqlite3
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
+pytest.importorskip("xgboost")
+pytest.importorskip("optuna")
+
+from lib import folds, matrix_store  # noqa: E402
+from lib import knowledge_base as kb  # noqa: E402
+from lib.card_layer import revcomp  # noqa: E402
+from lib.matrix_store import sha256_file  # noqa: E402
+
+pytestmark = pytest.mark.unit
+
+ORG, AB = "ecoli", "ciprofloxacin"
+MID = f"{ORG}__{AB}"
+
+
+def _script(name):
+    spec = importlib.util.spec_from_file_location("amrtest_" + Path(name).stem,
+                                                  PROJECT_ROOT / "scripts" / name)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _config(root: Path) -> dict:
+    t = {k: str(root / v) for k, v in {
+        "panel_dir": "panel", "genome_qc_dir": "{organism}/qc", "lineage_dir": "{organism}/lineage",
+        "metadata_file": "{organism}/amr_phenotypes.csv", "matrix_dir": "{organism}/{antibiotic}/mm",
+        "cv_dir": "{organism}/{antibiotic}/cv", "rgi_dir": "{organism}/rgi",
+        "candidates_file": "{organism}/{antibiotic}/candidates.csv",
+        "card_layer_dir": "{organism}/{antibiotic}/card", "layers_dir": "{organism}/{antibiotic}/layers",
+        "grades_dir": "{organism}/{antibiotic}/grades", "cpss_dir": "{organism}/{antibiotic}/cpss",
+        "pyseer_dir": "{organism}/{antibiotic}/pyseer",
+        "label_permutation_dir": "{organism}/{antibiotic}/lp", "cross_model_dir": "cross",
+        "kb_dir": "kb"}.items()}
+    text = PROJECT_ROOT / "docs" / "V1_PROTOKOL.md"
+    return {
+        "paths_organism": t,
+        "protocol": {"version": "1.0", "sha256": sha256_file(text) if text.exists() else "x"},
+        "panel": {"min_minority": 20}, "unitig": {"k": 31, "min_support": 5},
+        "hpo": {"n_trials": 3, "search_max_genomes": 80, "pruner_startup_trials": 1,
+                "pruner_warmup_rounds": 5, "early_stopping_rounds": 10, "max_rounds": 100,
+                "batch_rows": 50},
+        "cv": {"n_repeats": 1, "n_folds": 3, "min_minority_per_test_fold": 5,
+               "max_seed_attempts": 20, "threshold": 0.5, "n_bootstrap": 30,
+               "reliability_bins": 5},
+        "card": {"near_universal": 0.95, "max_located_genomes": 3, "min_overlap": 0.5},
+        "prevalence": {"min_delta": 0.10, "alpha": 0.05},
+        "mda": {"n_permutations": 20, "seed": 0, "alpha": 0.05, "cluster_r": 0.9},
+        "cpss": {"prefilter": 20, "n_pairs": 4, "q": 5, "pi_threshold": 0.6, "seed": 0,
+                 "chunk": 2},
+        "candidates": {"top_gain": 5},
+        "pyseer": {"kinship_every": 5, "alpha": 0.05, "background_max": 10},
+        "label_permutation": {"n_permutations": 6, "seed": 0, "chunk": 3, "alpha": 0.05},
+        "grading": {"rule": "allele_aware"},
+    }
+
+
+@pytest.fixture(scope="module")
+def built(tmp_path_factory):
+    root = tmp_path_factory.mktemp("kb")
+    config = _config(root)
+    p = {k: Path(v.format(organism=ORG, antibiotic=AB))
+         for k, v in config["paths_organism"].items()}
+    rng = np.random.default_rng(0)
+    n = 150
+    ids = [f"562.{i:04d}" for i in range(n)]
+    signal = rng.random(n) < 0.4
+    y = np.where(rng.random(n) < 0.92, signal, ~signal).astype(int)
+    bases = np.array(list("ACGT"))
+    seqs = {"SIGNAL": "".join(rng.choice(bases, 40))}
+    rows = [(seqs["SIGNAL"], signal.astype(int))]
+    for j in range(40):
+        seqs[f"U{j}"] = "".join(rng.choice(bases, 35))
+        rows.append((seqs[f"U{j}"], (rng.random(n) < rng.uniform(0.3, 0.7)).astype(int)))
+    # inputs of the panel: phenotypes, QC, lineages, decisions
+    for d in ("genome_qc_dir", "lineage_dir", "panel_dir", "rgi_dir"):
+        p[d].mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"Genome ID": ids, AB: y, "ampicillin": np.where(np.arange(n) < 20, 1, np.nan)}
+                 ).to_csv(p["metadata_file"], index=False)
+    pd.DataFrame({"genome_id": ids, "completeness": 99.0, "contamination": 0.5, "n50": 90000,
+                  "n_contigs": 80, "total_length": 5_000_000, "pass_completeness": True,
+                  "pass_contamination": True, "pass_n50": True, "pass_contigs": True,
+                  "pass_overall": True}).to_csv(p["genome_qc_dir"] / f"02d_genome_qc_{ORG}.csv",
+                                                index=False)
+    pd.DataFrame({"Genome ID": ids, "Cluster": np.arange(n) // 5}).to_csv(
+        p["lineage_dir"] / "poppunk_clusters.csv", index=False)
+    pd.DataFrame([{"organism": ORG, "antibiotic": AB, "drug_class": "quinolones", "n_tested": n,
+                   "n_eligible": n, "n_resistant": int(y.sum()), "n_susceptible": int(n - y.sum()),
+                   "minority": int(min(y.sum(), n - y.sum())), "decision": "included", "reason": ""},
+                  {"organism": ORG, "antibiotic": "ampicillin", "drug_class": "penicillins",
+                   "n_tested": 20, "n_eligible": 20, "n_resistant": 20, "n_susceptible": 0,
+                   "minority": 0, "decision": "excluded", "reason": "minority below 20"}]
+                 ).to_csv(p["panel_dir"] / "panel_decisions.csv", index=False)
+    # 03u, 04
+    with open(root / "u.rtab", "w") as f:
+        f.write("Unitig_sequence\t" + "\t".join(ids) + "\n")
+        for seq, bits in rows:
+            f.write(seq + "\t" + "\t".join(map(str, bits)) + "\n")
+    matrix_store.build_store(root / "u.rtab", root / "store", min_support=5)
+    genomes = pd.DataFrame({"Genome ID": ids, "label": y, "lineage": np.arange(n) // 5})
+    matrix_store.build_model_matrix(root / "store", genomes, p["matrix_dir"], min_support=5)
+    mm = matrix_store.ModelMatrix(p["matrix_dir"])
+    r04 = _script("04_nested_cv.py")
+    assert r04.run_folds(mm, p["cv_dir"], config["cv"])["evaluable"]
+    for arm in folds.ARMS:
+        for k in range(3):
+            r04.run_unit(mm, p["cv_dir"], arm, 1, k, config["hpo"], threads=1)
+    r04.run_final(mm, p["cv_dir"], config["hpo"], threads=1)
+    r04.run_metrics(mm, p["cv_dir"], config["cv"])
+    # 13 (candidates), 10, 12, 12b
+    s13 = _script("13_cpss.py")
+    s13.prefilter(mm, p["cpss_dir"], config["cpss"])
+    s13.run(mm, p["cv_dir"], p["cpss_dir"], config["cpss"], threads=1)
+    s13.select(mm, p["cv_dir"], p["cpss_dir"], config["cpss"], top_gain=5,
+               candidates_file=p["candidates_file"], layers_dir=p["layers_dir"])
+    argv, saved = ["x", "--organism", ORG, "--antibiotic", AB], sys.argv
+    sys.argv = argv
+    try:
+        for name in ("10_prevalence.py", "12_mda.py"):
+            m = _script(name)
+            m.load_config = lambda: config
+            m.main()
+    finally:
+        sys.argv = saved
+    s12b = _script("12b_label_permutation.py")
+    s12b.run(mm, p["cv_dir"], p["label_permutation_dir"], config["label_permutation"], threads=1)
+    s12b.metrics(mm, p["cv_dir"], p["label_permutation_dir"], config["label_permutation"])
+    s12b.across(config)
+    # 14 with a hand-written association table
+    s14 = _script("14_pyseer.py")
+    s14.prep(mm, p["pyseer_dir"], config["pyseer"], prefilter_file=p["cpss_dir"] / "prefilter.csv",
+             candidates_file=p["candidates_file"], cpu=1)
+    tested = pd.read_csv(p["pyseer_dir"] / "tested_patterns.csv")["pattern_id"]
+    for name, pats in (("tested", tested), ("background", tested[:5])):
+        pd.DataFrame({"variant": [f"p{x}" for x in pats], "af": 0.3, "filter-pvalue": 0.5,
+                      "lrt-pvalue": np.linspace(1e-6, 0.9, len(pats)), "beta": 0.1,
+                      "beta-std-err": 0.05, "variant_h2": 0.01, "notes": ""}).to_csv(
+            p["pyseer_dir"] / f"{name}_assoc.tsv", sep="\t", index=False)
+    s14.post(p["pyseer_dir"], config["pyseer"], candidates_file=p["candidates_file"],
+             layers_dir=p["layers_dir"])
+    # 08/09 by hand: the SIGNAL unitig lies in gyrA (a variant hit carrying the allele)
+    cands = pd.read_csv(p["candidates_file"])["pattern_id"].astype(int)
+    store = matrix_store.Store(root / "store")
+    members = mm.members()
+    members = members[members["pattern_id"].isin(set(cands))]
+    seq = store.sequences(members["unitig_index"])
+    is_signal = [s == seqs["SIGNAL"] for s in seq]
+    st = np.where(is_signal, "b", "no_card_hit")
+    card = pd.DataFrame({"pattern_id": members["pattern_id"], "unitig_index": members["unitig_index"],
+                         "sequence": seq, "length": [len(s) for s in seq],
+                         "located_genomes": ids[0]})
+    for mode, state in (("allele_aware", st), ("homolog_only",
+                                                np.where(is_signal, "card_hit_without_b",
+                                                         "no_card_hit"))):
+        card[f"{mode}_state"] = state
+        card[f"{mode}_reasons"] = np.where(state == "card_hit_without_b", "variant_not_counted", "")
+        card[f"{mode}_aros"] = np.where(is_signal, "3003294", "")
+        card[f"{mode}_n_b"] = (state == "b").astype(int) * 3
+    p["card_layer_dir"].mkdir(parents=True)
+    card.to_csv(p["card_layer_dir"] / "card_unitigs.csv", index=False)
+    pats = card.groupby("pattern_id").agg(n_members=("unitig_index", "size")).reset_index()
+    for mode in ("allele_aware", "homolog_only"):
+        best = card.groupby("pattern_id")[f"{mode}_state"].agg(
+            lambda s: "b" if (s == "b").any() else ("card_hit_without_b"
+                                                    if (s == "card_hit_without_b").any()
+                                                    else "no_card_hit"))
+        pats[f"{mode}_state"] = pats["pattern_id"].map(best)
+        pats[f"{mode}_reasons"] = np.where(pats[f"{mode}_state"] == "card_hit_without_b",
+                                           "variant_not_counted", "")
+        pats[f"{mode}_aros"] = ""
+    pats.to_csv(p["card_layer_dir"] / "card_patterns.csv", index=False)
+    pd.DataFrame({"genome_id": ids[0], "aro": ["3003294"], "aro_name": ["Escherichia coli gyrA"],
+                  "model_type": ["variant"], "gene_family": ["fluoroquinolone resistant gyrA"],
+                  "drug_class": ["fluoroquinolone antibiotic"],
+                  "mechanism": ["antibiotic target alteration"]}).to_csv(
+        p["rgi_dir"] / "rgi_hits.csv", index=False)
+    (p["rgi_dir"] / "rgi_summary.json").write_text(json.dumps(
+        {"rgi_version": "6.0.8", "card_version": "4.0.1"}))
+    m14b = _script("14b_grading.py")
+    m14b.load_config = lambda: config
+    sys.argv = argv
+    try:
+        m14b.main()
+    finally:
+        sys.argv = saved
+    out = p["kb_dir"] / "kanit.sqlite"
+    report = _script("build_kb.py").build(config, out, kb_version="1.0.0-test")
+    return config, p, mm, seqs, report, out
+
+
+def test_unitig_id_is_stable_and_orientation_free():
+    i, c = kb.unitig_id("acgtTT")
+    assert kb.unitig_id(revcomp("ACGTTT")) == (i, c) and c == "AAACGT"
+    assert i.startswith("KU") and len(i) == 22
+
+
+def test_build_loads_every_layer_and_rechecks_the_grades(built):
+    _, p, mm, _, report, out = built
+    n_cand = len(pd.read_csv(p["candidates_file"]))
+    t = report["tables"]
+    assert t["model"] == 1 and t["candidate"] == n_cand and t["grade"] == 2 * n_cand
+    assert report["grades_rechecked"] == 2 * n_cand and report["sha256"] == sha256_file(out)
+    assert t["panel_decision"] == 2 and t["genome"] == 150 and t["pyseer_result"] >= n_cand
+    with sqlite3.connect(out) as conn:
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        rel = conn.execute("SELECT protocol_version, card_version, tools FROM release").fetchone()
+        assert rel[0] == "1.0" and rel[1] == "4.0.1" and "pyseer" in json.loads(rel[2])
+        assert conn.execute("SELECT count(*) FROM v_biomarker").fetchone()[0] == n_cand
+        auc = conn.execute("SELECT roc_auc_lineage_aware, flag FROM v_model").fetchone()
+        assert auc[0] > 0.7 and auc[1] in ("", "permutation_not_significant")
+        assert conn.execute("SELECT count(*) FROM source_file").fetchone()[0] > 15
+
+
+def test_signal_is_graded_from_its_card_variant_hit(built):
+    _, p, mm, seqs, _, out = built
+    uid, _ = kb.unitig_id(seqs["SIGNAL"])
+    with sqlite3.connect(out) as conn:
+        pid, grade_aa, grade_ho, genes = conn.execute(
+            "SELECT b.pattern_id, b.grade_allele_aware, b.grade_homolog_only, b.card_genes "
+            "FROM v_biomarker b JOIN pattern_member pm USING (model_id, pattern_id) "
+            "WHERE pm.unitig_id = ?", (uid,)).fetchone()
+        assert genes == "Escherichia coli gyrA"
+        assert grade_aa in ("confirmed", "candidate") and grade_ho != "confirmed"
+        blob = conn.execute("SELECT carriers FROM pattern WHERE model_id = ? AND pattern_id = ?",
+                            (MID, pid)).fetchone()[0]
+    bits = np.unpackbits(np.frombuffer(blob, dtype=np.uint8))[:mm.n_genomes]
+    assert (bits == mm.pattern(pid)).all()
+
+
+def test_a_grade_that_does_not_follow_its_layers_stops_the_build(built, tmp_path):
+    config, p, _, _, _, out = built
+    before = sha256_file(out)
+    g = p["grades_dir"] / "grades_patterns.csv"
+    original = g.read_text()
+    d = pd.read_csv(g, keep_default_na=False)
+    d.loc[0, "allele_aware_grade"] = "strong_novel" if d.loc[0, "allele_aware_grade"] != \
+        "strong_novel" else "none"
+    d.to_csv(g, index=False)
+    try:
+        with pytest.raises(ValueError, match="does not follow its layers"):
+            _script("build_kb.py").build(config, out, kb_version="bad")
+    finally:
+        g.write_text(original)
+    assert sha256_file(out) == before                      # the old file is kept
+    shutil.move(p["layers_dir"] / "mda.csv", tmp_path / "mda.csv")
+    try:
+        with pytest.raises(FileNotFoundError, match="mda.csv"):
+            _script("build_kb.py").build(config, out, kb_version="bad")
+    finally:
+        shutil.move(tmp_path / "mda.csv", p["layers_dir"] / "mda.csv")

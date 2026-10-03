@@ -20,6 +20,7 @@ amr_sunum.js
 # Internal planning notes (not for the public repository)
 docs/V1_PLAN.md
 docs/V1_PROTOKOL.md*
+docs/V1_BILGI_TABANI.md
 
 # ============================================================================
 # GENERATED OUTPUTS (reproducible from the pipeline — not version-controlled)
