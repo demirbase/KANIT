@@ -36,6 +36,7 @@ PIPELINE_SCRIPTS = [
     "14_pyseer.py",
     "14b_grading.py",
     "build_kb.py",
+    "hypotheses.py",
 ]
 
 

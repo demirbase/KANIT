@@ -74,6 +74,9 @@ paths_organism:
   # Label permutation test of one pair (12b) and the results across models.
   label_permutation_dir: "results/{organism}/{antibiotic}/label_permutation"
   cross_model_dir:      "results/cross_model"
+  # AMRFinderPlus and other genotype-based calls of every genome (16): amrfinder_calls.csv
+  # (genome_id, element_symbol, type, subtype, scope, class, subclass), amrfinder_genomes.csv.
+  external_dir:         "results/{organism}/external"
   # Knowledge base (build_kb.py; docs/V1_BILGI_TABANI.md).
   kb_dir:               "results/kb"
   models_dir:           "models/{organism}/{antibiotic}"
