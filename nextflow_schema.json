@@ -1,0 +1,64 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/iumobg/KANIT/main/nextflow_schema.json",
+    "title": "KANIT workflow parameters",
+    "description": "How the KANIT workflow runs; every analysis setting lives in config/config.yaml.",
+    "type": "object",
+    "$defs": {
+        "input": {
+            "title": "Input",
+            "type": "object",
+            "required": ["organisms"],
+            "properties": {
+                "organisms": {
+                    "type": "string",
+                    "pattern": "^[a-z_]+(,[a-z_]+)*$",
+                    "description": "Comma-separated organism ids of config/registry/organisms.yaml, e.g. ecoli,kpneumoniae."
+                },
+                "config_yaml": {
+                    "type": "string",
+                    "format": "file-path",
+                    "exists": true,
+                    "description": "The analysis configuration (read for fan-out sizes; the steps read it themselves)."
+                },
+                "stub_panel": {
+                    "type": "string",
+                    "format": "file-path",
+                    "exists": true,
+                    "description": "Only with -stub-run: panel decisions to fan the models out from."
+                }
+            }
+        },
+        "execution": {
+            "title": "Execution",
+            "type": "object",
+            "properties": {
+                "python": {
+                    "type": "string",
+                    "default": "python",
+                    "description": "Python interpreter of the analysis container."
+                },
+                "rgi_shards": {
+                    "type": "integer",
+                    "default": 20,
+                    "minimum": 1,
+                    "description": "RGI tasks per organism."
+                },
+                "allow_missing_context": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "KB entry only: build without the NCBI context of an organism (development builds)."
+                },
+                "trace_dir": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Where the trace, report, timeline and DAG are written."
+                }
+            }
+        }
+    },
+    "allOf": [
+        {"$ref": "#/$defs/input"},
+        {"$ref": "#/$defs/execution"}
+    ]
+}

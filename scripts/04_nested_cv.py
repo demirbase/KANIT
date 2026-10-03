@@ -121,6 +121,10 @@ def _save(result, unit_dir, extra):
     tmp.rename(unit_dir)
 
 
+def _design_evaluable(out_dir) -> bool:
+    return bool(json.loads((out_dir / "cv_design.json").read_text())["evaluable"])
+
+
 def run_unit(mm, out_dir, arm, repeat, fold, hpo, threads):
     _design(out_dir)
     ids, y, groups = _data(mm)
@@ -195,7 +199,7 @@ def main():
     config = load_config()
     default_org, default_ab = get_target(config=config)
     ap = argparse.ArgumentParser(description="Nested cross-validation of one panel pair.")
-    ap.add_argument("command", choices=["folds", "unit", "final", "metrics", "all"])
+    ap.add_argument("command", choices=["folds", "units", "unit", "final", "metrics", "all"])
     ap.add_argument("--organism", default=default_org)
     ap.add_argument("--antibiotic", default=default_ab)
     ap.add_argument("--arm", choices=folds.ARMS)
@@ -209,6 +213,13 @@ def main():
                                   antibiotic=args.antibiotic, config=config))
     out_dir = resolve_path("cv_dir", organism=args.organism, antibiotic=args.antibiotic,
                            config=config)
+    if args.command == "units":            # one "arm repeat fold" line per evaluable unit
+        seeds = pd.read_csv(out_dir / "seeds.csv")
+        for s in seeds.itertuples():
+            if s.evaluable and _design_evaluable(out_dir):
+                for k in range(cv["n_folds"]):
+                    print(s.arm, int(s.repeat), k)
+        return
     print(f"NESTED CV — {args.organism} / {args.antibiotic} — {args.command}")
     if args.command in ("folds", "all"):
         d = run_folds(mm, out_dir, cv)

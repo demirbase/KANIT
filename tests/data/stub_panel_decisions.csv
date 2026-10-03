@@ -1,0 +1,5 @@
+organism,antibiotic,drug_class,n_tested,n_eligible,n_resistant,n_susceptible,minority,decision,reason
+ecoli,ciprofloxacin,quinolones,1000,990,300,690,300,included,
+ecoli,ampicillin,penicillins,1000,990,600,390,390,included,
+ecoli,colistin,polymyxins,500,490,20,470,20,excluded,minority below 150
+kpneumoniae,meropenem,carbapenems,800,790,400,390,390,included,

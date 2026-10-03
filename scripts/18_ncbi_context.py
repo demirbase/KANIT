@@ -81,8 +81,18 @@ def query(organism: str, config: dict, out_dir: Path, client: nc.Ncbi) -> dict:
     return {"n_unitigs": len(todo), "n_searched_now": len(pending), "n_genbank_now": n_fetched}
 
 
-def build(organism: str, out_dir: Path) -> pd.DataFrame:
+def build(organism: str, out_dir: Path, config: dict | None = None,
+          allow_incomplete: bool = True) -> pd.DataFrame:
+    """The context table from the cache; with ``config``, every unitig to be searched
+    must be in it unless ``allow_incomplete``."""
     t = nc.build_table(out_dir / "cache", organism)
+    if config is not None:
+        want = nc.select_unitigs(candidate_members(organism, config),
+                                 config["context"]["max_members"])
+        missing = sorted(set(want["unitig_id"]) - set(t["unitig_id"]))
+        if missing and not allow_incomplete:
+            sys.exit(f"ERROR: {len(missing)} candidate unitig(s) of {organism} were not "
+                     f"searched yet; run the CONTEXT entry (18 query) first.")
     t.to_csv(out_dir / "unitig_context.csv", index=False)
     return t
 
@@ -92,6 +102,8 @@ def main():
     ap = argparse.ArgumentParser(description="NCBI context of an organism's candidate unitigs.")
     ap.add_argument("command", choices=["query", "build", "all"])
     ap.add_argument("--organism", required=True)
+    ap.add_argument("--allow-incomplete", action="store_true",
+                    help="build although some candidate unitigs were not searched")
     args = ap.parse_args()
     out_dir = resolve_path("context_dir", organism=args.organism, config=config)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -100,7 +112,7 @@ def main():
         n = config["ncbi"]
         print(f"  {query(args.organism, config, out_dir, nc.Ncbi(n['entrez_email'], n.get('api_key') or ''))}")
     if args.command in ("build", "all"):
-        t = build(args.organism, out_dir)
+        t = build(args.organism, out_dir, config, allow_incomplete=args.allow_incomplete)
         print(f"  {len(t)} unitigs, {int((t['n_hits'] > 0).sum())} with a hit")
 
 

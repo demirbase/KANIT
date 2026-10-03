@@ -40,6 +40,8 @@ PIPELINE_SCRIPTS = [
     "build_kb.py",
     "hypotheses.py",
     "databases.py",
+    "receipt.py",
+    "config_path.py",
 ]
 
 
