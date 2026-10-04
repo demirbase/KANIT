@@ -1,14 +1,19 @@
 Bootstrap: docker
-# TODO(deploy): digest-pin — `:latest` silently rebases the whole stack between
-# builds, so a "reproducible" rebuild is not. Same open item as amr.def.
+# The final containers (F6.2) pin the base image by digest; the development ones use the tag.
 From: condaforge/miniforge3:latest
+# ============================================================================
+# amr-tools.sif — the external tools of KANIT v1.0 (environment-tools.yml)
+# ============================================================================
+# QUAST, pyseer, AMRFinderPlus, ResFinder and KMA, run as shell commands by the
+# workflow. Python 3.12 (was 3.8). Build like amr.def, then export the lock file:
+#   apptainer build --fakeroot $AMR_WORK/containers/amr-tools.sif amr-tools.def
+#   apptainer exec $AMR_WORK/containers/amr-tools.sif conda env export \
+#       -p /opt/amr-tools-env > environment-tools.lock.yml
+# AMRFinderPlus's database is not in the image: it is downloaded with the other
+# databases (F6.2) and recorded with scripts/databases.py.
+# ============================================================================
 
-# ============================================================================
-# amr-tools.sif — Block-2 validation / QC container (ROADMAP §0 M13/M14/M15)
-# ============================================================================
-# Separate from the core amr.sif so the audited pipeline env stays stable and
-# these heavier, independent tools don't risk a dependency-solve conflict.
-# Mirrors amr.def: condaforge/miniforge3 + an env file via %files.
+%files.
 #
 # Build (on a debug node with internet + fakeroot; build sandbox can't bind /arf):
 #   unset APPTAINER_BINDPATH
@@ -48,3 +53,12 @@ From: condaforge/miniforge3:latest
 
 %runscript
     exec "$@"
+
+%test
+    export PATH=/opt/amr-tools-env/bin:$PATH
+    quast.py --version
+    pyseer --version
+    amrfinder --version
+    python -m resfinder --version || run_resfinder.py --version
+    kma -v
+    blastn -version

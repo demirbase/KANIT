@@ -123,7 +123,8 @@ def test_step_end_to_end(tmp_path):
 case "$1" in
   --version) echo 4.2.7 ;;
   --database_version) printf "Software version: 4.2.7\\nDatabase directory: '{db}'\\nDatabase version: 2025-07-16.1\\n" ;;
-  *) while [ $# -gt 0 ]; do case "$1" in --name) g=$2 ;; --output) o=$2 ;; esac; shift; done
+  *) while [ $# -gt 0 ]; do case "$1" in --name) g=$2 ;; --output) o=$2 ;; --database) d=$2 ;; esac; shift; done
+     [ -n "${{d:-}}" ] && echo "$d" > "$o.db"
      n=${{g#g}}
      printf '{AFP_V4.strip()}\\n' > "$o"
      if [ "$n" -lt 5 ]; then printf 'NA\\tc1\\t1\\t9\\t+\\tgyrA_S83L\\tname\\tcore\\tAMR\\tPOINT\\tQUINOLONE\\tQUINOLONE\\tEXACTX\\n' >> "$o"; fi ;;
@@ -141,10 +142,11 @@ printf 'ciprofloxacin\\tquinolone\\t%s\\t1\\tx\\n' "$r" > "$o/pheno_table_escher
         f.chmod(0o755)
     import os
     import subprocess
-    env = {**os.environ, "AMRFINDER": str(fake), "RESFINDER": str(fake_rf)}
+    env = {**os.environ, "AMRFINDER": str(fake), "RESFINDER": str(fake_rf), "AMRFINDER_DB": str(db)}
     for k in (1, 0):
         subprocess.run(["bash", str(ext / "run_external.sh"), str(k), "2"], check=True, env=env)
     assert len(list((ext / "amrfinder").glob("*.done"))) == 12
+    assert (ext / "amrfinder" / "g0.tsv.db").read_text().strip() == str(db)   # $AMRFINDER_DB
     v = m.collect("ecoli", config, ext)
     assert v["amrfinderplus_database"] == "2025-07-16.1" and v["n_genomes"] == 12
     assert len(pd.read_csv(ext / "amrfinder_calls.csv")) == 5

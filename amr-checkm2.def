@@ -37,3 +37,7 @@ From: condaforge/miniforge3:latest
 
 %runscript
     exec "$@"
+
+%test
+    export PATH=/opt/amr-checkm2-env/bin:$PATH
+    checkm2 --version

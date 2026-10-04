@@ -58,16 +58,17 @@ def command(out_dir: Path, genomes_dir: Path, *, amrfinder_organism: str, specie
     """run_external.sh [K N]: AMRFinderPlus (--plus; core is selected later) and ResFinder
     with PointFinder on every N-th genome of genomes.txt from the K-th (all by default);
     shard 0 also records the versions and copies AMRFinderPlus's catalogue. $AMRFINDER
-    and $RESFINDER override the executables; ResFinder's databases come from its CGE_*
-    variables."""
+    and $RESFINDER override the executables; AMRFinderPlus's database is $AMRFINDER_DB
+    when set, ResFinder's databases come from its CGE_* variables."""
     return "\n".join([
         "#!/usr/bin/env bash", "set -euo pipefail",
         'AMRFINDER="${AMRFINDER:-amrfinder}"', 'RESFINDER="${RESFINDER:-python -m resfinder}"',
+        'DBARG=()', 'if [ -n "${AMRFINDER_DB:-}" ]; then DBARG=(--database "$AMRFINDER_DB"); fi',
         'K="${1:-0}"', 'N="${2:-1}"',
         f'cd "{out_dir.resolve()}"', "mkdir -p amrfinder resfinder",
         'if [ "$K" = 0 ]; then',
         '  "$AMRFINDER" --version > amrfinder_version.txt 2>&1',
-        '  "$AMRFINDER" --database_version > amrfinder_database_version.txt 2>&1',
+        '  "$AMRFINDER" --database_version ${DBARG[@]+"${DBARG[@]}"} > amrfinder_database_version.txt 2>&1',
         "  DB=$(sed -n \"s/^Database directory: '\\(.*\\)'.*/\\1/p\" amrfinder_database_version.txt)",
         '  cp "$DB/ReferenceGeneCatalog.txt" amrfinder_catalog.tsv',
         "  $RESFINDER --version > resfinder_version.txt 2>&1",
@@ -75,7 +76,7 @@ def command(out_dir: Path, genomes_dir: Path, *, amrfinder_organism: str, specie
         "awk -v k=\"$K\" -v n=\"$N\" '(NR - 1) % n == k' genomes.txt | while read -r g; do",
         '  if [ ! -e "amrfinder/$g.done" ]; then',
         f'    "$AMRFINDER" --nucleotide "{genomes_dir.resolve()}/$g.fna" --organism '
-        f'{amrfinder_organism} --plus --threads {threads} --name "$g" '
+        f'{amrfinder_organism} --plus --threads {threads} --name "$g" ${{DBARG[@]+"${{DBARG[@]}}"}} '
         '--output "amrfinder/$g.tsv" > "amrfinder/$g.log" 2>&1',
         '    touch "amrfinder/$g.done"', "  fi",
         '  if [ ! -e "resfinder/$g.done" ]; then',

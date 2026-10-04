@@ -107,6 +107,26 @@
                     "type": "object",
                     "hidden": true,
                     "description": "Cores, memory per core, minimum cores and time limit of every partition."
+                },
+                "databases_dir": {
+                    "type": "string",
+                    "description": "Directory of the reference databases."
+                },
+                "amrfinder_db": {
+                    "type": "string",
+                    "description": "AMRFinderPlus database (amrfinder --database)."
+                },
+                "resfinder_db": {
+                    "type": "string",
+                    "description": "ResFinder database (CGE_RESFINDER_RESGENE_DB)."
+                },
+                "pointfinder_db": {
+                    "type": "string",
+                    "description": "PointFinder database (CGE_RESFINDER_RESPOINT_DB)."
+                },
+                "checkm2_db": {
+                    "type": "string",
+                    "description": "CheckM2 DIAMOND database (CHECKM2DB)."
                 }
             }
         },
