@@ -279,3 +279,47 @@ process RUN_RESOURCES {
     stub:
     stubReceipt(task, 'run_resources', workflow.runName)
 }
+
+// completeness of the run (completeness.py): the report first, the gate at the very end so
+// that the backup and the resource report are made even for an incomplete run
+process COMPLETENESS {
+    label 'light'
+    cache false
+
+    input:
+    path(deps, stageAs: 'dep*.json')
+    val entry
+
+    output:
+    path 'receipt.json', emit: done
+
+    script:
+    """
+    ${py('completeness.py')} check --entry ${entry} --organisms ${params.organisms} \\
+        --out-dir '${params.trace_dir}'
+    ${receipt(task, 'completeness', entry)}
+    """
+
+    stub:
+    stubReceipt(task, 'completeness', entry)
+}
+
+process COMPLETENESS_GATE {
+    label 'light'
+    cache false
+
+    input:
+    path(deps, stageAs: 'dep*.json')
+
+    output:
+    path 'receipt.json', emit: done
+
+    script:
+    """
+    ${py('completeness.py')} gate --out-dir '${params.trace_dir}'
+    ${receipt(task, 'completeness_gate', workflow.runName)}
+    """
+
+    stub:
+    stubReceipt(task, 'completeness_gate', workflow.runName)
+}

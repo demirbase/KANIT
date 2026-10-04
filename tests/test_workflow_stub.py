@@ -37,6 +37,7 @@ def test_default_entry_reaches_every_step(tmp_path):
     for p in ("PANEL", "GRADING", "LP_ACROSS", "EXTERNAL_COMPARE", "CARD_LAYER", "PYSEER_POST"):
         assert n.get(p), p
     assert n["RUN_OUTPUTS"] == n["SACCT_DUMP"] == n["RUN_RESOURCES"] == 1
+    assert n["COMPLETENESS"] == n["COMPLETENESS_GATE"] == 1
     assert "BACKUP_PACK" not in n                     # no --backup_remote: no backup
     # the run manifest and every task's receipt (its step manifest) are kept with the run
     run = json.loads((tmp_path / "trace" / "run_manifest.json").read_text())
@@ -61,8 +62,8 @@ def test_parameters_are_checked(tmp_path):
     ("DOWNLOAD", {"DOWNLOAD_BVBRC": 2}),
     ("CONTEXT", {"CONTEXT_QUERY": 2, "CONTEXT_BUILD": 2})])
 def test_internet_entries(tmp_path, entry, expected):
-    expected = {**expected, "RUN_OUTPUTS": 1, "BACKUP_PACK": 1, "BACKUP_UPLOAD": 1,
-                "SACCT_DUMP": 1, "RUN_RESOURCES": 1}
+    expected = {**expected, "COMPLETENESS": 1, "RUN_OUTPUTS": 1, "BACKUP_PACK": 1,
+                "BACKUP_UPLOAD": 1, "SACCT_DUMP": 1, "RUN_RESOURCES": 1, "COMPLETENESS_GATE": 1}
     r, trace = _run(tmp_path, "-entry", entry, "--organisms", "ecoli,kpneumoniae",
                     "--backup_remote", str(tmp_path / "remote"))
     assert r.returncode == 0, r.stdout + r.stderr

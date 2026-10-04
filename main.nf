@@ -80,20 +80,20 @@ workflow {
     COMPARISON(modelled, GENOMES.out.panel, EVIDENCE.out.rgi, MODELS.out.metrics)
     FINISH(EVIDENCE.out.grading.map { m, r -> r }
                .mix(EVIDENCE.out.lp, COMPARISON.out.compare.map { o, r -> r })
-               .collect().ifEmpty([]))
+               .collect().ifEmpty([]), 'main')
 }
 
 workflow DOWNLOAD {
     def orgs = Channel.fromList(organisms('DOWNLOAD'))
     DOWNLOAD_BVBRC(orgs)
-    FINISH(DOWNLOAD_BVBRC.out.done.map { o, r -> r }.collect())
+    FINISH(DOWNLOAD_BVBRC.out.done.map { o, r -> r }.collect(), 'DOWNLOAD')
 }
 
 workflow CONTEXT {
     def orgs = Channel.fromList(organisms('CONTEXT'))
     CONTEXT_QUERY(orgs)
     CONTEXT_BUILD(CONTEXT_QUERY.out.done.map { org, r -> org })
-    FINISH(CONTEXT_BUILD.out.done.map { o, r -> r }.collect())
+    FINISH(CONTEXT_BUILD.out.done.map { o, r -> r }.collect(), 'CONTEXT')
 }
 
 workflow KB {
@@ -101,5 +101,5 @@ workflow KB {
     CONTEXT_BUILD(orgs)
     BUILD_KB(CONTEXT_BUILD.out.done.map { org, r -> r }.collect())
     HYPOTHESES(BUILD_KB.out.done)
-    FINISH(HYPOTHESES.out.done.collect())
+    FINISH(HYPOTHESES.out.done.collect(), 'KB')
 }
