@@ -10,10 +10,9 @@ the task; the start (the task's .command.begin) and the end; the host, SLURM job
 node; the code commit; the checksum, step and key of every receipt the task took as
 input (dep*.json); the container, Python and the versions of the analysis packages;
 and the version of every tool named with --tool. CPU time and peak memory are in
-Nextflow's trace. Standard library only: it also runs in the tool containers.
+Nextflow's trace. Standard library only and Python 3.6 or later: it also runs in the
+tool containers and on the login node outside them.
 """
-from __future__ import annotations
-
 import argparse
 import hashlib
 import json
@@ -23,6 +22,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 try:
     from importlib import metadata
@@ -38,7 +38,8 @@ PACKAGES = ["numpy", "pandas", "scipy", "scikit-learn", "xgboost", "statsmodels"
 def _commit():
     try:
         return subprocess.run(["git", "-C", str(PROJECT_ROOT), "rev-parse", "HEAD"],
-                              capture_output=True, text=True, check=True).stdout.strip()
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                              universal_newlines=True, check=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return None
 
@@ -72,11 +73,12 @@ def _packages() -> dict:
     return out
 
 
-def tool_version(command: str) -> str | None:
+def tool_version(command: str) -> Optional[str]:
     """First non-empty line a version command prints (stdout, else stderr); None when
     the command fails."""
     try:
-        r = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=300)
+        r = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           universal_newlines=True, timeout=300)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if r.returncode != 0:

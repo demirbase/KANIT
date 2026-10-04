@@ -12,7 +12,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.security.MessageDigest
 
-include { py; receipt; stubReceipt } from './common'
+include { py; receipt; hostReceipt; stubReceipt } from './common'
 
 String sha256(Path file) {
     MessageDigest md = MessageDigest.getInstance('SHA-256')
@@ -182,4 +182,100 @@ process RUN_OUTPUTS {
 
     stub:
     stubReceipt(task, 'run_outputs', workflow.runName)
+}
+
+// The verified backup (backup.py pack, backup_upload.sh): the changed units are packed on
+// a compute node and uploaded and checked on the login node; the ledger is updated only
+// after the checks pass.
+process BACKUP_PACK {
+    label 'backup'
+    cache false
+
+    input:
+    path(deps, stageAs: 'dep*.json')
+
+    output:
+    path 'receipt.json', emit: done
+
+    script:
+    def run = file(params.trace_dir).name
+    """
+    ${py('backup.py')} pack --stage '${params.backup_stage}' --ledger '${params.backup_ledger}' \\
+        --current-run '${run}' --run-dir '${params.trace_dir}' --threads ${task.cpus}
+    ${receipt(task, 'backup_pack', workflow.runName)}
+    """
+
+    stub:
+    stubReceipt(task, 'backup_pack', workflow.runName)
+}
+
+process BACKUP_UPLOAD {
+    label 'host'
+    cache false
+
+    input:
+    path(deps, stageAs: 'dep*.json')
+
+    output:
+    path 'receipt.json', emit: done
+
+    script:
+    def run = file(params.trace_dir).name
+    """
+    RCLONE='${params.rclone}' bash ${projectDir}/scripts/backup_upload.sh '${params.backup_stage}' \\
+        '${params.backup_remote}' '${run}' '${params.backup_ledger}'
+    ${hostReceipt(task, 'backup_upload', workflow.runName)}
+    """
+
+    stub:
+    stubReceipt(task, 'backup_upload', workflow.runName)
+}
+
+// SLURM's accounting of every job of the run that has a receipt (sacct.tsv)
+process SACCT_DUMP {
+    label 'host'
+    cache false
+
+    input:
+    path(deps, stageAs: 'dep*.json')
+
+    output:
+    path 'receipt.json', emit: done
+
+    script:
+    """
+    ids=\$(grep -ho '"job_id": "[0-9][0-9_]*"' '${params.trace_dir}'/tasks/*/*/receipt.json 2>/dev/null \\
+          | grep -o '[0-9][0-9_]*' | sort -u | paste -sd, - || true)
+    if command -v sacct >/dev/null 2>&1 && [ -n "\$ids" ]; then
+        sacct -P -j "\$ids" --format=JobID,JobName,Partition,State,ExitCode,Elapsed,Start,End,AllocCPUS,ReqMem,MaxRSS,TotalCPU,NodeList \\
+            > '${params.trace_dir}/sacct.tsv'
+    else
+        : > '${params.trace_dir}/sacct.tsv'
+    fi
+    ${hostReceipt(task, 'sacct', workflow.runName)}
+    """
+
+    stub:
+    stubReceipt(task, 'sacct', workflow.runName)
+}
+
+// resources of every task: receipts, trace and sacct joined on the SLURM job
+process RUN_RESOURCES {
+    label 'light'
+    cache false
+
+    input:
+    path(deps, stageAs: 'dep*.json')
+
+    output:
+    path 'receipt.json', emit: done
+
+    script:
+    """
+    ${py('run_resources.py')} --run-dir '${params.trace_dir}'
+    ${receipt(task, 'run_resources', workflow.runName)}
+    """
+
+    stub:
+    stubReceipt(task, 'run_resources', workflow.runName)
 }

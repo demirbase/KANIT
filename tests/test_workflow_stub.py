@@ -36,7 +36,8 @@ def test_default_entry_reaches_every_step(tmp_path):
     assert n["CV_UNIT"] == 3 * 50 and n["LP_CHUNK"] == 3 * 50 and n["CPSS_CHUNK"] == 3 * 10
     for p in ("PANEL", "GRADING", "LP_ACROSS", "EXTERNAL_COMPARE", "CARD_LAYER", "PYSEER_POST"):
         assert n.get(p), p
-    assert n["RUN_OUTPUTS"] == 1
+    assert n["RUN_OUTPUTS"] == n["SACCT_DUMP"] == n["RUN_RESOURCES"] == 1
+    assert "BACKUP_PACK" not in n                     # no --backup_remote: no backup
     # the run manifest and every task's receipt (its step manifest) are kept with the run
     run = json.loads((tmp_path / "trace" / "run_manifest.json").read_text())
     assert run["run"]["entry"] == "main" and run["run"]["stub"] is True
@@ -57,10 +58,13 @@ def test_parameters_are_checked(tmp_path):
 
 
 @pytest.mark.parametrize("entry, expected", [
-    ("DOWNLOAD", {"DOWNLOAD_BVBRC": 2, "RUN_OUTPUTS": 1}),
-    ("CONTEXT", {"CONTEXT_QUERY": 2, "CONTEXT_BUILD": 2, "RUN_OUTPUTS": 1})])
+    ("DOWNLOAD", {"DOWNLOAD_BVBRC": 2}),
+    ("CONTEXT", {"CONTEXT_QUERY": 2, "CONTEXT_BUILD": 2})])
 def test_internet_entries(tmp_path, entry, expected):
-    r, trace = _run(tmp_path, "-entry", entry, "--organisms", "ecoli,kpneumoniae")
+    expected = {**expected, "RUN_OUTPUTS": 1, "BACKUP_PACK": 1, "BACKUP_UPLOAD": 1,
+                "SACCT_DUMP": 1, "RUN_RESOURCES": 1}
+    r, trace = _run(tmp_path, "-entry", entry, "--organisms", "ecoli,kpneumoniae",
+                    "--backup_remote", str(tmp_path / "remote"))
     assert r.returncode == 0, r.stdout + r.stderr
     t = pd.read_csv(trace, sep="\t")
     assert (t["status"] == "COMPLETED").all()

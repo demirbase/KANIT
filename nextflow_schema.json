@@ -54,13 +54,17 @@
                 "trace_dir": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "Where the trace, report, timeline and DAG are written."
+                    "description": "The run directory: run manifest, trace, report, timeline, DAG, every task's receipt, the output checksums and the resource report (one per launch)."
                 },
                 "external_shards": {
                     "type": "integer",
                     "default": 20,
                     "minimum": 1,
                     "description": "AMRFinderPlus and ResFinder tasks per organism."
+                },
+                "host_python": {
+                    "type": "string",
+                    "description": "Python 3.6+ on the login node, for the receipts of the tasks that run there outside the containers."
                 }
             }
         },
@@ -100,6 +104,30 @@
                     "description": "Cores, memory per core, minimum cores and time limit of every partition."
                 }
             }
+        },
+        "backup": {
+            "title": "Verified backup",
+            "type": "object",
+            "description": "Backup at the end of every stage (scripts/backup.py, scripts/backup_upload.sh).",
+            "properties": {
+                "backup_remote": {
+                    "type": "string",
+                    "description": "rclone remote and folder of the backups (e.g. gdrive:KANIT_backup), or 'none' to run without them; required on TRUBA."
+                },
+                "backup_stage": {
+                    "type": "string",
+                    "format": "directory-path",
+                    "description": "Staging directory of the archives until they are verified on the remote."
+                },
+                "backup_ledger": {
+                    "type": "string",
+                    "description": "Ledger of the verified backups (one row per unit and backup)."
+                },
+                "rclone": {
+                    "type": "string",
+                    "description": "rclone executable on the login node."
+                }
+            }
         }
     },
     "allOf": [
@@ -111,6 +139,9 @@
         },
         {
             "$ref": "#/$defs/truba"
+        },
+        {
+            "$ref": "#/$defs/backup"
         }
     ]
 }

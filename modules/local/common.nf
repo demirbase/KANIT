@@ -16,6 +16,12 @@ def receipt(task, String step, key, Map tools = [:]) {
         "--attempt ${task.attempt} --cpus ${task.cpus}${memory}${versions} > receipt.json"
 }
 
+// the receipt of a task that runs on the login node outside the containers
+def hostReceipt(task, String step, key) {
+    "${params.host_python} ${projectDir}/scripts/receipt.py --step ${step} --key '${key}' " +
+        "--process '${task.process}' --attempt ${task.attempt} --cpus ${task.cpus} > receipt.json"
+}
+
 def stubReceipt(task, String step, key) {
     "${py('receipt.py')} --step ${step} --key '${key}' --process '${task.process}' --stub " +
         "> receipt.json"

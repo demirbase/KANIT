@@ -80,6 +80,11 @@ extend-exclude = ["bin", "archive", "backup", "tez", "data", "results", "logs", 
 select = ["E9", "F", "B", "I", "UP"]
 ignore = ["E501"]
 
+[tool.ruff.lint.per-file-ignores]
+# receipt.py also runs on TRUBA's login node outside the containers, where python3 can
+# be 3.6: it keeps the older idioms that pyupgrade would rewrite.
+"scripts/receipt.py" = ["UP"]
+
 # ----------------------------------------------------------------------------
 # mypy — type checking (scoped to the reusable lib/ core, not the scripts)
 # ----------------------------------------------------------------------------
