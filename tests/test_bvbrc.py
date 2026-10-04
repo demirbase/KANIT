@@ -248,6 +248,11 @@ def test_snapshot_end_to_end(tmp_path, monkeypatch):
     assert wide["Genome ID"].tolist() == ["562.1", "562.2", "562.3"]
     assert json.loads((meta / "snapshot.json").read_text())["query"]["taxids"] == [562]
     assert m.verify(meta, genomes_dir) == []
+    from lib import contract  # the snapshot follows the output contract
+    for tid, name in (("phenotypes_long", "amr_cleaned_long.csv"),
+                      ("phenotype_matrix", "amr_phenotypes.csv"), ("snapshot_genomes", "genomes.csv"),
+                      ("amr_records", "amr_records.csv"), ("download_report", "download_report.csv")):
+        assert contract.validate_csv(meta / name, contract.load()["tables"][tid]) == [], tid
     (genomes_dir / "562.2.fna").write_bytes(b">a\nAAAA\n")
     assert [Path(p).name for p in m.verify(meta, genomes_dir)] == ["562.2.fna"]
     with pytest.raises(SystemExit):

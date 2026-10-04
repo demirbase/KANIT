@@ -1,0 +1,810 @@
+# ============================================================================
+# OUTPUT CONTRACT (plan F4.1) — the one source of every step's outputs
+# ============================================================================
+# Every step writes: a main CSV in long format, described by a table schema below
+# (data dictionary and validation); a summary JSON; its receipt (step manifest,
+# scripts/receipt.py); and a QC figure, drawn from its CSVs only (F4.2).
+# completeness.py checks every output listed here; lib/contract.py reads this file.
+#
+# tables: <id>
+#   location   paths_organism key: the directory, or for a *_file key its directory
+#   file       file name in it ("" = the *_file itself; may hold {organism})
+#   primary_key, min_rows, fields, extra (the type of any further columns)
+# Field types follow the Frictionless Table Schema: string, integer, number,
+# boolean. `required: true` = no empty cell; `enum`, `minimum`, `maximum` constrain
+# the values. Further columns are allowed only when `extra` is given.
+#
+# steps: <id>
+#   entry   main, DOWNLOAD, CONTEXT or KB (the workflow entry that makes it)
+#   level   organism (every organism asked for), modelled_organism (with panel
+#           models), model (every panel model) or global
+#   evaluable_only  model steps that a model without an evaluable design skips
+#   main, tables, summary, files (other required files: json or file), figure
+# ============================================================================
+schema_version: "1.0"
+
+tables:
+  # ---- 00a data snapshot -----------------------------------------------------
+  phenotypes_long:
+    location: metadata_file
+    file: amr_cleaned_long.csv
+    description: "One binary phenotype per genome and antibiotic after the rules of protocol §2.2."
+    primary_key: [genome_id, antibiotic]
+    min_rows: 1
+    fields:
+      - {name: genome_id, type: string, required: true, description: "BV-BRC genome identifier"}
+      - {name: antibiotic, type: string, required: true, description: "Canonical registry name"}
+      - {name: label, type: integer, required: true, enum: [0, 1], description: "1 resistant, 0 susceptible"}
+  phenotype_matrix:
+    location: metadata_file
+    file: ""
+    description: "The phenotypes of the genomes whose assembly passed, one column per antibiotic."
+    primary_key: [Genome ID]
+    min_rows: 1
+    fields:
+      - {name: Genome ID, type: string, required: true, description: "BV-BRC genome identifier"}
+    extra: {type: integer, enum: [0, 1], description: "Phenotype for this antibiotic (1 R, 0 S, empty not tested)"}
+  snapshot_genomes:
+    location: metadata_file
+    file: genomes.csv
+    description: "The phenotyped genomes with their taxon, NCBI identifiers and assembly size."
+    primary_key: [genome_id]
+    min_rows: 1
+    fields:
+      - {name: genome_id, type: string, required: true, description: "BV-BRC genome identifier"}
+      - {name: genome_name, type: string, description: "BV-BRC genome name"}
+      - {name: taxon_id, type: integer, required: true, description: "NCBI taxon of the genome"}
+      - {name: genome_status, type: string, description: "BV-BRC genome status (WGS, Complete, Plasmid)"}
+      - {name: assembly_accession, type: string, description: "NCBI assembly accession"}
+      - {name: sra_accession, type: string, description: "SRA runs (comma-separated)"}
+      - {name: biosample_accession, type: string, description: "NCBI BioSample"}
+      - {name: bioproject_accession, type: string, description: "NCBI BioProject"}
+      - {name: contigs, type: integer, description: "Sequences in the assembly (BV-BRC record)"}
+      - {name: genome_length, type: integer, description: "Assembly length in bp (BV-BRC record)"}
+  amr_records:
+    location: metadata_file
+    file: amr_records.csv
+    description: "The laboratory susceptibility records as BV-BRC returned them."
+    fields:
+      - {name: genome_id, type: string, required: true, description: "BV-BRC genome identifier"}
+      - {name: antibiotic, type: string, required: true, description: "Antibiotic as written by BV-BRC"}
+      - {name: resistant_phenotype, type: string, description: "Reported phenotype"}
+      - {name: evidence, type: string, description: "Evidence of the record (Laboratory Method)"}
+      - {name: testing_standard, type: string, description: "Testing standard as written"}
+      - {name: testing_standard_year, type: integer, description: "Year of the testing standard"}
+      - {name: laboratory_typing_method, type: string, description: "Typing method (MIC, disk diffusion …)"}
+      - {name: measurement, type: string, description: "Measurement as written"}
+      - {name: measurement_sign, type: string, description: "Sign of the measurement (=, <=, > …)"}
+      - {name: measurement_value, type: string, description: "Value of the measurement"}
+      - {name: measurement_unit, type: string, description: "Unit of the measurement"}
+  download_report:
+    location: metadata_file
+    file: download_report.csv
+    description: "Every phenotyped genome's assembly download and its check against the genome record."
+    primary_key: [genome_id]
+    min_rows: 1
+    fields:
+      - {name: genome_id, type: string, required: true, description: "BV-BRC genome identifier"}
+      - {name: status, type: string, required: true, enum: [passed, failed], description: "Whether the assembly passed"}
+      - {name: sequences, type: integer, description: "Sequences in the downloaded assembly"}
+      - {name: length, type: integer, description: "Length of the downloaded assembly in bp"}
+      - {name: bytes, type: integer, description: "Size of the FASTA file"}
+      - {name: sha256, type: string, description: "SHA-256 of the FASTA file"}
+      - {name: problem, type: string, description: "Why the assembly failed"}
+
+  # ---- 02d genome quality control ----------------------------------------------
+  genome_qc:
+    location: genome_qc_dir
+    file: "02d_genome_qc_{organism}.csv"
+    description: "CheckM2 and QUAST values of every assembly and the thresholds it passes (§2.3)."
+    primary_key: [genome_id]
+    min_rows: 1
+    fields:
+      - {name: genome_id, type: string, required: true, description: "BV-BRC genome identifier"}
+      - {name: completeness, type: number, minimum: 0, maximum: 100, description: "CheckM2 completeness (%)"}
+      - {name: contamination, type: number, minimum: 0, description: "CheckM2 contamination (%)"}
+      - {name: n50, type: integer, description: "QUAST N50 (bp)"}
+      - {name: n_contigs, type: integer, description: "QUAST number of contigs"}
+      - {name: total_length, type: integer, description: "QUAST total length (bp)"}
+      - {name: pass_completeness, type: boolean, description: "Completeness at least the threshold"}
+      - {name: pass_contamination, type: boolean, description: "Contamination at most the threshold"}
+      - {name: pass_n50, type: boolean, description: "N50 at least the threshold"}
+      - {name: pass_contigs, type: boolean, description: "Contigs at most the threshold"}
+      - {name: pass_overall, type: boolean, required: true, description: "Passes quality control"}
+
+  # ---- 02c lineages -----------------------------------------------------------
+  lineage_clusters:
+    location: lineage_dir
+    file: poppunk_clusters.csv
+    description: "PopPUNK lineage cluster of every genome (§2.4)."
+    primary_key: [Genome ID]
+    min_rows: 1
+    fields:
+      - {name: Genome ID, type: string, required: true, description: "BV-BRC genome identifier"}
+      - {name: Cluster, type: string, required: true, description: "PopPUNK cluster"}
+
+  # ---- 02e panel ----------------------------------------------------------------
+  panel_decisions:
+    location: panel_dir
+    file: panel_decisions.csv
+    description: "The panel decision of every organism–antibiotic pair with its counts and reason (§3)."
+    primary_key: [organism, antibiotic]
+    min_rows: 1
+    fields:
+      - {name: organism, type: string, required: true, description: "Registry organism"}
+      - {name: antibiotic, type: string, required: true, description: "Canonical registry name"}
+      - {name: drug_class, type: string, description: "Registry drug class"}
+      - {name: n_tested, type: integer, description: "Genomes with a phenotype"}
+      - {name: n_eligible, type: integer, description: "Tested genomes that passed QC and have a lineage"}
+      - {name: n_resistant, type: integer, description: "Eligible resistant genomes"}
+      - {name: n_susceptible, type: integer, description: "Eligible susceptible genomes"}
+      - {name: minority, type: integer, description: "The smaller of the two classes"}
+      - {name: decision, type: string, required: true, enum: [included, excluded, blocked], description: "Panel decision"}
+      - {name: reason, type: string, description: "Reason of the decision"}
+
+  # ---- 03u model matrix -------------------------------------------------------
+  model_patterns:
+    location: matrix_dir
+    file: patterns.csv
+    description: "The distinct presence/absence patterns of the model's unitigs (§4)."
+    primary_key: [pattern_id]
+    fields:
+      - {name: pattern_id, type: integer, required: true, minimum: 0, description: "Pattern index (matrix column)"}
+      - {name: n_present, type: integer, minimum: 0, description: "Genomes that carry the pattern"}
+      - {name: n_members, type: integer, minimum: 1, description: "Unitigs with this pattern"}
+  model_genomes:
+    location: matrix_dir
+    file: genomes.csv
+    description: "The genomes of the model (matrix rows) with label and lineage."
+    primary_key: [Genome ID]
+    min_rows: 1
+    fields:
+      - {name: Genome ID, type: string, required: true, description: "BV-BRC genome identifier"}
+      - {name: label, type: integer, required: true, enum: [0, 1], description: "1 resistant, 0 susceptible"}
+      - {name: lineage, type: string, required: true, description: "PopPUNK cluster"}
+
+  # ---- 08 RGI -----------------------------------------------------------------
+  rgi_hits:
+    location: rgi_dir
+    file: rgi_hits.csv
+    description: "RGI hits (Perfect and Strict) of every store genome against CARD."
+    fields:
+      - {name: genome_id, type: string, required: true, description: "BV-BRC genome identifier"}
+      - {name: aro, type: string, required: true, description: "CARD ARO accession"}
+      - {name: aro_name, type: string, description: "CARD term name"}
+      - {name: model_type, type: string, description: "CARD model type"}
+      - {name: gene_family, type: string, description: "CARD gene family"}
+      - {name: drug_class, type: string, description: "CARD drug classes (semicolon-separated)"}
+      - {name: mechanism, type: string, description: "CARD resistance mechanism"}
+
+  # ---- 04 nested cross-validation ---------------------------------------------
+  oof_predictions:
+    location: cv_dir
+    file: oof_predictions.csv
+    description: "Out-of-fold predicted probability of resistance of every genome, per arm and repeat (§6)."
+    primary_key: [arm, repeat, genome_id]
+    min_rows: 1
+    fields:
+      - {name: arm, type: string, required: true, enum: [lineage_aware, lineage_blind], description: "Cross-validation arm"}
+      - {name: repeat, type: integer, required: true, minimum: 1, description: "Repeat"}
+      - {name: fold, type: integer, required: true, minimum: 0, description: "Outer fold"}
+      - {name: genome_id, type: string, required: true, description: "BV-BRC genome identifier"}
+      - {name: y, type: integer, required: true, enum: [0, 1], description: "Phenotype"}
+      - {name: p, type: number, required: true, minimum: 0, maximum: 1, description: "Predicted probability of resistance"}
+  fold_metrics:
+    location: cv_dir
+    file: fold_metrics.csv
+    description: "ROC AUC of every outer fold."
+    fields:
+      - {name: arm, type: string, required: true, description: "Cross-validation arm"}
+      - {name: repeat, type: integer, required: true, description: "Repeat"}
+      - {name: fold, type: integer, required: true, description: "Outer fold"}
+      - {name: n, type: integer, description: "Genomes in the fold"}
+      - {name: n_resistant, type: integer, description: "Resistant genomes in the fold"}
+      - {name: roc_auc, type: number, description: "ROC AUC of the fold"}
+  repeat_metrics:
+    location: cv_dir
+    file: repeat_metrics.csv
+    description: "Pooled out-of-fold metrics of every repeat (§6.3)."
+    fields:
+      - {name: arm, type: string, required: true, description: "Cross-validation arm"}
+      - {name: repeat, type: integer, required: true, description: "Repeat"}
+      - {name: n, type: integer, description: "Genomes"}
+      - {name: roc_auc, type: number, description: "ROC AUC"}
+      - {name: pr_auc, type: number, description: "Precision–recall AUC"}
+      - {name: pr_auc_baseline, type: number, description: "Resistance rate (PR AUC of a random model)"}
+      - {name: balanced_accuracy, type: number, description: "Balanced accuracy at the threshold"}
+      - {name: mcc, type: number, description: "Matthews correlation coefficient"}
+      - {name: brier, type: number, description: "Brier score"}
+  fold_composition:
+    location: cv_dir
+    file: fold_composition.csv
+    description: "Size, class balance and lineages of every outer fold."
+    fields:
+      - {name: arm, type: string, required: true, description: "Cross-validation arm"}
+      - {name: repeat, type: integer, required: true, description: "Repeat"}
+      - {name: fold, type: integer, required: true, description: "Outer fold"}
+      - {name: n, type: integer, description: "Genomes"}
+      - {name: n_resistant, type: integer, description: "Resistant genomes"}
+      - {name: n_susceptible, type: integer, description: "Susceptible genomes"}
+      - {name: resistance_rate, type: number, description: "Share of resistant genomes"}
+      - {name: n_lineages, type: integer, description: "Lineages in the fold"}
+  folds:
+    location: cv_dir
+    file: folds.csv
+    description: "The outer fold of every genome in every arm and repeat."
+    primary_key: [repeat, arm, genome_id]
+    fields:
+      - {name: repeat, type: integer, required: true, description: "Repeat"}
+      - {name: arm, type: string, required: true, description: "Cross-validation arm"}
+      - {name: fold, type: integer, required: true, description: "Outer fold"}
+      - {name: genome_id, type: string, required: true, description: "BV-BRC genome identifier"}
+  reliability:
+    location: cv_dir
+    file: reliability.csv
+    description: "Calibration bins of the out-of-fold predictions."
+    fields:
+      - {name: arm, type: string, required: true, description: "Cross-validation arm"}
+      - {name: repeat, type: integer, required: true, description: "Repeat"}
+      - {name: bin, type: integer, description: "Bin"}
+      - {name: bin_low, type: number, description: "Lower edge"}
+      - {name: bin_high, type: number, description: "Upper edge"}
+      - {name: n, type: integer, description: "Genomes in the bin"}
+      - {name: mean_predicted, type: number, description: "Mean predicted probability"}
+      - {name: observed_rate, type: number, description: "Observed resistance rate"}
+  seeds:
+    location: cv_dir
+    file: seeds.csv
+    description: "Fold-split seed of every arm and repeat and whether the split was evaluable."
+    fields:
+      - {name: arm, type: string, required: true, description: "Cross-validation arm"}
+      - {name: repeat, type: integer, required: true, description: "Repeat"}
+      - {name: seed, type: integer, description: "Seed of the split"}
+      - {name: attempts, type: integer, description: "Splits tried"}
+      - {name: evaluable, type: boolean, description: "Every fold holds both classes"}
+
+  # ---- 12b label permutation ---------------------------------------------------
+  label_permutation_null:
+    location: label_permutation_dir
+    file: label_permutation_null.csv
+    description: "ROC AUC of every label permutation of the model (§8.6)."
+    fields:
+      - {name: permutation, type: integer, required: true, description: "Permutation"}
+      - {name: auc, type: number, description: "Pooled out-of-fold ROC AUC with permuted labels"}
+  label_permutation_models:
+    location: cross_model_dir
+    file: label_permutation.csv
+    description: "The label permutation test of every model, with BH q values across models."
+    fields:
+      - {name: organism, type: string, required: true, description: "Registry organism"}
+      - {name: antibiotic, type: string, required: true, description: "Canonical registry name"}
+      - {name: status, type: string, description: "Whether the test was run"}
+      - {name: auc_observed, type: number, description: "Observed ROC AUC"}
+      - {name: null_mean, type: number, description: "Mean of the null AUCs"}
+      - {name: null_sd, type: number, description: "Standard deviation of the null AUCs"}
+      - {name: z, type: number, description: "(observed − null mean) / null SD"}
+      - {name: n_permutations, type: integer, description: "Permutations"}
+      - {name: p, type: number, description: "Permutation p value"}
+      - {name: q, type: number, description: "BH q value across models"}
+      - {name: flag, type: string, description: "permutation_not_significant when q ≥ α"}
+
+  # ---- 13 CPSS and candidates --------------------------------------------------
+  cpss_patterns:
+    location: cpss_dir
+    file: cpss.csv
+    description: "Selection frequency π of every prefilter pattern over the CPSS fits (§8.4)."
+    primary_key: [pattern_id]
+    fields:
+      - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
+      - {name: chi2, type: number, description: "χ² of the pattern and the label"}
+      - {name: n_selected, type: integer, description: "Fits that selected the pattern"}
+      - {name: pi, type: number, minimum: 0, maximum: 1, description: "Selection frequency"}
+      - {name: stable, type: boolean, description: "π at least the threshold"}
+  cpss_prefilter:
+    location: cpss_dir
+    file: prefilter.csv
+    description: "The χ² prefilter of CPSS."
+    fields:
+      - {name: rank, type: integer, required: true, description: "Rank by χ²"}
+      - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
+      - {name: chi2, type: number, description: "χ²"}
+      - {name: present_resistant, type: integer, description: "Resistant carriers"}
+      - {name: present_susceptible, type: integer, description: "Susceptible carriers"}
+  candidates:
+    location: candidates_file
+    file: ""
+    description: "The candidate patterns of the model (top total gain and stable patterns, §7)."
+    primary_key: [pattern_id]
+    fields:
+      - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
+      - {name: gain_rank, type: integer, description: "Rank by total gain in the final model"}
+      - {name: total_gain, type: number, description: "Total gain in the final model"}
+      - {name: cpss_stable, type: boolean, description: "Stable in CPSS"}
+      - {name: source, type: string, enum: [gain, cpss, both], description: "Why the pattern is a candidate"}
+      - {name: cpss_pi, type: number, description: "CPSS selection frequency"}
+  cpss_layer:
+    location: layers_dir
+    file: cpss.csv
+    description: "The CPSS evidence layer of every candidate."
+    primary_key: [pattern_id]
+    fields:
+      - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
+      - {name: chi2, type: number, description: "χ² (empty outside the prefilter)"}
+      - {name: pi, type: number, description: "Selection frequency (0 outside the prefilter)"}
+      - {name: in_prefilter, type: boolean, description: "In the χ² prefilter"}
+      - {name: passes, type: boolean, required: true, description: "The layer fires"}
+
+  # ---- 10 prevalence -----------------------------------------------------------
+  prevalence_layer:
+    location: layers_dir
+    file: prevalence.csv
+    description: "Carriage of every candidate among resistant and susceptible genomes (§8.2)."
+    primary_key: [pattern_id]
+    fields:
+      - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
+      - {name: n_resistant, type: integer, description: "Resistant genomes"}
+      - {name: n_susceptible, type: integer, description: "Susceptible genomes"}
+      - {name: present_resistant, type: integer, description: "Resistant carriers"}
+      - {name: present_susceptible, type: integer, description: "Susceptible carriers"}
+      - {name: prev_resistant, type: number, description: "Prevalence among resistant genomes"}
+      - {name: prev_susceptible, type: number, description: "Prevalence among susceptible genomes"}
+      - {name: delta, type: number, description: "prev_resistant − prev_susceptible"}
+      - {name: direction, type: string, description: "Sign of delta"}
+      - {name: fisher_p, type: number, description: "Two-sided Fisher p value"}
+      - {name: q, type: number, description: "BH q value over the candidates"}
+      - {name: passes, type: boolean, required: true, description: "The layer fires"}
+
+  # ---- 12 MDA --------------------------------------------------------------------
+  mda_layer:
+    location: layers_dir
+    file: mda.csv
+    description: "Permutation importance (mean decrease in AUC) of every candidate (§8.3)."
+    primary_key: [pattern_id]
+    fields:
+      - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
+      - {name: n_fold_models_using, type: integer, description: "Outer-fold models that use the pattern"}
+      - {name: auc_observed, type: number, description: "AUC with the pattern intact"}
+      - {name: auc_permuted, type: number, description: "Mean AUC with the pattern permuted"}
+      - {name: mda, type: number, description: "Mean decrease in AUC"}
+      - {name: n_permuted_ge_observed, type: integer, description: "Permutations with AUC at least the observed"}
+      - {name: p, type: number, description: "Permutation p value"}
+      - {name: q, type: number, description: "BH q value"}
+      - {name: passes, type: boolean, required: true, description: "The layer fires"}
+  mda_clusters:
+    location: layers_dir
+    file: mda_clusters.csv
+    description: "MDA of the correlated candidate clusters (|r| ≥ 0.9), permuted together."
+    fields:
+      - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
+      - {name: cluster, type: integer, description: "Cluster"}
+      - {name: cluster_size, type: integer, description: "Patterns in the cluster"}
+      - {name: cluster_patterns, type: string, description: "Patterns of the cluster"}
+      - {name: n_fold_models_using, type: integer, description: "Outer-fold models that use the cluster"}
+      - {name: auc_observed, type: number, description: "AUC intact"}
+      - {name: auc_permuted, type: number, description: "Mean AUC with the cluster permuted"}
+      - {name: mda, type: number, description: "Mean decrease in AUC"}
+      - {name: n_permuted_ge_observed, type: integer, description: "Permutations with AUC at least the observed"}
+      - {name: p, type: number, description: "Permutation p value"}
+      - {name: q, type: number, description: "BH q value"}
+      - {name: passes, type: boolean, description: "The cluster fires"}
+
+  # ---- 14 pyseer ---------------------------------------------------------------
+  pyseer_tested:
+    location: pyseer_dir
+    file: pyseer_tested.csv
+    description: "pyseer LMM association of every tested pattern (§8.5)."
+    fields:
+      - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
+      - {name: variant, type: string, description: "pyseer variant name"}
+      - {name: af, type: number, description: "Allele frequency"}
+      - {name: filter-pvalue, type: number, description: "pyseer filter p value"}
+      - {name: lrt-pvalue, type: number, description: "Likelihood ratio test p value"}
+      - {name: beta, type: number, description: "Effect size"}
+      - {name: beta-std-err, type: number, description: "Standard error of beta"}
+      - {name: variant_h2, type: number, description: "Variance explained by the variant"}
+      - {name: notes, type: string, description: "pyseer notes"}
+      - {name: significant, type: boolean, description: "Bonferroni significant"}
+  pyseer_layer:
+    location: layers_dir
+    file: pyseer.csv
+    description: "The pyseer evidence layer of every candidate."
+    primary_key: [pattern_id]
+    fields:
+      - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
+      - {name: af, type: number, description: "Allele frequency"}
+      - {name: beta, type: number, description: "Effect size"}
+      - {name: lrt_pvalue, type: number, description: "Likelihood ratio test p value"}
+      - {name: threshold, type: number, description: "Bonferroni threshold"}
+      - {name: passes, type: boolean, required: true, description: "The layer fires"}
+      - {name: notes, type: string, description: "pyseer notes"}
+  pyseer_qq:
+    location: pyseer_dir
+    file: pyseer_qq.csv
+    description: "QQ points of the tested and the background sets."
+    fields:
+      - {name: expected, type: number, description: "Expected −log10 p"}
+      - {name: observed, type: number, description: "Observed −log10 p"}
+      - {name: set, type: string, enum: [tested, background], description: "Set"}
+
+  # ---- 09 CARD layer -------------------------------------------------------------
+  card_unitigs:
+    location: card_layer_dir
+    file: card_unitigs.csv
+    description: "CARD state of every candidate unitig in both modes (§8.1)."
+    fields:
+      - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
+      - {name: unitig_index, type: integer, required: true, description: "Unitig index in the store"}
+      - {name: sequence, type: string, required: true, description: "Unitig sequence"}
+      - {name: length, type: integer, description: "Length (bp)"}
+      - {name: located_genomes, type: string, description: "Genomes where the unitig was located"}
+      - {name: allele_aware_state, type: string, description: "CARD state, allele-aware mode"}
+      - {name: allele_aware_reasons, type: string, description: "Reasons, allele-aware mode"}
+      - {name: allele_aware_aros, type: string, description: "Concordant AROs, allele-aware mode"}
+      - {name: allele_aware_n_b, type: integer, description: "Genomes with b = 1, allele-aware mode"}
+      - {name: homolog_only_state, type: string, description: "CARD state, homolog-only mode"}
+      - {name: homolog_only_reasons, type: string, description: "Reasons, homolog-only mode"}
+      - {name: homolog_only_aros, type: string, description: "Concordant AROs, homolog-only mode"}
+      - {name: homolog_only_n_b, type: integer, description: "Genomes with b = 1, homolog-only mode"}
+  card_patterns:
+    location: card_layer_dir
+    file: card_patterns.csv
+    description: "CARD state of every candidate pattern in both modes."
+    primary_key: [pattern_id]
+    fields:
+      - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
+      - {name: n_members, type: integer, description: "Unitigs of the pattern"}
+      - {name: allele_aware_state, type: string, description: "CARD state, allele-aware mode"}
+      - {name: allele_aware_reasons, type: string, description: "Reasons, allele-aware mode"}
+      - {name: allele_aware_aros, type: string, description: "Concordant AROs, allele-aware mode"}
+      - {name: homolog_only_state, type: string, description: "CARD state, homolog-only mode"}
+      - {name: homolog_only_reasons, type: string, description: "Reasons, homolog-only mode"}
+      - {name: homolog_only_aros, type: string, description: "Concordant AROs, homolog-only mode"}
+
+  # ---- 14b grading -----------------------------------------------------------------
+  grades_patterns:
+    location: grades_dir
+    file: grades_patterns.csv
+    description: "Evidence grade of every candidate pattern in both modes (§9)."
+    primary_key: [pattern_id]
+    fields:
+      - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
+      - {name: n_members, type: integer, description: "Unitigs of the pattern"}
+      - {name: prevalence, type: boolean, description: "Prevalence layer fires"}
+      - {name: mda, type: boolean, description: "MDA layer fires"}
+      - {name: cpss, type: boolean, description: "CPSS layer fires"}
+      - {name: pyseer, type: boolean, description: "pyseer layer fires"}
+      - {name: n_layers, type: integer, minimum: 0, maximum: 4, description: "Layers that fire"}
+      - {name: layers_passed, type: string, description: "The layers that fire"}
+      - {name: allele_aware_card_state, type: string, description: "CARD state, allele-aware mode"}
+      - {name: allele_aware_card_reasons, type: string, description: "CARD reasons, allele-aware mode"}
+      - {name: allele_aware_grade, type: string, required: true, enum: [confirmed, strong_novel, candidate, weak, none], description: "Grade, allele-aware mode"}
+      - {name: homolog_only_card_state, type: string, description: "CARD state, homolog-only mode"}
+      - {name: homolog_only_card_reasons, type: string, description: "CARD reasons, homolog-only mode"}
+      - {name: homolog_only_grade, type: string, required: true, enum: [confirmed, strong_novel, candidate, weak, none], description: "Grade, homolog-only mode"}
+      - {name: grade, type: string, required: true, enum: [confirmed, strong_novel, candidate, weak, none], description: "Grade of the primary mode"}
+  grades_unitigs:
+    location: grades_dir
+    file: grades_unitigs.csv
+    description: "The grades carried to every candidate unitig."
+    extra: {type: string, description: "CARD state and grade columns of both modes"}
+    fields:
+      - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
+      - {name: unitig_index, type: integer, required: true, description: "Unitig index in the store"}
+      - {name: sequence, type: string, required: true, description: "Unitig sequence"}
+      - {name: length, type: integer, description: "Length (bp)"}
+      - {name: grade, type: string, required: true, enum: [confirmed, strong_novel, candidate, weak, none], description: "Grade of the primary mode"}
+
+  # ---- 16 comparison with genotype-based prediction -----------------------------------
+  external_comparison:
+    location: external_dir
+    file: comparison.csv
+    description: "Agreement of AMRFinderPlus, ResFinder, RGI and the model with the phenotypes (§11)."
+    primary_key: [model_id, tool]
+    min_rows: 1
+    fields:
+      - {name: model_id, type: string, required: true, description: "organism__antibiotic"}
+      - {name: tool, type: string, required: true, enum: [amrfinderplus, resfinder, rgi_all, rgi_without_near_universal, model], description: "Predictor"}
+      - {name: assessable, type: integer, required: true, enum: [0, 1], description: "The predictor covers the antibiotic"}
+      - {name: n, type: integer, description: "Genomes"}
+      - {name: n_resistant, type: integer, description: "Resistant genomes"}
+      - {name: tp, type: integer, description: "True positives"}
+      - {name: fp, type: integer, description: "False positives"}
+      - {name: tn, type: integer, description: "True negatives"}
+      - {name: fn, type: integer, description: "False negatives"}
+      - {name: sensitivity, type: number, description: "Sensitivity"}
+      - {name: specificity, type: number, description: "Specificity"}
+      - {name: balanced_accuracy, type: number, description: "Balanced accuracy"}
+      - {name: very_major_error_rate, type: number, description: "Predicted S among resistant"}
+      - {name: major_error_rate, type: number, description: "Predicted R among susceptible"}
+  amrfinder_calls:
+    location: external_dir
+    file: amrfinder_calls.csv
+    description: "AMRFinderPlus elements of every genome."
+    fields:
+      - {name: genome_id, type: string, required: true, description: "BV-BRC genome identifier"}
+      - {name: element_symbol, type: string, description: "Element symbol"}
+      - {name: type, type: string, description: "Element type"}
+      - {name: subtype, type: string, description: "Element subtype"}
+      - {name: scope, type: string, description: "core or plus"}
+      - {name: class, type: string, description: "AMRFinderPlus class"}
+      - {name: subclass, type: string, description: "AMRFinderPlus subclass"}
+  amrfinder_genomes:
+    location: external_dir
+    file: amrfinder_genomes.csv
+    description: "The genomes AMRFinderPlus was run on."
+    fields:
+      - {name: genome_id, type: string, required: true, description: "BV-BRC genome identifier"}
+  resfinder_calls:
+    location: external_dir
+    file: resfinder_calls.csv
+    description: "ResFinder's predicted phenotype of every genome and panel antibiotic."
+    fields:
+      - {name: genome_id, type: string, required: true, description: "BV-BRC genome identifier"}
+      - {name: antibiotic, type: string, required: true, description: "Canonical registry name"}
+      - {name: resistant, type: integer, enum: [0, 1], description: "Predicted resistant"}
+
+  # ---- 18 NCBI context ---------------------------------------------------------------
+  unitig_context:
+    location: context_dir
+    file: unitig_context.csv
+    description: "NCBI nt context of every candidate unitig (§12; context, not evidence)."
+    fields:
+      - {name: unitig_id, type: string, required: true, description: "KU identifier"}
+      - {name: organism_id, type: string, description: "Registry organism"}
+      - {name: source, type: string, description: "Source of the context"}
+      - {name: queried_on, type: string, description: "Query date"}
+      - {name: nt_release, type: string, description: "nt release in the BLAST report"}
+      - {name: n_hits, type: integer, description: "Hits"}
+      - {name: best_accession, type: string, description: "Accession of the best hit"}
+      - {name: best_title, type: string, description: "Title of the best hit"}
+      - {name: best_identity, type: number, description: "Identity of the best hit (%)"}
+      - {name: best_coverage, type: number, description: "Query coverage of the best hit"}
+      - {name: best_evalue, type: number, description: "E value of the best hit"}
+      - {name: gene, type: string, description: "Gene of the best hit (GenBank)"}
+      - {name: product, type: string, description: "Product of the best hit (GenBank)"}
+      - {name: plasmid_share, type: number, description: "Share of the hits on plasmid records"}
+
+  # ---- hypotheses ---------------------------------------------------------------------
+  h1_models:
+    location: cross_model_dir
+    file: hypotheses/h1_models.csv
+    description: "H1 — stable patterns per model."
+    fields:
+      - {name: model_id, type: string, required: true, description: "organism__antibiotic"}
+      - {name: n_prefilter, type: integer, description: "Patterns in the CPSS prefilter"}
+      - {name: n_stable, type: integer, description: "Stable patterns"}
+      - {name: mb_bound, type: number, description: "Meinshausen–Bühlmann bound"}
+      - {name: has_stable, type: boolean, description: "At least one stable pattern"}
+  h2_models:
+    location: cross_model_dir
+    file: hypotheses/h2_models.csv
+    description: "H2 — share of stable patterns with CARD support per model."
+    fields:
+      - {name: model_id, type: string, required: true, description: "organism__antibiotic"}
+      - {name: n_stable, type: integer, description: "Stable patterns"}
+      - {name: share_b_allele_aware, type: number, description: "Share with b = 1, allele-aware mode"}
+      - {name: share_b_homolog_only, type: number, description: "Share with b = 1, homolog-only mode"}
+  h3_pairs:
+    location: cross_model_dir
+    file: hypotheses/h3_pairs.csv
+    description: "H3 — overlap of the candidates of two models of one organism."
+    fields:
+      - {name: organism_id, type: string, required: true, description: "Registry organism"}
+      - {name: model_a, type: string, required: true, description: "First model"}
+      - {name: model_b, type: string, required: true, description: "Second model"}
+      - {name: same_class, type: boolean, description: "Both antibiotics in one drug class"}
+      - {name: n_a, type: integer, description: "Candidates of model a"}
+      - {name: n_b, type: integer, description: "Candidates of model b"}
+      - {name: n_shared, type: integer, description: "Shared candidates"}
+      - {name: n_universe, type: integer, description: "Unitigs that could be shared"}
+      - {name: overlap, type: number, description: "Jaccard overlap"}
+      - {name: fold_enrichment, type: number, description: "Observed over expected overlap"}
+      - {name: fisher_p, type: number, description: "Fisher p value"}
+      - {name: mc_p, type: number, description: "Monte Carlo p value"}
+      - {name: q_by, type: number, description: "Benjamini–Yekutieli q value"}
+  h6_models:
+    location: cross_model_dir
+    file: hypotheses/h6_models.csv
+    description: "H6 — acquired and mutational determinants per model."
+    fields:
+      - {name: model_id, type: string, required: true, description: "organism__antibiotic"}
+      - {name: A, type: number, description: "Share of acquired determinants"}
+      - {name: M, type: number, description: "Share of mutational determinants"}
+      - {name: class, type: string, description: "Class of the model"}
+      - {name: h2_share, type: number, description: "H2 share of the model"}
+  h7_determinants:
+    location: cross_model_dir
+    file: hypotheses/h7_determinants.csv
+    description: "H7 — recovery of the expected AMRFinderPlus determinants per model."
+    extra: {type: boolean, description: "Expected at another prevalence threshold"}
+    fields:
+      - {name: model_id, type: string, required: true, description: "organism__antibiotic"}
+      - {name: determinant, type: string, required: true, description: "Determinant"}
+      - {name: kind, type: string, description: "Gene or point mutation"}
+      - {name: prev_resistant, type: number, description: "Prevalence among resistant genomes"}
+      - {name: prev_susceptible, type: number, description: "Prevalence among susceptible genomes"}
+      - {name: recovered, type: boolean, description: "A graded pattern maps to it"}
+      - {name: best_grade, type: string, description: "Best grade among its patterns"}
+      - {name: n_patterns, type: integer, description: "Patterns mapped to it"}
+  h7_unmapped_symbols:
+    location: cross_model_dir
+    file: hypotheses/h7_unmapped_symbols.csv
+    description: "AMRFinderPlus symbols that map to no CARD family."
+    fields:
+      - {name: symbol, type: string, required: true, description: "AMRFinderPlus symbol"}
+      - {name: n_calls, type: integer, description: "Calls of the symbol"}
+
+steps:
+  snapshot:
+    script: 00a_download_bvbrc.py
+    entry: DOWNLOAD
+    level: organism
+    main: phenotypes_long
+    tables: [phenotypes_long, phenotype_matrix, snapshot_genomes, amr_records, download_report]
+    summary: {location: metadata_file, file: snapshot.json}
+    files: [{location: metadata_file, file: query.json, kind: json}]
+    figure: Phenotype counts and R/S balance per antibiotic
+  genome_qc:
+    script: 02d_genome_qc.py
+    entry: main
+    level: organism
+    main: genome_qc
+    tables: [genome_qc]
+    summary: {location: genome_qc_dir, file: "02d_genome_qc_summary_{organism}.json"}
+    files: [{location: genome_qc_dir, file: versions.json, kind: json}]
+    figure: Completeness, contamination, N50 and contigs with the thresholds; genomes excluded
+  lineage:
+    script: 02c_lineage_poppunk.py
+    entry: main
+    level: organism
+    main: lineage_clusters
+    tables: [lineage_clusters]
+    summary: {location: lineage_dir, file: lineage_summary.json}
+    files: [{location: lineage_dir, file: versions.json, kind: json}]
+    figure: Lineage size distribution
+  panel:
+    script: 02e_panel.py
+    entry: main
+    level: global
+    main: panel_decisions
+    tables: [panel_decisions]
+    summary: {location: panel_dir, file: panel_summary.json}
+    figure: Minority class of every pair against the threshold
+  unitig_store:
+    script: 03u_unitig_matrix.py
+    entry: main
+    level: modelled_organism
+    main: null
+    summary: {location: unitig_store_dir, file: store_summary.json}
+    figure: Unitigs and their support
+  model_matrix:
+    script: 03u_unitig_matrix.py
+    entry: main
+    level: model
+    main: model_patterns
+    tables: [model_patterns, model_genomes]
+    summary: {location: matrix_dir, file: matrix_summary.json}
+    figure: Pattern carriage and members per pattern
+  rgi:
+    script: 08_rgi.py
+    entry: main
+    level: modelled_organism
+    main: rgi_hits
+    tables: [rgi_hits]
+    summary: {location: rgi_dir, file: rgi_summary.json}
+    figure: RGI hits per drug class and model type
+  cv:
+    script: 04_nested_cv.py
+    entry: main
+    level: model
+    main: oof_predictions
+    tables: [oof_predictions, fold_metrics, repeat_metrics, fold_composition, folds, reliability, seeds]
+    evaluable_tables: [oof_predictions, fold_metrics, repeat_metrics, reliability]
+    summary: {location: cv_dir, file: metrics.json, evaluable_only: true}
+    files: [{location: cv_dir, file: cv_design.json, kind: json},
+            {location: cv_dir, file: final/record.json, kind: json, evaluable_only: true}]
+    figure: ROC and PR curves, calibration, fold metrics, fold composition, lineage-aware against lineage-blind
+  label_permutation:
+    script: 12b_label_permutation.py
+    entry: main
+    level: model
+    evaluable_only: true
+    main: label_permutation_null
+    tables: [label_permutation_null]
+    summary: {location: label_permutation_dir, file: label_permutation.json}
+    figure: Null AUC distribution and the observed AUC
+  label_permutation_across:
+    script: 12b_label_permutation.py
+    entry: main
+    level: global
+    needs_evaluable: true
+    main: label_permutation_models
+    tables: [label_permutation_models]
+    figure: Observed AUC and null band of every model
+  cpss:
+    script: 13_cpss.py
+    entry: main
+    level: model
+    evaluable_only: true
+    main: cpss_patterns
+    tables: [cpss_patterns, cpss_prefilter, candidates, cpss_layer]
+    summary: {location: cpss_dir, file: cpss_summary.json}
+    figure: Selection frequency against the threshold and the PFER bound
+  prevalence:
+    script: 10_prevalence.py
+    entry: main
+    level: model
+    evaluable_only: true
+    main: prevalence_layer
+    tables: [prevalence_layer]
+    summary: {location: layers_dir, file: prevalence_summary.json}
+    figure: Δprevalence volcano plot
+  mda:
+    script: 12_mda.py
+    entry: main
+    level: model
+    evaluable_only: true
+    main: mda_layer
+    tables: [mda_layer, mda_clusters]
+    summary: {location: layers_dir, file: mda_summary.json}
+    figure: MDA against p value
+  pyseer:
+    script: 14_pyseer.py
+    entry: main
+    level: model
+    evaluable_only: true
+    main: pyseer_tested
+    tables: [pyseer_tested, pyseer_layer, pyseer_qq]
+    summary: {location: pyseer_dir, file: pyseer_summary.json}
+    figure: QQ plots and λ of the tested and the background sets
+  card:
+    script: 09_card_layer.py
+    entry: main
+    level: model
+    evaluable_only: true
+    main: card_unitigs
+    tables: [card_unitigs, card_patterns]
+    summary: {location: card_layer_dir, file: card_summary.json}
+    figure: CARD states of the candidates in both modes
+  grading:
+    script: 14b_grading.py
+    entry: main
+    level: model
+    evaluable_only: true
+    main: grades_patterns
+    tables: [grades_patterns, grades_unitigs]
+    summary: {location: grades_dir, file: grades_summary.json}
+    figure: Evidence funnel of the model
+  external:
+    script: 16_external.py
+    entry: main
+    level: modelled_organism
+    main: external_comparison
+    tables: [external_comparison, amrfinder_calls, amrfinder_genomes, resfinder_calls]
+    summary: {location: external_dir, file: external_summary.json}
+    files: [{location: external_dir, file: versions.json, kind: json}]
+    figure: Agreement of every predictor with the phenotypes
+  context:
+    script: 18_ncbi_context.py
+    entry: CONTEXT
+    level: modelled_organism
+    main: unitig_context
+    tables: [unitig_context]
+    summary: {location: context_dir, file: context_summary.json}
+    figure: Plasmid and chromosome share of the hits
+  kb:
+    script: build_kb.py
+    entry: KB
+    level: global
+    main: null
+    summary: {location: kb_dir, file: kb_report.json}
+    files: [{location: kb_dir, file: kanit.sqlite, kind: file}]
+    figure: null
+  hypotheses:
+    script: hypotheses.py
+    entry: KB
+    level: global
+    main: h1_models
+    tables: [h1_models, h2_models, h3_pairs, h6_models, h7_determinants, h7_unmapped_symbols]
+    summary: {location: cross_model_dir, file: hypotheses/hypotheses.json}
+    figure: Overlap heat map of the antibiotics of every organism

@@ -8,6 +8,7 @@ candidates. The rule is in lib/prevalence.py.
 Inputs: candidates_file, the model matrix. Output: layers_dir/prevalence.csv.
 """
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -39,6 +40,10 @@ def main():
     out = path("layers_dir")
     out.mkdir(parents=True, exist_ok=True)
     layer.to_csv(out / "prevalence.csv", index=False)
+    (out / "prevalence_summary.json").write_text(json.dumps({
+        "organism": org, "antibiotic": ab, "n_candidates": len(layer),
+        "n_passes": int(layer["passes"].sum()), "min_delta": cfg["min_delta"],
+        "alpha": cfg["alpha"]}, indent=2) + "\n")
     print(f"Prevalence — {org} / {ab}: {int(layer['passes'].sum())} of {len(layer)} "
           f"candidate patterns pass")
 

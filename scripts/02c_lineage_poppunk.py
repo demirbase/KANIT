@@ -22,6 +22,7 @@ unitig feature steps are unaffected — this only produces the CV split labels.
 """
 
 import argparse
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -311,6 +312,8 @@ def main():
 
     groups = out_df["Cluster"].to_numpy()
     summ = lineage_summary(groups)
+    (lineage_dir / "lineage_summary.json").write_text(
+        json.dumps({"organism": organism, **summ}, indent=2, default=str) + "\n")
     print("\n" + "=" * 80)
     print("LINEAGE CLUSTERING COMPLETE")
     print("=" * 80)

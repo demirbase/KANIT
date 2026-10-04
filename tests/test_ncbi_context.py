@@ -2,6 +2,7 @@
 """NCBI context (lib.ncbi_context, 18_ncbi_context.py) with a fake NCBI: no network."""
 import importlib.util
 import io
+import json
 import sys
 import urllib.parse
 from pathlib import Path
@@ -144,6 +145,10 @@ def test_step_end_to_end(tmp_path, monkeypatch):
     assert m.query("ecoli", config, out, client)["n_searched_now"] == 0   # from the cache
     assert len(fake.calls) == n_calls
     t = m.build("ecoli", out)
+    from lib import contract  # the table follows the output contract
+    assert contract.validate_csv(out / "unitig_context.csv",
+                                 contract.load()["tables"]["unitig_context"]) == []
+    assert json.loads((out / "context_summary.json").read_text())["n_unitigs"] == len(t)
     row = t.iloc[0]
     assert row["unitig_id"] == uid and row["nt_release"] == "Oct 1, 2026"
     assert row["gene"] == "gyrA" and row["plasmid_share"] == 1.0 and row["source"] == nc.SOURCE

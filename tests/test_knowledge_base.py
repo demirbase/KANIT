@@ -98,10 +98,12 @@ def built(tmp_path_factory):
                  ).to_csv(p["metadata_file"], index=False)
     # the data snapshot (00a): NCBI identifiers and snapshot.json
     meta = p["metadata_file"].parent
-    pd.DataFrame({"genome_id": ids, "taxon_id": ["562"] * (n - 1) + ["83334"],
+    pd.DataFrame({"genome_id": ids, "genome_name": "Escherichia coli",
+                  "taxon_id": ["562"] * (n - 1) + ["83334"], "genome_status": "WGS",
                   "assembly_accession": ["GCA_1.1"] + [""] * (n - 1),
                   "sra_accession": ["SRR1,SRR2"] + [""] * (n - 1),
-                  "biosample_accession": [f"SAMN{i}" for i in range(n)]}).to_csv(
+                  "biosample_accession": [f"SAMN{i}" for i in range(n)],
+                  "bioproject_accession": "", "contigs": 80, "genome_length": 5_000_000}).to_csv(
         meta / "genomes.csv", index=False)
     (meta / "snapshot.json").write_text(json.dumps({
         "frozen_at": "2026-10-20T10:00:00+00:00", "n_genomes": n,
@@ -332,3 +334,21 @@ def test_a_grade_that_does_not_follow_its_layers_stops_the_build(built, tmp_path
             _script("build_kb.py").build(config, out, kb_version="bad")
     finally:
         shutil.move(tmp_path / "mda.csv", p["layers_dir"] / "mda.csv")
+
+
+def test_outputs_follow_the_contract(built):
+    """Every table the steps wrote here passes its schema in config/output_contract.yaml."""
+    from lib import contract
+    config = built[0]
+    checked = []
+    for tid, t in contract.load()["tables"].items():
+        try:
+            path = contract.table_path(tid, config, ORG, AB)
+        except KeyError:                      # a location this synthetic run does not set
+            continue
+        if path.exists():
+            assert contract.validate_csv(path, t) == [], (tid, path)
+            checked.append(tid)
+    assert {"panel_decisions", "genome_qc", "model_patterns", "oof_predictions", "candidates",
+            "cpss_layer", "prevalence_layer", "mda_layer", "pyseer_layer", "card_unitigs",
+            "grades_patterns", "rgi_hits", "external_comparison"} <= set(checked), checked

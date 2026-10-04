@@ -100,6 +100,12 @@ def build(organism: str, out_dir: Path, config: dict | None = None,
             sys.exit(f"ERROR: {len(missing)} candidate unitig(s) of {organism} were not "
                      f"searched yet; run the CONTEXT entry (18 query) first.")
     t.to_csv(out_dir / "unitig_context.csv", index=False)
+    hits = t[t["n_hits"] > 0] if "n_hits" in t else t.iloc[0:0]
+    (out_dir / "context_summary.json").write_text(json.dumps({
+        "organism": organism, "n_unitigs": len(t), "n_with_hits": len(hits),
+        "mean_plasmid_share": None if hits.empty else round(float(hits["plasmid_share"].mean()), 4),
+        "nt_releases": sorted(t["nt_release"].dropna().astype(str).unique()) if "nt_release" in t else []},
+        indent=2) + "\n")
     return t
 
 

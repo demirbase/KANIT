@@ -179,6 +179,13 @@ def compare(organism, config, out_dir: Path) -> pd.DataFrame:
         parts.append(ex.compare_model(f"{organism}__{ab}", truth, preds))
     table = pd.concat(parts, ignore_index=True)
     table.to_csv(out_dir / "comparison.csv", index=False)
+    ok = table[table["assessable"] == 1]
+    (out_dir / "external_summary.json").write_text(json.dumps({
+        "organism": organism, "n_models": int(table["model_id"].nunique()),
+        "assessable_models": {t: int(n) for t, n in ok.groupby("tool").size().items()},
+        "median_balanced_accuracy": {t: round(float(v), 4) for t, v in
+                                     ok.groupby("tool")["balanced_accuracy"].median().items()}},
+        indent=2) + "\n")
     return table
 
 

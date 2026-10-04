@@ -215,6 +215,11 @@ def test_script_end_to_end(tmp_path, monkeypatch):
     s = json.loads((tmp_path / "x" / "hypotheses" / "hypotheses.json").read_text())
     assert s["H2"]["supported"] and s["reference_missing"] == [] and s["H6"]["n_mutational"] == 2
     assert (tmp_path / "x" / "hypotheses" / "h3_pairs.csv").exists()
+    from lib import contract  # the tables follow the output contract
+    for tid in ("h1_models", "h2_models", "h3_pairs", "h6_models", "h7_determinants",
+                "h7_unmapped_symbols"):
+        path = contract.table_path(tid, config)
+        assert contract.validate_csv(path, contract.load()["tables"][tid]) == [], tid
     pd.DataFrame({"genome_id": ["g0"]}).to_csv(ext / "amrfinder_genomes.csv", index=False)
     with pytest.raises(SystemExit, match="did not analyse"):
         m.main()

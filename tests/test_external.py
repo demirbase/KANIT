@@ -169,3 +169,11 @@ printf 'ciprofloxacin\\tquinolone\\t%s\\t1\\tx\\n' "$r" > "$o/pheno_table_escher
     assert t.loc["rgi_all", "balanced_accuracy"] == 1.0
     assert t.loc["model", "balanced_accuracy"] == 1.0
     assert json.loads((ext / "versions.json").read_text())["resfinder"] == "4.5.0"
+    summary = json.loads((ext / "external_summary.json").read_text())
+    assert summary["n_models"] == 1 and summary["assessable_models"]["model"] == 1
+    from lib import contract  # the outputs follow the output contract
+    for tid, name in (("external_comparison", "comparison.csv"),
+                      ("amrfinder_calls", "amrfinder_calls.csv"),
+                      ("amrfinder_genomes", "amrfinder_genomes.csv"),
+                      ("resfinder_calls", "resfinder_calls.csv")):
+        assert contract.validate_csv(ext / name, contract.load()["tables"][tid]) == [], tid
