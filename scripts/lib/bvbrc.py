@@ -1,21 +1,33 @@
-#!/usr/bin/env python3
-"""
-BV-BRC AMR table cleaning + binary pivoting (used by steps 00a / 00).
+"""BV-BRC data of one organism: the queries, the assemblies and the binary
+phenotypes (protocol §2.1–2.2; step 00a).
 
-Pure data logic — no network, import-light — so it is fully unit-testable on
-synthetic frames. The download itself lives in 00a_download_bvbrc.py.
+Genomes: the public genomes at or below the organism's taxa (``taxon_lineage_ids``),
+with their NCBI identifiers. Records: their antimicrobial susceptibility records
+with laboratory evidence, asked for by genome identifier (``genome_amr`` cannot
+select by lineage).
 
-Cleaning rules (agreed):
-  1. Keep only EUCAST / CLSI testing standards (case-insensitive; combined forms
-     like "EUCAST, CLSI" / "EUCAST and CLSI" kept; NARMS / SFM / BSAC and blank
-     dropped).
-  2. Keep only Resistant / Susceptible phenotypes -> label 1 / 0
-     (Intermediate, Non-susceptible, Susceptible-dose dependent, undefined dropped).
-  3. Normalise antibiotic names to canonical registry spelling.
-  4. Resolve duplicate / conflicting (genome, antibiotic) cells:
-       majority vote -> on a tie, the most recent (max testing_standard_year)
-       -> still tied / no year: drop the cell (NaN) and count it.
+A record gives a phenotype when its evidence is "Laboratory Method", it was tested
+against EUCAST or CLSI breakpoints (case-insensitive; combined forms such as
+"EUCAST, CLSI" included) and its phenotype is Resistant (1) or Susceptible (0).
+Antibiotic names are normalised through the registry; a name that is not a
+registered antibiotic is kept and reported (the panel excludes labels that are not
+a single drug). Identical records count once. The records of one genome and
+antibiotic are resolved by majority; a tie by the records of the most recent
+testing-standard year; a cell still tied is dropped.
+
+An assembly passes when its number of sequences and its length are those of the
+genome record.
 """
+from __future__ import annotations
+
+import hashlib
+import io
+import re
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections.abc import Callable
 
 import numpy as np
 import pandas as pd
@@ -23,226 +35,245 @@ import pandas as pd
 from lib.registry import antibiotic_to_class
 from lib.registry import normalize_antibiotic as _default_normalize
 
-# Accepted testing-standard substrings (case-insensitive)
-_ALLOWED_STANDARD_SUBSTRINGS = ("eucast", "clsi")
+API = "https://www.bv-brc.org/api"
+USER_AGENT = "KANIT/1.0 (scripts/00a_download_bvbrc.py)"   # the API refuses requests without one
+PAGE = 25000                  # rows per request
+ID_BATCH = 1000               # genome identifiers per record query
 
-# Phenotype text -> binary label. The Intermediate / Non-susceptible family is
-# handled by the `intermediate_policy` argument to clean_amr_table (default
-# 'drop' = binary R/S only).
-_PHENOTYPE_MAP = {"resistant": 1, "susceptible": 0}
-_INTERMEDIATE_TERMS = ("intermediate", "non-susceptible", "nonsusceptible",
-                       "susceptible-dose dependent", "susceptible dose dependent", "sdd")
+LABORATORY = "Laboratory Method"
+STANDARDS = ("eucast", "clsi")
+PHENOTYPES = {"resistant": 1, "susceptible": 0}
 
-# Map raw column headers (API snake_case OR web-export Title Case) -> canonical
-_COLUMN_ALIASES = {
-    "genome id": "genome_id",
-    "genome_id": "genome_id",
-    "genome name": "genome_name",
-    "genome_name": "genome_name",
-    "antibiotic": "antibiotic",
-    "resistant phenotype": "resistant_phenotype",
-    "resistant_phenotype": "resistant_phenotype",
-    "testing standard": "testing_standard",
-    "testing_standard": "testing_standard",
-    "testing standard year": "testing_standard_year",
-    "testing_standard_year": "testing_standard_year",
-    "taxon id": "taxon_id",
-    "taxon_id": "taxon_id",
-    "evidence": "evidence",
-}
+GENOME_FIELDS = ["genome_id", "genome_name", "taxon_id", "genome_status", "assembly_accession",
+                 "sra_accession", "biosample_accession", "bioproject_accession", "contigs",
+                 "genome_length"]
+RECORD_FIELDS = ["genome_id", "antibiotic", "resistant_phenotype", "evidence",
+                 "testing_standard", "testing_standard_year", "laboratory_typing_method",
+                 "measurement", "measurement_sign", "measurement_value", "measurement_unit"]
+
+# (url, POST body or None, Accept) -> (body, headers)
+Fetch = Callable[[str, bytes | None, str], tuple[bytes, dict]]
 
 
-def standardise_columns(df):
-    """
-    Return a copy with column names mapped to the canonical snake_case set.
-
-    Handles both the HTTP API / web-export headers and the BV-BRC CLI headers,
-    which prefix fields with their table name (e.g. ``genome_drug.antibiotic``,
-    ``genome.genome_id``) — the prefix before the last '.' is stripped first.
-    """
-    rename = {}
-    for col in df.columns:
-        key = str(col).strip().lower()
-        if "." in key:                       # CLI prefix, e.g. genome_drug.antibiotic
-            key = key.rsplit(".", 1)[-1]
-        if key in _COLUMN_ALIASES:
-            rename[col] = _COLUMN_ALIASES[key]
-    return df.rename(columns=rename)
+def _quote(rql: str) -> str:
+    return urllib.parse.quote(rql, safe="(),&=+*/:")
 
 
-def _resolve_group(labels, years):
-    """
-    Resolve one (genome, antibiotic) group to a single label.
+def http_fetch(url: str, data: bytes | None, accept: str, *, timeout: int = 300) -> tuple[bytes, dict]:
+    headers = {"User-Agent": USER_AGENT, "Accept": accept}
+    if data is not None:
+        headers["Content-Type"] = "application/rqlquery+x-www-form-urlencoded"
+    req = urllib.request.Request(url, data=data, headers=headers,
+                                 method="GET" if data is None else "POST")
+    with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context()) as r:
+        return r.read(), dict(r.headers)
 
-    Returns (label_or_nan, conflicted_bool). conflicted is True when the group
-    contained both classes (regardless of whether the tie-break succeeded).
-    """
-    lab = pd.Series(labels)
-    yr = pd.to_numeric(pd.Series(years).reset_index(drop=True), errors="coerce")
-    lab = lab.reset_index(drop=True)
-    mask = lab.notna()
-    lab = lab[mask].astype(int)
-    yr = yr[mask]                       # keep labels and years positionally aligned
-    if lab.empty:
-        return np.nan, False
-    counts = lab.value_counts()
-    if len(counts) == 1:
-        return int(counts.index[0]), False
-    # both classes present -> conflict
-    n1, n0 = int(counts.get(1, 0)), int(counts.get(0, 0))
+
+def _ssl_context():
+    import ssl
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:                       # pragma: no cover - certifi is a requirement
+        return ssl.create_default_context()
+
+
+class Api:
+    """The BV-BRC data API; transient failures (network, 429, 5xx) are retried."""
+
+    def __init__(self, fetch: Fetch = http_fetch, *, tries: int = 4, wait: float = 15.0,
+                 sleep: Callable[[float], None] = time.sleep):
+        self.fetch, self.tries, self.wait, self.sleep = fetch, tries, wait, sleep
+
+    def _call(self, url: str, data: bytes | None, accept: str) -> tuple[bytes, dict]:
+        for attempt in range(self.tries):
+            try:
+                return self.fetch(url, data, accept)
+            except urllib.error.HTTPError as e:
+                if (e.code < 500 and e.code != 429) or attempt == self.tries - 1:
+                    raise
+            except (urllib.error.URLError, TimeoutError, ConnectionError):
+                if attempt == self.tries - 1:
+                    raise
+            self.sleep(self.wait * 2 ** attempt)
+        raise AssertionError("unreachable")
+
+    def version(self) -> str:
+        """The version the API's root page reports."""
+        body, _ = self._call(f"{API}/", None, "text/html")
+        m = re.search(r"Version:\s*([^<\s]+)", body.decode("utf-8", "replace"))
+        if not m:
+            raise RuntimeError("the BV-BRC API root page reports no version")
+        return m.group(1)
+
+    def page(self, endpoint: str, rql: str) -> tuple[pd.DataFrame, int]:
+        """One page of a query (CSV) and the number of rows of the whole result."""
+        body, headers = self._call(f"{API}/{endpoint}/", _quote(rql).encode(), "text/csv")
+        rng = {k.lower(): v for k, v in headers.items()}.get("content-range", "")
+        m = re.search(r"/(\d+)\s*$", rng)
+        if not m:
+            raise RuntimeError(f"{endpoint}: no Content-Range in the response")
+        text = body.decode("utf-8")
+        df = (pd.read_csv(io.StringIO(text), dtype=str, keep_default_na=False)
+              if text.strip() else pd.DataFrame())
+        return df, int(m.group(1))
+
+    def rows(self, endpoint: str, flt: str, fields: list[str], sort: str) -> pd.DataFrame:
+        """Every row of a query, page by page; a result that changes meanwhile stops it."""
+        parts, start, total = [], 0, None
+        while total is None or start < total:
+            df, n = self.page(endpoint, f"{flt}&select({','.join(fields)})&sort({sort})"
+                                        f"&limit({PAGE},{start})")
+            if total is not None and n != total:
+                raise RuntimeError(f"{endpoint}: the result changed while it was read "
+                                   f"({total} -> {n} rows); query again")
+            total = n
+            parts.append(df)
+            start += PAGE
+        out = pd.concat([p for p in parts if not p.empty] or [pd.DataFrame(columns=fields)],
+                        ignore_index=True)
+        out = out.reindex(columns=fields, fill_value="")
+        if len(out) != total:
+            raise RuntimeError(f"{endpoint}: read {len(out)} of {total} rows")
+        return out
+
+    def fasta(self, genome_id: str) -> bytes:
+        body, _ = self._call(f"{API}/genome_sequence/?eq(genome_id,{genome_id})"
+                             "&sort(+sequence_id)&limit(100000)", None, "application/dna+fasta")
+        return body
+
+
+# ---- queries ------------------------------------------------------------------------
+def genome_filter(taxids: list[int]) -> str:
+    return f"and(in(taxon_lineage_ids,({','.join(str(t) for t in taxids)})),eq(public,true))"
+
+
+def record_filter(genome_ids: list[str]) -> str:
+    return f'and(in(genome_id,({",".join(genome_ids)})),eq(evidence,"{LABORATORY}"))'
+
+
+def genomes(api: Api, taxids: list[int]) -> pd.DataFrame:
+    g = api.rows("genome", genome_filter(taxids), GENOME_FIELDS, "+genome_id")
+    if g["genome_id"].duplicated().any():
+        raise RuntimeError("genome: one identifier twice")
+    return g
+
+
+def records(api: Api, genome_ids: list[str], *,
+            progress: Callable[[int, int], None] | None = None) -> pd.DataFrame:
+    """Laboratory records of the genomes, in batches of ID_BATCH identifiers."""
+    parts = []
+    for s in range(0, len(genome_ids), ID_BATCH):
+        parts.append(api.rows("genome_amr", record_filter(genome_ids[s:s + ID_BATCH]),
+                              RECORD_FIELDS, "+id"))
+        if progress:
+            progress(min(s + ID_BATCH, len(genome_ids)), len(genome_ids))
+    out = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=RECORD_FIELDS)
+    return out.sort_values(RECORD_FIELDS, ignore_index=True)
+
+
+# ---- phenotypes -----------------------------------------------------------------------
+def resolve(labels, years) -> tuple[int | None, str]:
+    """Label of one genome × antibiotic cell and how it was reached: 'single',
+    'majority', 'recent_year' or 'tied' (label None)."""
+    lab = np.asarray(labels, dtype=int)
+    n1 = int(lab.sum())
+    n0 = lab.size - n1
+    if n0 == 0 or n1 == 0:
+        return int(lab[0]), "single"
     if n1 != n0:
-        return (1 if n1 > n0 else 0), True
-    # tie -> most recent year. nanargmax (NOT argmax): a partially-missing year
-    # column would otherwise make np.argmax return the NaN row and pick the wrong
-    # label. Ignore NaN years; drop the cell if no year is available at all.
-    if yr.notna().any():
-        idx = int(np.nanargmax(yr.to_numpy(dtype=float)))
-        return int(lab.to_numpy()[idx]), True
-    return np.nan, True  # unresolved -> drop the cell
+        return int(n1 > n0), "majority"
+    yr = pd.to_numeric(pd.Series(list(years)), errors="coerce").to_numpy(dtype=float)
+    if np.isnan(yr).all():
+        return None, "tied"
+    recent = lab[yr == np.nanmax(yr)]
+    r1 = int(recent.sum())
+    r0 = recent.size - r1
+    return (None, "tied") if r1 == r0 else (int(r1 > r0), "recent_year")
 
 
-def clean_amr_table(df, normalize_fn=None, intermediate_policy="drop",
-                    strict_antibiotics=False):
-    """
-    Clean a raw BV-BRC genome_amr frame into a one-row-per-(genome, antibiotic)
-    long table with a binary `label`.
-
-    Args:
-        df:                 raw frame (API or web-export columns).
-        normalize_fn:       antibiotic name normaliser (default: registry).
-        intermediate_policy: how to treat the Intermediate / Non-susceptible / SDD
-            family — 'drop' (default, binary R/S only), 'resistant' (fold into R,
-            CLSI-cautious), or 'susceptible'.
-        strict_antibiotics: if True, drop rows whose (normalised) antibiotic is not
-            a known registry drug (default False: keep + report, so genuinely new
-            drugs are never silently lost).
-
-    Returns:
-        (cleaned_long_df, report_dict)
-        cleaned_long_df columns: ['genome_id', 'antibiotic', 'label']
-        report_dict: row/pair counts at each step + intermediate_policy,
-        phenotype_dropped, unknown_antibiotics.
-    """
+def clean_amr_table(df: pd.DataFrame, normalize_fn=None) -> tuple[pd.DataFrame, dict]:
+    """(genome_id, antibiotic, label) of every resolved cell and the counts of every rule."""
     normalize_fn = normalize_fn or _default_normalize
-    if intermediate_policy not in ("drop", "resistant", "susceptible"):
-        raise ValueError(
-            f"intermediate_policy must be drop|resistant|susceptible, got {intermediate_policy!r}")
-    report = {"intermediate_policy": intermediate_policy}
-    df = standardise_columns(df)
-    report["rows_raw"] = len(df)
-
-    if "genome_id" not in df or "antibiotic" not in df or "resistant_phenotype" not in df:
-        raise ValueError("Input must have genome_id, antibiotic, resistant_phenotype columns")
-
+    need = ["genome_id", "antibiotic", "resistant_phenotype", "evidence", "testing_standard",
+            "testing_standard_year"]
+    missing = [c for c in need if c not in df.columns]
+    if missing:
+        raise ValueError(f"records lack column(s) {missing}")
+    rep: dict = {"records": len(df)}
     df = df.drop_duplicates()
-    report["rows_dedup"] = len(df)
+    rep["records_distinct"] = len(df)
+    df = df[df["evidence"].fillna("").astype(str).str.strip() == LABORATORY]
+    rep["records_laboratory"] = len(df)
+    std = df["testing_standard"].fillna("").astype(str).str.lower()
+    df = df[std.str.contains("|".join(STANDARDS))]
+    rep["records_eucast_clsi"] = len(df)
+    pheno = df["resistant_phenotype"].fillna("").astype(str).str.strip().str.lower()
+    keep = pheno.isin(list(PHENOTYPES))
+    rep["phenotypes_dropped"] = {str(k): int(v) for k, v in pheno[~keep].value_counts().items()}
+    df = df[keep].assign(label=pheno[keep].map(PHENOTYPES).astype(int))
+    rep["records_resistant_susceptible"] = len(df)
+    names = df["antibiotic"].map(normalize_fn)
+    df = df.assign(antibiotic=names)[names.notna() & (names.astype(str).str.len() > 0)]
+    df = df.assign(genome_id=df["genome_id"].astype(str))
+    rep["antibiotics_not_registered"] = sorted(
+        {a for a in df["antibiotic"].unique() if antibiotic_to_class(a) is None})
 
-    # 0) evidence filter — DROP software predictions. Note the polarity: this
-    #    excludes "Computational Method" rather than requiring "Laboratory
-    #    Method", because BV-BRC leaves `evidence` EMPTY on many real CLSI/EUCAST
-    #    measurements. Requiring "laborator" discarded those (measured 2026-07-15:
-    #    26 608 such rows for K. pneumoniae alone), and dropping a CLSI-standard
-    #    MIC because a neighbouring column was blank is not defensible.
-    #
-    #    Empty-evidence rows are NOT waved through: step 1 below keeps only
-    #    EUCAST/CLSI testing standards, so a row with neither evidence nor a
-    #    standard still goes. The two filters compose — this one removes what is
-    #    known to be computational, that one demands positive proof of real AST.
-    #    (Computational rows carry no testing_standard either, so step 1 would
-    #    catch them anyway; this stays explicit rather than relying on that.)
-    #    "Computational" hides in TWO columns, not one: besides evidence=
-    #    "Computational Method", BV-BRC also has rows with an empty evidence but
-    #    laboratory_typing_method="Computational Prediction" (9 814 for
-    #    K. pneumoniae, 209 for A. baumannii — measured 2026-07-15). Those slip
-    #    past an evidence-only filter. They happen to carry no testing_standard,
-    #    so step 1 currently catches every one of them — but that is luck, not
-    #    design: loosen step 1 some day and software predictions would quietly
-    #    become training labels. Check both columns explicitly.
-    _comp = None
-    for col in ("evidence", "laboratory_typing_method"):
-        if col in df.columns:
-            # fillna("") before astype(str): newer pandas can leave NaN as a float
-            # after astype(str).str.lower(), which then breaks substring tests.
-            hit = df[col].fillna("").astype(str).str.lower().str.contains(
-                "computational", na=False)
-            _comp = hit if _comp is None else (_comp | hit)
-    if _comp is not None:
-        df = df[~_comp]
-        report["rows_after_evidence"] = len(df)
-
-    # 1) testing standard filter (EUCAST / CLSI only). Vectorised + NaN-safe:
-    #    empty / missing testing_standard rows are simply dropped (don't match).
-    if "testing_standard" in df.columns:
-        std = df["testing_standard"].fillna("").astype(str).str.lower()
-        keep = std.str.contains("|".join(_ALLOWED_STANDARD_SUBSTRINGS), na=False)
-        df = df[keep]
-    else:
-        report["warning"] = "no testing_standard column — standard filter skipped"
-    report["rows_after_standard"] = len(df)
-
-    # 2) phenotype filter + label. intermediate_policy folds the Intermediate /
-    #    Non-susceptible / SDD family into R (or S), or drops it (default).
-    pheno = df["resistant_phenotype"].astype(str).str.strip().str.lower()
-    pmap = dict(_PHENOTYPE_MAP)
-    if intermediate_policy in ("resistant", "susceptible"):
-        tgt = 1 if intermediate_policy == "resistant" else 0
-        for term in _INTERMEDIATE_TERMS:
-            pmap[term] = tgt
-    # transparency (Methods): what phenotype strings get dropped, and how many
-    report["phenotype_dropped"] = pheno[~pheno.isin(pmap)].value_counts().to_dict()
-    df = df.assign(label=pheno.map(pmap))
-    df = df[df["label"].notna()].copy()
-    df["label"] = df["label"].astype(int)
-    report["rows_after_phenotype"] = len(df)
-
-    # 3) normalise antibiotic names to the registry's canonical spelling.
-    df["antibiotic"] = df["antibiotic"].apply(normalize_fn)
-    df = df[df["antibiotic"].notna() & (df["antibiotic"].astype(str).str.len() > 0)]
-    # data hygiene: surface (and optionally drop) names that are NOT a known
-    # registry drug — usually phenotype labels ("fluoroquinolones", "extended
-    # spectrum beta lactamase"), never real ML targets.
-    unknown = sorted({a for a in df["antibiotic"].unique() if antibiotic_to_class(a) is None})
-    report["unknown_antibiotics"] = unknown
-    report["n_unknown_antibiotic_names"] = len(unknown)
-    if strict_antibiotics and unknown:
-        df = df[df["antibiotic"].apply(lambda a: antibiotic_to_class(a) is not None)]
-
-    # 4) conflict resolution per (genome_id, antibiotic)
-    if "testing_standard_year" not in df.columns:
-        df["testing_standard_year"] = np.nan
-
-    resolved, n_conflict, n_unresolved = [], 0, 0
-    for (gid, ab), grp in df.groupby(["genome_id", "antibiotic"], sort=False):
-        label, conflicted = _resolve_group(grp["label"].values, grp["testing_standard_year"].values)
-        if conflicted:
-            n_conflict += 1
-        if pd.isna(label):
-            n_unresolved += 1
-            continue
-        resolved.append({"genome_id": str(gid), "antibiotic": ab, "label": int(label)})
-
-    cleaned = pd.DataFrame(resolved, columns=["genome_id", "antibiotic", "label"])
-    report["pairs_resolved"] = len(cleaned)
-    report["pairs_conflicted"] = n_conflict
-    report["pairs_unresolved_dropped"] = n_unresolved
-    report["n_genomes"] = cleaned["genome_id"].nunique()
-    report["n_antibiotics"] = cleaned["antibiotic"].nunique()
-    return cleaned, report
+    key = ["genome_id", "antibiotic"]
+    agg = df.groupby(key, sort=True)["label"].agg(["sum", "size"])
+    cells = (agg["sum"] > 0).astype(int)
+    mixed = agg.index[(agg["sum"] > 0) & (agg["sum"] < agg["size"])]
+    how = {"majority": 0, "recent_year": 0, "tied": 0}
+    conflicting = df.merge(mixed.to_frame(index=False), on=key)
+    for k, grp in conflicting.groupby(key, sort=True):
+        label, h = resolve(grp["label"].to_numpy(), grp["testing_standard_year"].to_numpy())
+        how[h] += 1
+        cells[k] = -1 if label is None else label
+    cells = cells[cells >= 0]
+    cleaned = pd.DataFrame({"genome_id": cells.index.get_level_values(0),
+                            "antibiotic": cells.index.get_level_values(1),
+                            "label": cells.to_numpy(dtype=int)})
+    rep["cells"] = len(agg)
+    rep["cells_conflicting"] = len(mixed)
+    rep["cells_resolved_by_majority"] = how["majority"]
+    rep["cells_resolved_by_recent_year"] = how["recent_year"]
+    rep["cells_dropped_tied"] = how["tied"]
+    rep["n_genomes"] = int(cleaned["genome_id"].nunique())
+    rep["n_antibiotics"] = int(cleaned["antibiotic"].nunique())
+    return cleaned, rep
 
 
-def pivot_binary(cleaned_long):
-    """
-    Pivot the cleaned long table into a wide binary phenotype matrix.
-
-    Returns a frame with a 'Genome ID' column followed by one column per
-    antibiotic (values in {0, 1}; NaN = untested for that genome/antibiotic).
-    """
+def pivot_binary(cleaned_long: pd.DataFrame) -> pd.DataFrame:
+    """'Genome ID' and one 0/1 column per antibiotic (NaN: not tested)."""
     if cleaned_long.empty:
         return pd.DataFrame(columns=["Genome ID"])
-    wide = cleaned_long.pivot_table(
-        index="genome_id", columns="antibiotic", values="label", aggfunc="first"
-    )
+    wide = cleaned_long.pivot_table(index="genome_id", columns="antibiotic", values="label",
+                                    aggfunc="first")
     wide = wide.reindex(sorted(wide.columns), axis=1)
     wide = wide.reset_index().rename(columns={"genome_id": "Genome ID"})
     wide.columns.name = None
     return wide
+
+
+# ---- assemblies -----------------------------------------------------------------------
+def check_fasta(data: bytes, contigs: str, length: str) -> tuple[int, int, str]:
+    """(sequences, length, problem) of an assembly against its genome record; problem
+    is '' when both agree, or when the record gives neither."""
+    if not data.lstrip().startswith(b">"):
+        return 0, 0, "not FASTA"
+    n = total = 0
+    for line in data.splitlines():
+        if line.startswith(b">"):
+            n += 1
+        else:
+            total += len(line.strip())
+    problems = []
+    if str(contigs).strip() and int(float(contigs)) != n:
+        problems.append(f"{n} sequences, the record has {int(float(contigs))}")
+    if str(length).strip() and int(float(length)) != total:
+        problems.append(f"{total} bp, the record has {int(float(length))}")
+    return n, total, "; ".join(problems)
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()

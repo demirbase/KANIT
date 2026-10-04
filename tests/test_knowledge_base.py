@@ -96,6 +96,18 @@ def built(tmp_path_factory):
         p[d].mkdir(parents=True, exist_ok=True)
     pd.DataFrame({"Genome ID": ids, AB: y, "ampicillin": np.where(np.arange(n) < 20, 1, np.nan)}
                  ).to_csv(p["metadata_file"], index=False)
+    # the data snapshot (00a): NCBI identifiers and snapshot.json
+    meta = p["metadata_file"].parent
+    pd.DataFrame({"genome_id": ids, "taxon_id": ["562"] * (n - 1) + ["83334"],
+                  "assembly_accession": ["GCA_1.1"] + [""] * (n - 1),
+                  "sra_accession": ["SRR1,SRR2"] + [""] * (n - 1),
+                  "biosample_accession": [f"SAMN{i}" for i in range(n)]}).to_csv(
+        meta / "genomes.csv", index=False)
+    (meta / "snapshot.json").write_text(json.dumps({
+        "frozen_at": "2026-10-20T10:00:00+00:00", "n_genomes": n,
+        "query": {"source": "https://www.bv-brc.org/api", "api_version": "1.9.3",
+                  "queried_at": "2026-10-20T08:00:00+00:00", "genome_query": "g",
+                  "record_query": "r"}}))
     pd.DataFrame({"genome_id": ids, "completeness": 99.0, "contamination": 0.5, "n50": 90000,
                   "n_contigs": 80, "total_length": 5_000_000, "pass_completeness": True,
                   "pass_contamination": True, "pass_n50": True, "pass_contigs": True,
@@ -269,6 +281,15 @@ def test_build_loads_every_layer_and_rechecks_the_grades(built):
         assert tools["rgi"] == "6.0.8" and "xgboost" in tools
         assert conn.execute("SELECT version, downloaded_on FROM reference_database").fetchone() \
             == ("4.0.1", "2026-11-02")
+        assert conn.execute("SELECT ncbi_taxid, assembly_accession, sra_accession, "
+                            "biosample_accession FROM genome ORDER BY genome_id").fetchone() \
+            == (562, "GCA_1.1", "SRR1,SRR2", "SAMN0")
+        assert conn.execute("SELECT count(*) FROM genome WHERE assembly_accession IS NULL "
+                            "AND ncbi_taxid = 83334").fetchone()[0] == 1
+        snap = conn.execute("SELECT api_version, n_genomes, sha256 FROM data_snapshot").fetchone()
+        assert snap[:2] == ("1.9.3", 150) and snap[2] == sha256_file(
+            p["metadata_file"].parent / "snapshot.json")
+        assert conn.execute("SELECT ncbi_taxids FROM organism").fetchone()[0] == "562"
 
 
 def test_signal_is_graded_from_its_card_variant_hit(built):

@@ -49,9 +49,15 @@ def candidate_members(organism: str, config: dict) -> pd.DataFrame:
     return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=cols)
 
 
+def entrez_query(taxids: list[int]) -> str:
+    """nt records of the organism: at or below any of its taxa."""
+    q = " OR ".join(f"txid{t}[Organism:exp]" for t in taxids)
+    return q if len(taxids) == 1 else f"({q})"
+
+
 def blast_params(organism: str, cfg: dict) -> dict:
-    taxid = int(registry.get_organism(organism)["taxid"])
-    return {"ENTREZ_QUERY": f"txid{taxid}[Organism:exp]", "WORD_SIZE": cfg["word_size"],
+    return {"ENTREZ_QUERY": entrez_query(registry.organism_taxids(organism)),
+            "WORD_SIZE": cfg["word_size"],
             "HITLIST_SIZE": cfg["max_target_seqs"], "EXPECT": cfg["evalue"]}
 
 

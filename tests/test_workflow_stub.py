@@ -42,3 +42,26 @@ def test_parameters_are_checked(tmp_path):
     assert r.returncode != 0 and "organisms" in (r.stdout + r.stderr)
     r, _ = _run(tmp_path, "--organisms", "salmonella")
     assert r.returncode != 0 and "Unknown organism" in (r.stdout + r.stderr)
+
+
+@pytest.mark.parametrize("entry, expected", [
+    ("DOWNLOAD", {"DOWNLOAD_BVBRC": 2}),
+    ("CONTEXT", {"CONTEXT_QUERY": 2, "CONTEXT_BUILD": 2})])
+def test_internet_entries(tmp_path, entry, expected):
+    r, trace = _run(tmp_path, "-entry", entry, "--organisms", "ecoli,kpneumoniae")
+    assert r.returncode == 0, r.stdout + r.stderr
+    t = pd.read_csv(trace, sep="\t")
+    assert (t["status"] == "COMPLETED").all()
+    assert t["process"].str.split(":").str[-1].value_counts().to_dict() == expected
+
+
+def test_internet_tasks_run_on_the_login_node(tmp_path):
+    """TRUBA's compute nodes have no internet: the tasks that need it run where the
+    head job runs."""
+    r = subprocess.run([NEXTFLOW, "config", "-flat", "-profile", "truba", str(PROJECT_ROOT)],
+                       cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "process.'withLabel:internet'.executor = 'local'" in r.stdout
+    for f in ("download.nf", "context.nf"):
+        text = (PROJECT_ROOT / "modules" / "local" / f).read_text()
+        assert text.count("label 'internet'") == {"download.nf": 1, "context.nf": 1}[f]

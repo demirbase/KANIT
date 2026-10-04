@@ -39,6 +39,16 @@ CREATE TABLE source_file (              -- every step output the build read
     sha256  TEXT NOT NULL,
     bytes   INTEGER NOT NULL
 );
+CREATE TABLE data_snapshot (            -- BV-BRC snapshot of each organism (00a, §2.1)
+    organism_id   TEXT PRIMARY KEY REFERENCES organism,
+    source        TEXT NOT NULL,            -- the API queried
+    api_version   TEXT NOT NULL,
+    queried_at    TEXT NOT NULL,
+    frozen_at     TEXT NOT NULL,
+    filters       TEXT NOT NULL,            -- JSON: the genome and the record queries
+    n_genomes     INTEGER NOT NULL,         -- phenotyped genomes whose assembly passed
+    sha256        TEXT NOT NULL             -- of snapshot.json (file checksums inside)
+);
 CREATE TABLE reference_database (       -- databases.py manifest (§13)
     name           TEXT PRIMARY KEY,
     version        TEXT NOT NULL,           -- read from the database itself
@@ -57,7 +67,7 @@ CREATE TABLE parameter (                -- every threshold of the protocol
 CREATE TABLE organism (
     organism_id  TEXT PRIMARY KEY,
     name         TEXT NOT NULL,
-    ncbi_taxid   INTEGER NOT NULL,
+    ncbi_taxids  TEXT NOT NULL,      -- its genomes lie at or below these taxa, ';'-joined
     gram_stain   TEXT,
     phylum       TEXT
 );
@@ -86,8 +96,10 @@ CREATE TABLE genome (
     total_length           INTEGER,
     qc_pass                INTEGER NOT NULL CHECK (qc_pass IN (0, 1)),
     lineage_cluster        TEXT,               -- PopPUNK; NULL when not assigned
-    assembly_accession     TEXT,
-    sra_accession          TEXT
+    ncbi_taxid             INTEGER NOT NULL,   -- the genome's own taxon
+    assembly_accession     TEXT,               -- NCBI identifiers where BV-BRC has them
+    sra_accession          TEXT,               -- runs ','-joined
+    biosample_accession    TEXT
 );
 CREATE TABLE phenotype (
     genome_id      TEXT NOT NULL REFERENCES genome,
@@ -490,6 +502,10 @@ def validate(conn: sqlite3.Connection) -> dict:
     ).fetchone()[0]
     if bad:
         problems.append(f"{bad} candidate(s) without exactly one primary grade")
+    bad = conn.execute("SELECT count(*) FROM organism o WHERE NOT EXISTS (SELECT 1 FROM "
+                       "data_snapshot d WHERE d.organism_id = o.organism_id)").fetchone()[0]
+    if bad:
+        problems.append(f"{bad} organism(s) without a data snapshot")
     bad = conn.execute("SELECT count(*) FROM model m WHERE (SELECT count(*) FROM "
                        "external_comparison e WHERE e.model_id = m.model_id) != 5").fetchone()[0]
     if bad:

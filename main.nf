@@ -4,7 +4,7 @@
  * docs/V1_PROTOKOL.md; every analysis setting in config/config.yaml).
  *
  * Entries, run in this order:
- *   -entry DOWNLOAD   login node (internet): genomes and phenotypes from BV-BRC
+ *   -entry DOWNLOAD   login node (internet): the data snapshot from BV-BRC
  *   (default)         quality control, lineages, panel, features, nested
  *                     cross-validation, evidence layers, grades, label
  *                     permutation and the comparison with genotype-based tools
@@ -24,7 +24,7 @@ include { GENOMES } from './subworkflows/local/genomes'
 include { MODELS } from './subworkflows/local/models'
 include { EVIDENCE } from './subworkflows/local/evidence'
 include { COMPARISON } from './subworkflows/local/comparison'
-include { DOWNLOAD_BVBRC; PREPARE_METADATA } from './modules/local/download'
+include { DOWNLOAD_BVBRC } from './modules/local/download'
 include { CONTEXT_QUERY; CONTEXT_BUILD } from './modules/local/context'
 include { BUILD_KB; HYPOTHESES } from './modules/local/kb'
 
@@ -39,14 +39,14 @@ def organisms() {
     if (unknown) {
         error "Unknown organism(s) ${unknown.join(', ')}; the registry has ${known.sort().join(', ')}"
     }
-    if (workflow.stubRun && !params.stub_panel) {
-        error "-stub-run needs --stub_panel (the panel decisions to fan the models out from)"
-    }
     wanted
 }
 
 workflow {
     def orgs = Channel.fromList(organisms())
+    if (workflow.stubRun && !params.stub_panel) {
+        error "-stub-run needs --stub_panel (the panel decisions to fan the models out from)"
+    }
     GENOMES(orgs)
     modelled = GENOMES.out.pairs.map { it.organism }.unique()
     MODELS(GENOMES.out.pairs, GENOMES.out.stores)
@@ -58,7 +58,6 @@ workflow {
 workflow DOWNLOAD {
     def orgs = Channel.fromList(organisms())
     DOWNLOAD_BVBRC(orgs)
-    PREPARE_METADATA(DOWNLOAD_BVBRC.out.done)
 }
 
 workflow CONTEXT {

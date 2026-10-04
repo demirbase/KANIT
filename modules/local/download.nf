@@ -1,5 +1,6 @@
-// Genomes and phenotypes from BV-BRC (00a, 00). Needs internet: the DOWNLOAD entry
-// runs it on a login node (F3.3 settles the snapshot rules).
+// The data snapshot of an organism from BV-BRC (00a): genomes, phenotypes and
+// assemblies, frozen with their checksums. Needs internet: the DOWNLOAD entry runs it
+// on a login node. With a frozen snapshot it only verifies the checksums.
 
 include { py; receipt; stubReceipt } from './common'
 
@@ -15,30 +16,10 @@ process DOWNLOAD_BVBRC {
 
     script:
     """
-    ${py('00a_download_bvbrc.py')} --organism ${org}
+    ${py('00a_download_bvbrc.py')} all --organism ${org}
     ${receipt('download', org)}
     """
 
     stub:
     stubReceipt('download', org)
-}
-
-process PREPARE_METADATA {
-    tag "${org}"
-    label 'light'
-
-    input:
-    tuple val(org), path(deps, stageAs: 'dep*.json')
-
-    output:
-    tuple val(org), path('receipt.json'), emit: done
-
-    script:
-    """
-    ${py('00_prepare_metadata.py')} --organism ${org}
-    ${receipt('metadata', org)}
-    """
-
-    stub:
-    stubReceipt('metadata', org)
 }

@@ -71,6 +71,11 @@ def get_organism(organism_id):
     return organisms[organism_id]
 
 
+def organism_taxids(organism_id) -> list[int]:
+    """NCBI taxonomy IDs of an organism: its genomes are those at or below these taxa."""
+    return [int(t) for t in get_organism(organism_id)["taxids"]]
+
+
 def load_antibiotic_classes():
     """
     Return {ClassDisplayName: [members]} — the exact structure the legacy

@@ -139,6 +139,7 @@ def test_step_end_to_end(tmp_path, monkeypatch):
     assert r == {"n_unitigs": 1, "n_searched_now": 1, "n_genbank_now": 1}
     put = fake.calls[0][1]
     assert put["ENTREZ_QUERY"] == "txid562[Organism:exp]" and put["HITLIST_SIZE"] == "50"
+    assert m.entrez_query([550, 61645]) == "(txid550[Organism:exp] OR txid61645[Organism:exp])"
     n_calls = len(fake.calls)
     assert m.query("ecoli", config, out, client)["n_searched_now"] == 0   # from the cache
     assert len(fake.calls) == n_calls

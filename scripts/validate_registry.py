@@ -83,13 +83,24 @@ def _check_registry(errors: list[str], warnings: list[str]) -> None:
         if str(ab).lower() not in seen:
             warnings.append(f"amrfinder_keywords lists '{ab}' which is not a class member")
 
-    # 6) organisms: lowercase slugs and the fields the pipeline reads
+    # 6) organisms: lowercase slugs and the fields the pipeline reads; taxids a list
+    #    of positive integers, no taxon in two organisms
+    owner: dict[int, str] = {}
     for slug, block in registry.load_organisms().items():
         if not _SLUG_RE.match(slug):
             errors.append(f"organism slug '{slug}' is not lowercase snake_case")
-        for field in ("display_name", "taxid", "gram_stain", "phylum"):
-            if block.get(field) in (None, ""):
+        for field in ("display_name", "taxids", "gram_stain", "phylum"):
+            if block.get(field) in (None, "", []):
                 errors.append(f"organism '{slug}' has no {field}")
+        taxids = block.get("taxids") or []
+        if not isinstance(taxids, list) or not all(
+                isinstance(t, int) and not isinstance(t, bool) and t > 0 for t in taxids):
+            errors.append(f"organism '{slug}': taxids must be a list of positive integers")
+            continue
+        for t in taxids:
+            if t in owner:
+                errors.append(f"taxon {t} is listed under '{owner[t]}' and '{slug}'")
+            owner[t] = slug
 
 
 def _check_kb(db: Path, errors: list[str], warnings: list[str]) -> None:

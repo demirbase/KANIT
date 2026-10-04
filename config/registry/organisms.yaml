@@ -12,7 +12,8 @@
 #   display_name        scientific name, as shown in tables and figures
 #   amrfinder_organism  AMRFinderPlus --organism (enables its point mutations; step 16)
 #   resfinder_species   ResFinder -s (selects its PointFinder database; step 16)
-#   taxid               NCBI taxonomy ID of the organism
+#   taxids              NCBI taxonomy IDs of the organism: its genomes are the BV-BRC
+#                       genomes at or below these taxa (protocol §2.1)
 #   gram_stain, phylum  reference data for the knowledge base
 #   lineage             optional PopPUNK overrides of config.yaml `lineage:`
 # Slugs are lowercase snake_case: they become path components.
@@ -24,7 +25,7 @@ organisms:
     display_name: "Escherichia coli"
     amrfinder_organism: Escherichia
     resfinder_species: "Escherichia coli"
-    taxid: 562
+    taxids: [562]
     gram_stain: negative
     phylum: Pseudomonadota
 
@@ -32,7 +33,7 @@ organisms:
     display_name: "Klebsiella pneumoniae"
     amrfinder_organism: Klebsiella_pneumoniae
     resfinder_species: "Klebsiella"
-    taxid: 573
+    taxids: [573]
     gram_stain: negative
     phylum: Pseudomonadota
 
@@ -40,7 +41,7 @@ organisms:
     display_name: "Staphylococcus aureus"
     amrfinder_organism: Staphylococcus_aureus
     resfinder_species: "Staphylococcus aureus"
-    taxid: 1280
+    taxids: [1280]
     gram_stain: positive
     phylum: Bacillota
     # PopPUNK override. What IS established: S. aureus is the panel's most clonal
@@ -61,7 +62,7 @@ organisms:
     display_name: "Acinetobacter baumannii"
     amrfinder_organism: Acinetobacter_baumannii
     resfinder_species: "Acinetobacter baumannii"
-    taxid: 470
+    taxids: [470]
     gram_stain: negative
     phylum: Pseudomonadota
     # PopPUNK (docs/literature/E3.md §5): A. baumannii needs no special model or
@@ -93,7 +94,7 @@ organisms:
     display_name: "Pseudomonas aeruginosa"
     amrfinder_organism: Pseudomonas_aeruginosa
     resfinder_species: "Pseudomonas aeruginosa"
-    taxid: 287
+    taxids: [287]
     gram_stain: negative
     phylum: Pseudomonadota
 
@@ -101,7 +102,7 @@ organisms:
     display_name: "Enterococcus faecium"
     amrfinder_organism: Enterococcus_faecium
     resfinder_species: "Enterococcus faecium"
-    taxid: 1352
+    taxids: [1352]
     gram_stain: positive
     phylum: Bacillota
 
@@ -109,6 +110,6 @@ organisms:
     display_name: "Enterobacter cloacae complex"
     amrfinder_organism: Enterobacter_cloacae
     resfinder_species: "Enterobacter cloacae"
-    taxid: 550
+    taxids: [550, 61645, 158836, 1812935, 299767, 881260]
     gram_stain: negative
     phylum: Pseudomonadota

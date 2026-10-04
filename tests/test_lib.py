@@ -234,6 +234,21 @@ def test_validate_registry_rejects_a_class_without_card_terms(monkeypatch):
     assert any("unknown class 'deadclass'" in e for e in errors), errors
 
 
+def test_validate_registry_checks_taxids(monkeypatch):
+    """Every organism lists its taxa; a taxon belongs to one organism only."""
+    vr = _validate_registry_module()
+    orgs = {k: dict(v) for k, v in registry.load_organisms().items()}
+    assert registry.organism_taxids("enterobacter_cloacae") == [550, 61645, 158836, 1812935,
+                                                                299767, 881260]
+    orgs["ecoli"]["taxids"] = 562
+    orgs["kpneumoniae"]["taxids"] = [573, 550]
+    monkeypatch.setattr(vr.registry, "load_organisms", lambda: orgs)
+    errors, warnings = [], []
+    vr._check_registry(errors, warnings)
+    assert any("'ecoli': taxids must be a list" in e for e in errors), errors
+    assert any("taxon 550 is listed under" in e for e in errors), errors
+
+
 # ---- tool-version provenance --------------------------------
 # The KB records the tools the results depend on: unitig-caller (builds the
 # features) and PopPUNK (defines the CV groups). graph_tool is tracked

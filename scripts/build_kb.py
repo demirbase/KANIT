@@ -39,15 +39,18 @@ class Sources:
     def __init__(self):
         self.files: dict[str, tuple[str, int]] = {}
 
+    @staticmethod
+    def key(path: Path) -> str:
+        try:
+            return str(Path(path).resolve().relative_to(PROJECT_ROOT))
+        except ValueError:
+            return str(Path(path).resolve())
+
     def _record(self, path: Path) -> Path:
         path = Path(path)
         if not path.exists():
             raise FileNotFoundError(f"input missing: {path}")
-        try:
-            key = str(path.resolve().relative_to(PROJECT_ROOT))
-        except ValueError:
-            key = str(path.resolve())
-        self.files[key] = (sha256_file(path), path.stat().st_size)
+        self.files[self.key(path)] = (sha256_file(path), path.stat().st_size)
         return path
 
     def csv(self, path, **kw) -> pd.DataFrame:
@@ -70,7 +73,8 @@ def organisms(ids) -> pd.DataFrame:
     rows = []
     for o in sorted(ids):
         d = registry.get_organism(o)
-        rows.append({"organism_id": o, "name": d["display_name"], "ncbi_taxid": int(d["taxid"]),
+        rows.append({"organism_id": o, "name": d["display_name"],
+                     "ncbi_taxids": ";".join(str(t) for t in registry.organism_taxids(o)),
                      "gram_stain": d.get("gram_stain"), "phylum": d.get("phylum")})
     return pd.DataFrame(rows)
 
@@ -81,10 +85,32 @@ def antibiotics(ids) -> pd.DataFrame:
                           "who_aware": registry.antibiotic_who_aware(a)} for a in sorted(ids)])
 
 
-def genomes_of(org: str, config: dict, src: Sources) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """(genome rows, phenotype rows) of one organism."""
+def snapshot_of(org: str, config: dict, src: Sources) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(data_snapshot row, NCBI identifiers of the genomes) of one organism (00a)."""
+    meta = resolve_path("metadata_file", organism=org, config=config).parent
+    snap = src.json(meta / "snapshot.json")
+    q = snap["query"]
+    row = pd.DataFrame([{
+        "organism_id": org, "source": q["source"], "api_version": q["api_version"],
+        "queried_at": q["queried_at"], "frozen_at": snap["frozen_at"],
+        "filters": json.dumps({"genomes": q["genome_query"], "records": q["record_query"]}),
+        "n_genomes": snap["n_genomes"], "sha256": src.files[src.key(meta / "snapshot.json")][0]}])
+    ids = src.csv(meta / "genomes.csv", dtype=str, keep_default_na=False)
+    ids = ids.set_index("genome_id")
+    return row, ids.mask(ids == "")
+
+
+def genomes_of(org: str, config: dict,
+               src: Sources) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """(genome rows, phenotype rows, data_snapshot row) of one organism."""
     paths = panel.input_paths(org, config)
+    snapshot, ncbi = snapshot_of(org, config, src)
     qc = src.csv(paths["qc_table"], dtype={"genome_id": str})
+    unknown = sorted(set(qc["genome_id"]) - set(ncbi.index))
+    if unknown:
+        raise ValueError(f"{org}: {len(unknown)} genome(s) of the QC table are not in the data "
+                         f"snapshot, e.g. {unknown[:3]}")
+    ncbi = ncbi.loc[qc["genome_id"]]
     clusters = src.csv(paths["clusters"], dtype={"Genome ID": str})
     lineage = dict(zip(clusters["Genome ID"], clusters["Cluster"].astype(str), strict=True))
     g = pd.DataFrame({
@@ -92,12 +118,15 @@ def genomes_of(org: str, config: dict, src: Sources) -> tuple[pd.DataFrame, pd.D
         "checkm2_completeness": qc["completeness"], "checkm2_contamination": qc["contamination"],
         "n50": qc["n50"], "n_contigs": qc["n_contigs"], "total_length": qc["total_length"],
         "qc_pass": _bool(qc["pass_overall"]), "lineage_cluster": qc["genome_id"].map(lineage),
-        "assembly_accession": None, "sra_accession": None})
+        "ncbi_taxid": ncbi["taxon_id"].astype(int).to_numpy(),
+        "assembly_accession": ncbi["assembly_accession"].to_numpy(),
+        "sra_accession": ncbi["sra_accession"].to_numpy(),
+        "biosample_accession": ncbi["biosample_accession"].to_numpy()})
     ph = src.csv(paths["phenotypes"], dtype={"Genome ID": str})
     long = ph.melt(id_vars="Genome ID", var_name="antibiotic_id", value_name="resistant").dropna()
     long = long[long["Genome ID"].isin(set(g["genome_id"]))]
     return g, pd.DataFrame({"genome_id": long["Genome ID"], "antibiotic_id": long["antibiotic_id"],
-                            "resistant": long["resistant"].astype(int)})
+                            "resistant": long["resistant"].astype(int)}), snapshot
 
 
 # ---- one model -------------------------------------------------------------------
@@ -265,8 +294,9 @@ def build(config: dict, out_file: Path, *, kb_version: str,
 
     phenos, rgi_summaries = [], {}
     for org in orgs:
-        g, ph = genomes_of(org, config, src)
+        g, ph, snapshot = genomes_of(org, config, src)
         add("genome", g)
+        add("data_snapshot", snapshot)
         phenos.append(ph)
     ext_versions, no_context = [], []
     for org in sorted(set(included["organism"])):
@@ -346,7 +376,7 @@ def build(config: dict, out_file: Path, *, kb_version: str,
     conn = sqlite3.connect(tmp)
     try:
         kb.create(conn)
-        order = ["organism", "antibiotic", "aro", "genome", "phenotype", "panel_decision",
+        order = ["organism", "data_snapshot", "antibiotic", "aro", "genome", "phenotype", "panel_decision",
                  "model", "model_genome", "model_metric", "label_permutation", "unitig",
                  "pattern", "pattern_member", "candidate", "prevalence_result", "mda_result",
                  "mda_cluster", "cpss_result", "pyseer_result", "card_hit", "card_annotation",

@@ -40,7 +40,7 @@ def _kb(path: Path) -> sqlite3.Connection:
     kb.create(conn)
     ins = kb.insert
     ins(conn, "organism", pd.DataFrame([{"organism_id": "ecoli", "name": "E. coli",
-                                         "ncbi_taxid": 562}]))
+                                         "ncbi_taxids": "562"}]))
     ins(conn, "antibiotic", pd.DataFrame({
         "antibiotic_id": ["ciprofloxacin", "levofloxacin", "ampicillin"],
         "drug_class": ["quinolones", "quinolones", "penicillins"],
@@ -48,7 +48,8 @@ def _kb(path: Path) -> sqlite3.Connection:
     ins(conn, "aro", pd.DataFrame(AROS, columns=["aro_accession", "name", "model_type",
                                                  "gene_family"]))
     ids = [f"g{i}" for i in range(10)]
-    ins(conn, "genome", pd.DataFrame({"genome_id": ids, "organism_id": "ecoli", "qc_pass": 1}))
+    ins(conn, "genome", pd.DataFrame({"genome_id": ids, "organism_id": "ecoli", "qc_pass": 1,
+                                     "ncbi_taxid": 562}))
     for mid, pats in PATTERNS.items():
         ab = mid.split("__")[1]
         ins(conn, "model", pd.DataFrame([{
