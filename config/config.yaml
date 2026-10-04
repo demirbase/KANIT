@@ -101,7 +101,7 @@ paths_organism:
 # knowledge base records it in its release row.
 protocol:
   version: "1.0"
-  sha256: "1ea947269eaa8745fc797e82553705c9f28c73be5a28592021b4e7679156360f"
+  sha256: "c0c3cb37a91f2b67174792d5181c108ddb2f6c7b9e6f7c789f14505550d9bbf1"
 
 # ----------------------------------------------------------------------------
 # PANEL (step 02e — lib/panel.py)
