@@ -50,7 +50,8 @@ def _config(root: Path) -> dict:
         "label_permutation_dir": "{organism}/{antibiotic}/lp", "cross_model_dir": "cross",
         "external_dir": "{organism}/external", "context_dir": "{organism}/context",
         "unitig_store_dir": "{organism}/store", "databases_manifest": "databases.json",
-        "kb_dir": "kb"}.items()}
+        "kb_dir": "kb", "reports_dir": "reports",
+        "model_reports_dir": "reports/{organism}/{antibiotic}"}.items()}
     text = PROJECT_ROOT / "docs" / "V1_PROTOKOL.md"
     return {
         "paths_organism": t,
@@ -352,3 +353,30 @@ def test_outputs_follow_the_contract(built):
     assert {"panel_decisions", "genome_qc", "model_patterns", "oof_predictions", "candidates",
             "cpss_layer", "prevalence_layer", "mda_layer", "pyseer_layer", "card_unitigs",
             "grades_patterns", "rgi_hits", "external_comparison"} <= set(checked), checked
+
+
+def test_reports_from_the_tables(built, monkeypatch):
+    """Figures, the model report and the numbers file come from the steps' CSVs only."""
+    from lib import contract
+    config = built[0]
+    m = _script("reports.py")
+    monkeypatch.setattr(m, "load_config", lambda: config)
+    argv, saved = ["x", "--entry", "main", "--organisms", ORG], sys.argv
+    sys.argv = argv
+    try:
+        m.main()
+    finally:
+        sys.argv = saved
+    rep = Path(config["paths_organism"]["reports_dir"])
+    model_dir = rep / ORG / AB
+    names = {f.stem for f in model_dir.glob("*.png")}
+    assert {"matrix", "cross_validation", "cpss", "prevalence", "mda", "card", "grading"} <= names
+    page = (model_dir / "report.html").read_text()
+    for section in ("Cross-validation", "Evidence layers", "Best candidates", "base64,"):
+        assert section in page
+    assert (rep / "panel.png").exists() and (rep / ORG / "genome_qc.png").exists()
+    nums = rep / "tez_sayilari.csv"
+    assert contract.validate_csv(nums, contract.load()["tables"]["thesis_numbers"]) == []
+    t = pd.read_csv(nums).set_index("key")
+    assert int(t.loc[f"{MID}.n_genomes", "value"]) == 150
+    assert t.loc[f"{MID}.roc_auc.lineage_aware", "source_table"] == "repeat_metrics"

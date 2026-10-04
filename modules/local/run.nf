@@ -323,3 +323,25 @@ process COMPLETENESS_GATE {
     stub:
     stubReceipt(task, 'completeness_gate', workflow.runName)
 }
+
+// figures, model reports and the numbers file (reports.py), from the steps' CSVs
+process REPORTS {
+    label 'light'
+    cache false
+
+    input:
+    path(deps, stageAs: 'dep*.json')
+    val entry
+
+    output:
+    path 'receipt.json', emit: done
+
+    script:
+    """
+    ${py('reports.py')} --entry ${entry} --organisms ${params.organisms}
+    ${receipt(task, 'reports', entry)}
+    """
+
+    stub:
+    stubReceipt(task, 'reports', entry)
+}

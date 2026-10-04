@@ -83,6 +83,8 @@ paths_organism:
   databases_manifest:   "data/external/databases.json"
   # Knowledge base (build_kb.py; docs/V1_BILGI_TABANI.md).
   kb_dir:               "results/kb"
+  reports_dir:          "results/reports"                        # figures, numbers (reports.py)
+  model_reports_dir:    "results/reports/{organism}/{antibiotic}"  # model figures and report
   models_dir:           "models/{organism}/{antibiotic}"
   logs_dir:             "logs/{organism}/{antibiotic}"
   dir_01_data_exploration:   "results/{organism}/{antibiotic}/01_data_exploration"

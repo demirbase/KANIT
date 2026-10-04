@@ -634,6 +634,19 @@ tables:
       - {name: symbol, type: string, required: true, description: "AMRFinderPlus symbol"}
       - {name: n_calls, type: integer, description: "Calls of the symbol"}
 
+  # ---- reports -----------------------------------------------------------------------
+  thesis_numbers:
+    location: reports_dir
+    file: tez_sayilari.csv
+    description: "Every number the thesis and the article quote, with the table and column it comes from."
+    primary_key: [key]
+    fields:
+      - {name: key, type: string, required: true, description: "Name of the number (scope.quantity[.variant])"}
+      - {name: value, type: string, required: true, description: "The number"}
+      - {name: source_table, type: string, required: true, description: "Table of this contract it is computed from"}
+      - {name: column, type: string, description: "Column it is computed from"}
+      - {name: description, type: string, description: "What it counts or measures"}
+
 steps:
   snapshot:
     script: 00a_download_bvbrc.py
@@ -676,7 +689,7 @@ steps:
     level: modelled_organism
     main: null
     summary: {location: unitig_store_dir, file: store_summary.json}
-    figure: Unitigs and their support
+    figure: null
   model_matrix:
     script: 03u_unitig_matrix.py
     entry: main
@@ -792,6 +805,21 @@ steps:
     tables: [unitig_context]
     summary: {location: context_dir, file: context_summary.json}
     figure: Plasmid and chromosome share of the hits
+  reports:
+    script: reports.py
+    entry: main
+    level: model
+    main: null
+    files: [{location: model_reports_dir, file: report.html, kind: file}]
+    figure: null
+  numbers:
+    script: reports.py
+    entry: main
+    level: global
+    main: thesis_numbers
+    tables: [thesis_numbers]
+    summary: {location: reports_dir, file: reports_summary.json}
+    figure: null
   kb:
     script: build_kb.py
     entry: KB
