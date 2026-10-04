@@ -96,7 +96,7 @@ Map runManifestStart(def workflow, Map params, Path projectDir, String entry, Ma
     Map containers = null
     if (workflow.containerEngine) {
         containers = [:]
-        ['container_amr', 'container_tools', 'container_checkm2'].each { String k ->
+        ['container_amr', 'container_tools', 'container_pyseer', 'container_checkm2'].each { String k ->
             if (params.containsKey(k)) {
                 containers[k] = fileRecord(Paths.get(params[k].toString()), cache)
             }

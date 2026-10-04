@@ -1,0 +1,30 @@
+Bootstrap: docker
+# The final containers (F6.2) pin the base image by digest; the development ones use the tag.
+From: condaforge/miniforge3:latest
+# ============================================================================
+# amr-pyseer.sif — pyseer (environment-pyseer.yml)
+# ============================================================================
+# pyseer alone, on the Python 3.8 its glmnet_py dependency needs. Build like amr.def:
+#   apptainer build --fakeroot $AMR_WORK/containers/amr-pyseer.sif amr-pyseer.def
+#   apptainer exec $AMR_WORK/containers/amr-pyseer.sif conda env export \
+#       -p /opt/amr-pyseer-env > environment-pyseer.lock.yml
+# ============================================================================
+
+%files
+    environment-pyseer.yml /opt/environment-pyseer.yml
+
+%post
+    mamba env create -f /opt/environment-pyseer.yml -p /opt/amr-pyseer-env
+    mamba clean -a -y
+
+%environment
+    export PATH=/opt/amr-pyseer-env/bin:$PATH
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+
+%runscript
+    exec "$@"
+
+%test
+    export PATH=/opt/amr-pyseer-env/bin:$PATH
+    pyseer --version

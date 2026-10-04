@@ -211,7 +211,7 @@ process PYSEER_PREP {
 
 process PYSEER_LMM {
     tag "${meta.id}"
-    label 'tools'
+    label 'pyseer'
 
     input:
     tuple val(meta), path(script)

@@ -1,11 +1,11 @@
 # ============================================================================
 # amr-tools.sif — the external tools of KANIT v1.0 (plan F6, K9)
 # ============================================================================
-# QUAST (02d), pyseer (14) and the genotype-based predictors AMRFinderPlus and
-# ResFinder with KMA (16). They run as shell commands (run_external.sh,
-# run_pyseer.sh, quast.py); no KANIT Python module runs here, only receipt.py
-# (standard library). Separate from amr.sif because these tools pull their own
-# dependency trees. Python moves from 3.8 (end of life) to 3.12.
+# QUAST (02d) and the genotype-based predictors AMRFinderPlus and ResFinder with
+# KMA (16). They run as shell commands (run_external.sh, quast.py); no KANIT Python
+# module runs here, only receipt.py (standard library). Separate from amr.sif
+# because these tools pull their own dependency trees. Python moves from 3.8 (end
+# of life) to 3.12; pyseer, which needs 3.8, has its own container (amr-pyseer).
 # BLAST+ is pinned to the version RGI pins in amr.sif (2.16.0): one BLAST+ for the
 # whole run (Appendix B, incompatibility 1).
 #   conda env create -f environment-tools.yml
@@ -16,7 +16,6 @@ channels:
   - bioconda
 dependencies:
   - python=3.12.13
-  - pyseer=1.4.2                # LMM association (14)
   - quast=5.3.0                 # N50, contigs, assembly length (02d)
   - ncbi-amrfinderplus=4.2.7    # acquired genes and point mutations (16)
   - resfinder=4.7.2             # ResFinder and PointFinder (16)

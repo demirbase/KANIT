@@ -4,8 +4,8 @@ From: condaforge/miniforge3:latest
 # ============================================================================
 # amr-tools.sif — the external tools of KANIT v1.0 (environment-tools.yml)
 # ============================================================================
-# QUAST, pyseer, AMRFinderPlus, ResFinder and KMA, run as shell commands by the
-# workflow. Python 3.12 (was 3.8). Build like amr.def, then export the lock file:
+# QUAST, AMRFinderPlus, ResFinder and KMA, run as shell commands by the workflow.
+# Python 3.12 (was 3.8); pyseer is in amr-pyseer.sif. Build like amr.def, then export the lock file:
 #   apptainer build --fakeroot $AMR_WORK/containers/amr-tools.sif amr-tools.def
 #   apptainer exec $AMR_WORK/containers/amr-tools.sif conda env export \
 #       -p /opt/amr-tools-env > environment-tools.lock.yml
@@ -31,7 +31,6 @@ From: condaforge/miniforge3:latest
 %test
     export PATH=/opt/amr-tools-env/bin:$PATH
     quast.py --version
-    pyseer --version
     amrfinder --version
     python -m resfinder --version || run_resfinder.py --version
     kma -v

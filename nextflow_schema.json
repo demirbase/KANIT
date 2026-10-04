@@ -127,6 +127,10 @@
                 "checkm2_db": {
                     "type": "string",
                     "description": "CheckM2 DIAMOND database (CHECKM2DB)."
+                },
+                "container_pyseer": {
+                    "type": "string",
+                    "description": "Apptainer image of pyseer (Python 3.8)."
                 }
             }
         },
