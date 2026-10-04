@@ -63,6 +63,43 @@
                     "description": "AMRFinderPlus and ResFinder tasks per organism."
                 }
             }
+        },
+        "truba": {
+            "title": "TRUBA (-profile truba)",
+            "type": "object",
+            "properties": {
+                "queue": {
+                    "type": "string",
+                    "enum": [
+                        "barbun",
+                        "hamsi",
+                        "orfoz",
+                        "debug"
+                    ],
+                    "description": "SLURM partition of every task."
+                },
+                "containers_dir": {
+                    "type": "string",
+                    "description": "Directory of the Apptainer images."
+                },
+                "container_amr": {
+                    "type": "string",
+                    "description": "Analysis image."
+                },
+                "container_tools": {
+                    "type": "string",
+                    "description": "Image with QUAST, pyseer, AMRFinderPlus and ResFinder."
+                },
+                "container_checkm2": {
+                    "type": "string",
+                    "description": "CheckM2 image."
+                },
+                "partitions": {
+                    "type": "object",
+                    "hidden": true,
+                    "description": "Cores, memory per core, minimum cores and time limit of every partition."
+                }
+            }
         }
     },
     "allOf": [
@@ -71,6 +108,9 @@
         },
         {
             "$ref": "#/$defs/execution"
+        },
+        {
+            "$ref": "#/$defs/truba"
         }
     ]
 }
