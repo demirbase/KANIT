@@ -67,7 +67,44 @@ def test_record_filters():
     assert (rep["records"], rep["records_distinct"], rep["records_laboratory"],
             rep["records_eucast_clsi"], rep["records_resistant_susceptible"]) == (10, 9, 7, 5, 4)
     assert rep["phenotypes_dropped"] == {"intermediate": 1}
-    assert rep["antibiotics_not_registered"] == ["fluoroquinolones"]
+    assert rep["labels_not_single_drug"] == ["fluoroquinolones"]
+    assert rep["antibiotics_not_registered"] == []
+    assert rep["antibiotic_names_normalised"] == {}
+    cleaned, rep = clean_amr_table(_records([("3", "cefalexin", "Resistant", LAB, "CLSI", "2020"),
+                                             ("4", "cephalexin", "Resistant", LAB, "CLSI", "")]))
+    assert set(cleaned["antibiotic"]) == {"cephalexin"}
+    assert rep["antibiotic_names_normalised"] == {"cefalexin": "cephalexin"}
+
+
+# every testing standard of BV-BRC's laboratory records (facet over genome_amr, 2026-10-04)
+BVBRC_STANDARDS = {
+    "CLSI": True, "clsi": True, "EUCAST": True, "eucast": True, "CLSI, EUCAST": True,
+    "EUCAST, CLSI": True, "EUCAST,CLSI": True, "EUCAST and CLSI": True, "CLSI M100": True,
+    "clsi_meningitis": True, "clsi_non-meningitis": True,
+    "CLSI, NARMS": False, "NARMS": False, "veterinary CLSI": False, "NCCLS": False, "SFM": False,
+    "CLSI criteria and NARMS breakpoints (described in the NARMS 2012-2013 Integrated Report)":
+        False,
+    "British Society for Antimicrobial Chemotherapy": False,
+    "British Society for Antimicrobial Chemotherapy (BSAC)": False,
+    "British Society for Antimicrobial Chemotherapy (EUCAST)": False,
+    "British Society of Antimicrobial Chemotherapy guidelines": False,
+    "French Committee for Antimicrobial Susceptibility Testing": False,
+    "Australian Gonococcal Surveillance Programme": False,
+    "Australian Gonococcal Surveillance Programme (AGSP)": False,
+    "CDC GISP Protocol": False, "CDC GISP protocol": False,
+    "CDC Gonococcal Isolate Surveillance Project (GISP) protocol": False, "WHO": False,
+    "WHO: Guidelines for Surveillance of Drug Resistance in Tuberculosis": False,
+    "used breakpoint concentrations set in this publication": False}
+
+
+def test_testing_standards():
+    assert {s: bvbrc.eucast_or_clsi(s) for s in BVBRC_STANDARDS} == BVBRC_STANDARDS
+    assert bvbrc.eucast_or_clsi("Eucast") and bvbrc.eucast_or_clsi(" Clsi ")
+    assert not bvbrc.eucast_or_clsi("") and not bvbrc.eucast_or_clsi(np.nan)
+    df = _records([("1", "ampicillin", "Resistant", LAB, s, "2020") for s in BVBRC_STANDARDS])
+    _, rep = clean_amr_table(df)
+    assert rep["records_eucast_clsi"] == sum(BVBRC_STANDARDS.values())
+    assert rep["testing_standards"]["CLSI, NARMS"] == {"records": 1, "used": False}
 
 
 def test_conflicts():

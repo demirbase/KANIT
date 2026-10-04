@@ -7,8 +7,12 @@ with laboratory evidence, asked for by genome identifier (``genome_amr`` cannot
 select by lineage).
 
 A record gives a phenotype when its evidence is "Laboratory Method", it was tested
-against EUCAST or CLSI breakpoints (case-insensitive; combined forms such as
-"EUCAST, CLSI" included) and its phenotype is Resistant (1) or Susceptible (0).
+against EUCAST or CLSI breakpoints and its phenotype is Resistant (1) or Susceptible
+(0). The standard must name EUCAST or CLSI and no other: every part of it, split at
+",", ";", "/" and "and", begins with "eucast" or "clsi", case-insensitively ("CLSI",
+"eucast", "EUCAST, CLSI", "EUCAST and CLSI", "CLSI M100"; not "CLSI, NARMS",
+"British Society for Antimicrobial Chemotherapy (EUCAST)" or "veterinary CLSI").
+The report counts the records of every standard and phenotype as written.
 Antibiotic names are normalised through the registry; a name that is not a
 registered antibiotic is kept and reported (the panel excludes labels that are not
 a single drug). Identical records count once. The records of one genome and
@@ -32,7 +36,7 @@ from collections.abc import Callable
 import numpy as np
 import pandas as pd
 
-from lib.registry import antibiotic_to_class
+from lib.registry import antibiotic_to_class, is_single_drug
 from lib.registry import normalize_antibiotic as _default_normalize
 
 API = "https://www.bv-brc.org/api"
@@ -42,6 +46,7 @@ ID_BATCH = 1000               # genome identifiers per record query
 
 LABORATORY = "Laboratory Method"
 STANDARDS = ("eucast", "clsi")
+_PARTS = re.compile(r",|;|/|\band\b")
 PHENOTYPES = {"resistant": 1, "susceptible": 0}
 
 GENOME_FIELDS = ["genome_id", "genome_name", "taxon_id", "genome_status", "assembly_accession",
@@ -173,6 +178,13 @@ def records(api: Api, genome_ids: list[str], *,
 
 
 # ---- phenotypes -----------------------------------------------------------------------
+def eucast_or_clsi(standard) -> bool:
+    """True when the testing standard names EUCAST or CLSI and no other standard."""
+    parts = [p.strip() for p in _PARTS.split(str(standard).casefold())]
+    parts = [p for p in parts if p]
+    return bool(parts) and all(p.startswith(STANDARDS) for p in parts)
+
+
 def resolve(labels, years) -> tuple[int | None, str]:
     """Label of one genome × antibiotic cell and how it was reached: 'single',
     'majority', 'recent_year' or 'tied' (label None)."""
@@ -205,8 +217,11 @@ def clean_amr_table(df: pd.DataFrame, normalize_fn=None) -> tuple[pd.DataFrame, 
     rep["records_distinct"] = len(df)
     df = df[df["evidence"].fillna("").astype(str).str.strip() == LABORATORY]
     rep["records_laboratory"] = len(df)
-    std = df["testing_standard"].fillna("").astype(str).str.lower()
-    df = df[std.str.contains("|".join(STANDARDS))]
+    std = df["testing_standard"].fillna("").astype(str)
+    used = std.map(eucast_or_clsi)
+    rep["testing_standards"] = {k: {"records": int(n), "used": eucast_or_clsi(k)}
+                                for k, n in std.value_counts().sort_index().items()}
+    df = df[used]
     rep["records_eucast_clsi"] = len(df)
     pheno = df["resistant_phenotype"].fillna("").astype(str).str.strip().str.lower()
     keep = pheno.isin(list(PHENOTYPES))
@@ -214,10 +229,15 @@ def clean_amr_table(df: pd.DataFrame, normalize_fn=None) -> tuple[pd.DataFrame, 
     df = df[keep].assign(label=pheno[keep].map(PHENOTYPES).astype(int))
     rep["records_resistant_susceptible"] = len(df)
     names = df["antibiotic"].map(normalize_fn)
+    rep["antibiotic_names_normalised"] = {
+        str(a): str(b) for a, b in sorted(set(zip(df["antibiotic"], names, strict=True)))
+        if pd.notna(b) and a != b}
     df = df.assign(antibiotic=names)[names.notna() & (names.astype(str).str.len() > 0)]
     df = df.assign(genome_id=df["genome_id"].astype(str))
-    rep["antibiotics_not_registered"] = sorted(
-        {a for a in df["antibiotic"].unique() if antibiotic_to_class(a) is None})
+    names = sorted(df["antibiotic"].unique())
+    rep["labels_not_single_drug"] = [a for a in names if not is_single_drug(a)]
+    rep["antibiotics_not_registered"] = [a for a in names
+                                         if is_single_drug(a) and antibiotic_to_class(a) is None]
 
     key = ["genome_id", "antibiotic"]
     agg = df.groupby(key, sort=True)["label"].agg(["sum", "size"])

@@ -265,6 +265,8 @@ not_single_drugs:
   - aminogycosides
   - fluoroquinolones
   - sulfonamides
+  - carbapenem
+  - ceftriaxone/cefpodoxime
 
 # ============================================================================
 # AMRFinderPlus Class/Subclass -> antibiotic keyword map (M13 concordance;
