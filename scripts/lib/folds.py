@@ -128,4 +128,4 @@ def largest_lineage_share(groups) -> float:
     """Share of the genomes in the largest lineage; above 1/n_folds no balanced
     lineage-aware split exists, and the model is flagged."""
     _, counts = np.unique(np.asarray(groups), return_counts=True)
-    return float(counts.max() / counts.sum())
+    return int(np.max(counts)) / int(np.sum(counts))

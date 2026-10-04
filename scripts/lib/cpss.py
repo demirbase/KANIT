@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -71,7 +72,7 @@ def rescaled_colsample(colsample: float, n_patterns: int, n_prefilter: int) -> f
 
 def top_gain(booster: xgb.Booster, q: int) -> np.ndarray:
     """Feature indices of the q highest total gains (ties: smaller index), or all used."""
-    gain = booster.get_score(importance_type="total_gain")
+    gain = cast(dict[str, float], booster.get_score(importance_type="total_gain"))
     ranked = sorted((-g, int(f[1:])) for f, g in gain.items())
     return np.array([f for _, f in ranked[:q]], dtype=np.int64)
 
@@ -139,7 +140,7 @@ def stable(pi, pi_threshold: float) -> np.ndarray:
 
 def candidates(final_booster: xgb.Booster, cpss_table: pd.DataFrame, q_gain: int) -> pd.DataFrame:
     """§7: the final model's top total-gain patterns and the stable patterns."""
-    gain = final_booster.get_score(importance_type="total_gain")
+    gain = cast(dict[str, float], final_booster.get_score(importance_type="total_gain"))
     top = top_gain(final_booster, q_gain)
     by_gain = pd.DataFrame({"pattern_id": top, "gain_rank": np.arange(1, top.size + 1),
                             "total_gain": [gain[f"f{p}"] for p in top]})
