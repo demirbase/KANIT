@@ -110,7 +110,9 @@ Map runManifestStart(def workflow, Map params, Path projectDir, String entry, Ma
                          [n, [version: e.version, downloaded_on: e.downloaded_on]] } : null]
 
     Map snapshots = organisms.collectEntries { String org ->
-        Path meta = project(paths.metadata_file.toString().replace('{organism}', org)).getParent()
+        String prefix = config.paths_prefix && !((config.paths_prefix_exclude ?: []) as List).contains('metadata_file') ?
+            "${config.paths_prefix}/" : ''
+        Path meta = project(prefix + paths.metadata_file.toString().replace('{organism}', org)).getParent()
         Path file = meta.resolve('snapshot.json')
         Map snap = readJson(file)
         [org, [file: fileRecord(file, cache),
@@ -130,6 +132,8 @@ Map runManifestStart(def workflow, Map params, Path projectDir, String entry, Ma
               container_engine: workflow.containerEngine, organisms: organisms],
         code: code(projectDir),
         config: [config_yaml: fileRecord(Paths.get(params.config_yaml.toString()), cache),
+                 config_overlay: params.config_overlay ?
+                     fileRecord(Paths.get(params.config_overlay.toString()), cache) : null,
                  organisms: fileRecord(project('config/registry/organisms.yaml'), cache),
                  antibiotics: fileRecord(project('config/registry/antibiotics.yaml'), cache),
                  protocol: protocol],

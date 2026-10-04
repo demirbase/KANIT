@@ -54,6 +54,19 @@ def env_int(name: str, default: int) -> int:
         raise ValueError(f"{name} must be an integer, got {v!r}") from e
 
 
+# A YAML file whose keys are merged over config.yaml (the workflow's --config_overlay),
+# e.g. the small settings and the separate paths of the end-to-end test (plan F5.3)
+OVERLAY_ENV = "KANIT_CONFIG_OVERLAY"
+
+
+def deep_merge(base: dict, over: dict) -> dict:
+    """``over`` merged into a copy of ``base``: dictionaries key by key, the rest replaced."""
+    out = dict(base)
+    for k, v in over.items():
+        out[k] = deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
 def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
     """Load and return the global config.yaml as a dict.
 
@@ -66,6 +79,10 @@ def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
         raise FileNotFoundError(f"Configuration file not found: {path}")
     with open(path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
+    overlay = os.environ.get(OVERLAY_ENV, "").strip() if config_path is None else ""
+    if overlay:
+        with open(overlay, encoding="utf-8") as f:
+            cfg = deep_merge(cfg, yaml.safe_load(f) or {})
 
     for (section, key), env_var in _ENV_RESOURCE_OVERRIDES.items():
         block = cfg.get(section)
@@ -161,6 +178,10 @@ def resolve_path(key: str, organism: str | None = None, antibiotic: str | None =
     if run_id is not None:
         fmt["run_id"] = run_id
 
+    # paths_prefix (an overlay's) moves every location but the reference databases
+    prefix = cfg.get("paths_prefix")
+    if prefix and key not in (cfg.get("paths_prefix_exclude") or []):
+        template = f"{prefix.rstrip('/')}/{template}"
     try:
         resolved = template.format(**fmt) if "{" in template else template
     except KeyError as missing:

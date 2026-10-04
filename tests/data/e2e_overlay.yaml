@@ -1,0 +1,18 @@
+# End-to-end test (plan F5.3): about 60 genomes of one organism and one antibiotic, with
+# small R and B, on TRUBA's debug queue (4 hours). Merged over config/config.yaml by
+# --config_overlay. Every location moves under e2e/ except the reference databases.
+#   python scripts/e2e_subset.py --organism <o> --antibiotic <a> --overlay tests/data/e2e_overlay.yaml
+#   nextflow run main.nf -profile truba --queue debug --organisms <o> \
+#       --config_overlay tests/data/e2e_overlay.yaml --backup_remote none
+paths_prefix: e2e
+paths_prefix_exclude: [rgi_db_dir, databases_manifest]
+panel: {min_minority: 15}
+unitig: {min_support: 3}
+cv: {n_repeats: 1, n_folds: 3, min_minority_per_test_fold: 3, n_bootstrap: 50, reliability_bins: 5}
+hpo: {n_trials: 4, search_max_genomes: 200, pruner_startup_trials: 1, pruner_warmup_rounds: 5,
+      early_stopping_rounds: 10, max_rounds: 300, batch_rows: 32}
+mda: {n_permutations: 20}
+cpss: {prefilter: 500, n_pairs: 4, q: 20, chunk: 2}
+label_permutation: {n_permutations: 4, chunk: 2}
+pyseer: {kinship_every: 10, background_max: 500}
+lineage: {n_splits: 3}

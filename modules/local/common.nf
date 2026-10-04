@@ -31,7 +31,21 @@ def meta(String organism, String antibiotic) {
     [id: "${organism}__${antibiotic}", organism: organism, antibiotic: antibiotic]
 }
 
-// config/config.yaml, read for the sizes of the fan-outs (the steps read it themselves)
+// config/config.yaml with --config_overlay merged over it, read for the sizes of the
+// fan-outs (the steps read the same through KANIT_CONFIG_OVERLAY)
 def kanitConfig() {
-    new org.yaml.snakeyaml.Yaml().load(new File(params.config_yaml).text)
+    def yaml = new org.yaml.snakeyaml.Yaml()
+    Map cfg = yaml.load(new File(params.config_yaml).text)
+    if (params.config_overlay) {
+        cfg = deepMerge(cfg, (yaml.load(new File(params.config_overlay.toString()).text) ?: [:]) as Map)
+    }
+    cfg
+}
+
+Map deepMerge(Map base, Map over) {
+    Map out = new LinkedHashMap(base)
+    over.each { k, v ->
+        out[k] = (v instanceof Map && out[k] instanceof Map) ? deepMerge(out[k] as Map, v as Map) : v
+    }
+    out
 }

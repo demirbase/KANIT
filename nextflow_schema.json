@@ -28,6 +28,11 @@
                     "format": "file-path",
                     "exists": true,
                     "description": "Only with -stub-run: panel decisions to fan the models out from."
+                },
+                "config_overlay": {
+                    "type": "string",
+                    "format": "file-path",
+                    "description": "YAML merged over config.yaml for every step (for example tests/data/e2e_overlay.yaml)."
                 }
             }
         },
