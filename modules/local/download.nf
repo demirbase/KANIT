@@ -17,9 +17,9 @@ process DOWNLOAD_BVBRC {
     script:
     """
     ${py('00a_download_bvbrc.py')} all --organism ${org}
-    ${receipt('download', org)}
+    ${receipt(task, 'download', org)}
     """
 
     stub:
-    stubReceipt('download', org)
+    stubReceipt(task, 'download', org)
 }

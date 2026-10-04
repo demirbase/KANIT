@@ -6,12 +6,19 @@ def py(String script) {
     "${params.python} ${projectDir}/scripts/${script}"
 }
 
-def receipt(String step, key) {
-    "${py('receipt.py')} --step ${step} --key '${key}' > receipt.json"
+// receipt.json of a task, which is also its step manifest (scripts/receipt.py): the
+// process, attempt and resources of the task; tools maps a tool's name to the
+// command that prints its version
+def receipt(task, String step, key, Map tools = [:]) {
+    def memory = task.memory ? " --memory '${task.memory}'" : ''
+    def versions = tools.collect { name, command -> " --tool '${name}=${command}'" }.join('')
+    "${py('receipt.py')} --step ${step} --key '${key}' --process '${task.process}' " +
+        "--attempt ${task.attempt} --cpus ${task.cpus}${memory}${versions} > receipt.json"
 }
 
-def stubReceipt(String step, key) {
-    "${py('receipt.py')} --step ${step} --key '${key}' --stub > receipt.json"
+def stubReceipt(task, String step, key) {
+    "${py('receipt.py')} --step ${step} --key '${key}' --process '${task.process}' --stub " +
+        "> receipt.json"
 }
 
 def meta(String organism, String antibiotic) {

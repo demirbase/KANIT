@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """The Nextflow skeleton connects every step: -stub-run of each entry (needs
 Nextflow; runs when KANIT_RUN_NEXTFLOW=1, since it takes about a minute)."""
+import json
 import os
 import shutil
 import subprocess
@@ -35,6 +36,17 @@ def test_default_entry_reaches_every_step(tmp_path):
     assert n["CV_UNIT"] == 3 * 50 and n["LP_CHUNK"] == 3 * 50 and n["CPSS_CHUNK"] == 3 * 10
     for p in ("PANEL", "GRADING", "LP_ACROSS", "EXTERNAL_COMPARE", "CARD_LAYER", "PYSEER_POST"):
         assert n.get(p), p
+    assert n["RUN_OUTPUTS"] == 1
+    # the run manifest and every task's receipt (its step manifest) are kept with the run
+    run = json.loads((tmp_path / "trace" / "run_manifest.json").read_text())
+    assert run["run"]["entry"] == "main" and run["run"]["stub"] is True
+    assert len(run["code"]["commit"]) == 40 and run["completed"]["success"] is True
+    assert run["config"]["config_yaml"]["sha256"] and run["config"]["protocol"]["version"] == "1.0"
+    assert set(run["snapshots"]) == {"ecoli", "kpneumoniae"}
+    receipts = list((tmp_path / "trace" / "tasks").glob("*/*/receipt.json"))
+    assert len(receipts) == len(t)
+    r = json.loads((tmp_path / "trace" / "tasks" / "PANEL" / "run" / "receipt.json").read_text())
+    assert r["step"] == "panel" and r["process"].endswith("PANEL") and r["stub"] is True
 
 
 def test_parameters_are_checked(tmp_path):
@@ -45,8 +57,8 @@ def test_parameters_are_checked(tmp_path):
 
 
 @pytest.mark.parametrize("entry, expected", [
-    ("DOWNLOAD", {"DOWNLOAD_BVBRC": 2}),
-    ("CONTEXT", {"CONTEXT_QUERY": 2, "CONTEXT_BUILD": 2})])
+    ("DOWNLOAD", {"DOWNLOAD_BVBRC": 2, "RUN_OUTPUTS": 1}),
+    ("CONTEXT", {"CONTEXT_QUERY": 2, "CONTEXT_BUILD": 2, "RUN_OUTPUTS": 1})])
 def test_internet_entries(tmp_path, entry, expected):
     r, trace = _run(tmp_path, "-entry", entry, "--organisms", "ecoli,kpneumoniae")
     assert r.returncode == 0, r.stdout + r.stderr

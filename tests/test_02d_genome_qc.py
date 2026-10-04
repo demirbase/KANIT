@@ -71,3 +71,22 @@ def test_read_checkm2_and_quast(mod, tmp_path):
 def test_readers_return_none_when_absent(mod, tmp_path):
     assert mod._read_checkm2(tmp_path / "nope") is None
     assert mod._read_quast(tmp_path / "nope") is None
+
+
+def test_post_records_the_tool_versions(mod, tmp_path):
+    """The workflow writes each tool's version.txt next to its report; post gathers them
+    into versions.json, which the knowledge base reads."""
+    import json
+    qc = tmp_path / "qc"
+    (qc / "checkm2").mkdir(parents=True)
+    (qc / "quast").mkdir()
+    (qc / "checkm2" / "quality_report.tsv").write_text(
+        "Name\tCompleteness\tContamination\n562.100\t99.1\t0.5\n", encoding="utf-8")
+    (qc / "quast" / "transposed_report.tsv").write_text(
+        "Assembly\t# contigs\tTotal length\tN50\n562.100\t80\t5000000\t120000\n",
+        encoding="utf-8")
+    (qc / "checkm2" / "version.txt").write_text("1.1.0\n")
+    config = {"paths_organism": {"raw_genomes_dir": str(tmp_path / "genomes"),
+                                 "genome_qc_dir": str(qc)}}
+    mod.do_post("ecoli", config, THR)
+    assert json.loads((qc / "versions.json").read_text()) == {"checkm2": "1.1.0", "quast": None}

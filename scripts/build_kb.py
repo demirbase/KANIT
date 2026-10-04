@@ -310,6 +310,8 @@ def build(config: dict, out_file: Path, *, kb_version: str,
         ext_versions.append(src.json(ext / "versions.json"))
         ext_versions.append(src.json(resolve_path("lineage_dir", organism=org, config=config)
                                      / "versions.json"))
+        ext_versions.append(src.json(resolve_path("genome_qc_dir", organism=org, config=config)
+                                     / "versions.json"))
         ext_versions.append(src.json(resolve_path("unitig_store_dir", organism=org,
                                                   config=config) / "store_summary.json"
                                      ).get("tools", {}))

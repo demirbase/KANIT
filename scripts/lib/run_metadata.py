@@ -42,8 +42,9 @@ def git_commit_hash(short=False):
 
 
 def git_is_dirty():
-    """True if the working tree has uncommitted changes (None if git unavailable)."""
-    status = _git("status", "--porcelain")
+    """True if a tracked file has uncommitted changes (None if git unavailable).
+    Untracked files do not count: the workflow runs only tracked code."""
+    status = _git("status", "--porcelain", "--untracked-files=no")
     if status is None:
         return None
     return bool(status.strip())

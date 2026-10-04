@@ -17,11 +17,11 @@ process RGI_LOAD {
     script:
     """
     ${py('08_rgi.py')} load
-    ${receipt('rgi_load', 'card')}
+    ${receipt(task, 'rgi_load', 'card')}
     """
 
     stub:
-    stubReceipt('rgi_load', 'card')
+    stubReceipt(task, 'rgi_load', 'card')
 }
 
 process RGI_RUN {
@@ -37,11 +37,11 @@ process RGI_RUN {
     script:
     """
     ${py('08_rgi.py')} run --organism ${org} --shard ${shard}/${n} --threads ${task.cpus}
-    ${receipt('rgi_run', "${org} ${shard}/${n}")}
+    ${receipt(task, 'rgi_run', "${org} ${shard}/${n}")}
     """
 
     stub:
-    stubReceipt('rgi_run', "${org} ${shard}/${n}")
+    stubReceipt(task, 'rgi_run', "${org} ${shard}/${n}")
 }
 
 process RGI_COLLECT {
@@ -57,11 +57,11 @@ process RGI_COLLECT {
     script:
     """
     ${py('08_rgi.py')} collect --organism ${org}
-    ${receipt('rgi_collect', org)}
+    ${receipt(task, 'rgi_collect', org)}
     """
 
     stub:
-    stubReceipt('rgi_collect', org)
+    stubReceipt(task, 'rgi_collect', org)
 }
 
 process CPSS_PREFILTER {
@@ -77,11 +77,11 @@ process CPSS_PREFILTER {
     script:
     """
     ${py('13_cpss.py')} prefilter ${pair(meta)}
-    ${receipt('cpss_prefilter', meta.id)}
+    ${receipt(task, 'cpss_prefilter', meta.id)}
     """
 
     stub:
-    stubReceipt('cpss_prefilter', meta.id)
+    stubReceipt(task, 'cpss_prefilter', meta.id)
 }
 
 process CPSS_CHUNK {
@@ -97,11 +97,11 @@ process CPSS_CHUNK {
     script:
     """
     ${py('13_cpss.py')} run ${pair(meta)} --chunk ${chunk} --threads ${task.cpus}
-    ${receipt('cpss_chunk', "${meta.id} ${chunk}")}
+    ${receipt(task, 'cpss_chunk', "${meta.id} ${chunk}")}
     """
 
     stub:
-    stubReceipt('cpss_chunk', "${meta.id} ${chunk}")
+    stubReceipt(task, 'cpss_chunk', "${meta.id} ${chunk}")
 }
 
 process CPSS_SELECT {
@@ -117,11 +117,11 @@ process CPSS_SELECT {
     script:
     """
     ${py('13_cpss.py')} select ${pair(meta)}
-    ${receipt('candidates', meta.id)}
+    ${receipt(task, 'candidates', meta.id)}
     """
 
     stub:
-    stubReceipt('candidates', meta.id)
+    stubReceipt(task, 'candidates', meta.id)
 }
 
 process PREVALENCE {
@@ -137,11 +137,11 @@ process PREVALENCE {
     script:
     """
     ${py('10_prevalence.py')} ${pair(meta)}
-    ${receipt('prevalence', meta.id)}
+    ${receipt(task, 'prevalence', meta.id)}
     """
 
     stub:
-    stubReceipt('prevalence', meta.id)
+    stubReceipt(task, 'prevalence', meta.id)
 }
 
 process MDA {
@@ -157,11 +157,11 @@ process MDA {
     script:
     """
     ${py('12_mda.py')} ${pair(meta)}
-    ${receipt('mda', meta.id)}
+    ${receipt(task, 'mda', meta.id)}
     """
 
     stub:
-    stubReceipt('mda', meta.id)
+    stubReceipt(task, 'mda', meta.id)
 }
 
 process CARD_LAYER {
@@ -177,11 +177,11 @@ process CARD_LAYER {
     script:
     """
     ${py('09_card_layer.py')} ${pair(meta)}
-    ${receipt('card_layer', meta.id)}
+    ${receipt(task, 'card_layer', meta.id)}
     """
 
     stub:
-    stubReceipt('card_layer', meta.id)
+    stubReceipt(task, 'card_layer', meta.id)
 }
 
 process PYSEER_PREP {
@@ -193,16 +193,19 @@ process PYSEER_PREP {
 
     output:
     tuple val(meta), path('run_pyseer.sh'), emit: script
+    path 'receipt.json', emit: receipt
 
     script:
     """
     ${py('14_pyseer.py')} prep ${pair(meta)} --threads ${task.cpus}
     cp "\$(${py('config_path.py')} pyseer_dir ${pair(meta)})/run_pyseer.sh" run_pyseer.sh
+    ${receipt(task, 'pyseer_prep', meta.id)}
     """
 
     stub:
     """
     echo 'exit 0' > run_pyseer.sh
+    ${stubReceipt(task, 'pyseer_prep', meta.id)}
     """
 }
 
@@ -219,11 +222,11 @@ process PYSEER_LMM {
     script:
     """
     bash ${script}
-    ${receipt('pyseer_lmm', meta.id)}
+    ${receipt(task, 'pyseer_lmm', meta.id)}
     """
 
     stub:
-    stubReceipt('pyseer_lmm', meta.id)
+    stubReceipt(task, 'pyseer_lmm', meta.id)
 }
 
 process PYSEER_POST {
@@ -239,11 +242,11 @@ process PYSEER_POST {
     script:
     """
     ${py('14_pyseer.py')} post ${pair(meta)}
-    ${receipt('pyseer', meta.id)}
+    ${receipt(task, 'pyseer', meta.id)}
     """
 
     stub:
-    stubReceipt('pyseer', meta.id)
+    stubReceipt(task, 'pyseer', meta.id)
 }
 
 process GRADING {
@@ -259,11 +262,11 @@ process GRADING {
     script:
     """
     ${py('14b_grading.py')} ${pair(meta)}
-    ${receipt('grading', meta.id)}
+    ${receipt(task, 'grading', meta.id)}
     """
 
     stub:
-    stubReceipt('grading', meta.id)
+    stubReceipt(task, 'grading', meta.id)
 }
 
 process LP_CHUNK {
@@ -280,11 +283,11 @@ process LP_CHUNK {
     """
     ${py('12b_label_permutation.py')} run ${pair(meta)} --fold ${fold} --chunk ${chunk} \\
         --threads ${task.cpus}
-    ${receipt('label_permutation_chunk', "${meta.id} ${fold} ${chunk}")}
+    ${receipt(task, 'label_permutation_chunk', "${meta.id} ${fold} ${chunk}")}
     """
 
     stub:
-    stubReceipt('label_permutation_chunk', "${meta.id} ${fold} ${chunk}")
+    stubReceipt(task, 'label_permutation_chunk', "${meta.id} ${fold} ${chunk}")
 }
 
 process LP_METRICS {
@@ -300,11 +303,11 @@ process LP_METRICS {
     script:
     """
     ${py('12b_label_permutation.py')} metrics ${pair(meta)}
-    ${receipt('label_permutation', meta.id)}
+    ${receipt(task, 'label_permutation', meta.id)}
     """
 
     stub:
-    stubReceipt('label_permutation', meta.id)
+    stubReceipt(task, 'label_permutation', meta.id)
 }
 
 process LP_ACROSS {
@@ -319,9 +322,9 @@ process LP_ACROSS {
     script:
     """
     ${py('12b_label_permutation.py')} across
-    ${receipt('label_permutation_across', 'panel')}
+    ${receipt(task, 'label_permutation_across', 'panel')}
     """
 
     stub:
-    stubReceipt('label_permutation_across', 'panel')
+    stubReceipt(task, 'label_permutation_across', 'panel')
 }

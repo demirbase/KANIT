@@ -15,11 +15,11 @@ process BUILD_KB {
     def allow = params.allow_missing_context ? '--allow-missing-context' : ''
     """
     ${py('build_kb.py')} ${allow}
-    ${receipt('knowledge_base', 'kanit')}
+    ${receipt(task, 'knowledge_base', 'kanit')}
     """
 
     stub:
-    stubReceipt('knowledge_base', 'kanit')
+    stubReceipt(task, 'knowledge_base', 'kanit')
 }
 
 process HYPOTHESES {
@@ -34,9 +34,9 @@ process HYPOTHESES {
     script:
     """
     ${py('hypotheses.py')}
-    ${receipt('hypotheses', 'kanit')}
+    ${receipt(task, 'hypotheses', 'kanit')}
     """
 
     stub:
-    stubReceipt('hypotheses', 'kanit')
+    stubReceipt(task, 'hypotheses', 'kanit')
 }

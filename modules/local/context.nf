@@ -17,11 +17,11 @@ process CONTEXT_QUERY {
     script:
     """
     ${py('18_ncbi_context.py')} query --organism ${org}
-    ${receipt('context_query', org)}
+    ${receipt(task, 'context_query', org)}
     """
 
     stub:
-    stubReceipt('context_query', org)
+    stubReceipt(task, 'context_query', org)
 }
 
 process CONTEXT_BUILD {
@@ -38,9 +38,9 @@ process CONTEXT_BUILD {
     def allow = params.allow_missing_context ? '--allow-incomplete' : ''
     """
     ${py('18_ncbi_context.py')} build --organism ${org} ${allow}
-    ${receipt('context_build', org)}
+    ${receipt(task, 'context_build', org)}
     """
 
     stub:
-    stubReceipt('context_build', org)
+    stubReceipt(task, 'context_build', org)
 }

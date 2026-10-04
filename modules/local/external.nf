@@ -11,16 +11,19 @@ process EXTERNAL_PREP {
 
     output:
     tuple val(org), path('run_external.sh'), emit: script
+    path 'receipt.json', emit: receipt
 
     script:
     """
     ${py('16_external.py')} prep --organism ${org} --threads ${task.cpus}
     cp "\$(${py('config_path.py')} external_dir --organism ${org})/run_external.sh" run_external.sh
+    ${receipt(task, 'external_prep', org)}
     """
 
     stub:
     """
     echo 'exit 0' > run_external.sh
+    ${stubReceipt(task, 'external_prep', org)}
     """
 }
 
@@ -37,11 +40,11 @@ process EXTERNAL_RUN {
     script:
     """
     bash ${script} ${shard} ${n}
-    ${receipt('external_tools', "${org} ${shard}/${n}")}
+    ${receipt(task, 'external_tools', "${org} ${shard}/${n}")}
     """
 
     stub:
-    stubReceipt('external_tools', "${org} ${shard}/${n}")
+    stubReceipt(task, 'external_tools', "${org} ${shard}/${n}")
 }
 
 process EXTERNAL_COLLECT {
@@ -57,11 +60,11 @@ process EXTERNAL_COLLECT {
     script:
     """
     ${py('16_external.py')} collect --organism ${org}
-    ${receipt('external_collect', org)}
+    ${receipt(task, 'external_collect', org)}
     """
 
     stub:
-    stubReceipt('external_collect', org)
+    stubReceipt(task, 'external_collect', org)
 }
 
 process EXTERNAL_COMPARE {
@@ -77,9 +80,9 @@ process EXTERNAL_COMPARE {
     script:
     """
     ${py('16_external.py')} compare --organism ${org}
-    ${receipt('external_compare', org)}
+    ${receipt(task, 'external_compare', org)}
     """
 
     stub:
-    stubReceipt('external_compare', org)
+    stubReceipt(task, 'external_compare', org)
 }

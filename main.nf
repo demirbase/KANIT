@@ -27,9 +27,12 @@ include { COMPARISON } from './subworkflows/local/comparison'
 include { DOWNLOAD_BVBRC } from './modules/local/download'
 include { CONTEXT_QUERY; CONTEXT_BUILD } from './modules/local/context'
 include { BUILD_KB; HYPOTHESES } from './modules/local/kb'
+include { RUN_OUTPUTS; runManifestStart; runManifestComplete } from './modules/local/run'
+include { kanitConfig } from './modules/local/common'
 
-// the organisms asked for, every one of them in the registry
-def organisms() {
+// the organisms asked for, every one of them in the registry; writes the run manifest
+// (modules/local/run.nf) and stops a run on a tree with uncommitted changes
+def organisms(String entry) {
     validateParameters()
     def registry = new org.yaml.snakeyaml.Yaml().load(
         file("${projectDir}/config/registry/organisms.yaml").text)
@@ -39,11 +42,28 @@ def organisms() {
     if (unknown) {
         error "Unknown organism(s) ${unknown.join(', ')}; the registry has ${known.sort().join(', ')}"
     }
+    def run = runManifestStart(workflow, params, projectDir, entry, kanitConfig(), wanted)
+    if (!workflow.stubRun) {
+        if (run.code.commit == null) {
+            error "The code version cannot be recorded: ${projectDir} is not a git repository"
+        }
+        if (run.code.dirty) {
+            error "Tracked files have uncommitted changes (${run.code.changed.join('; ')}); " +
+                  "commit them first: a run does not start on a dirty tree"
+        }
+        if (run.config.protocol.text_matches == false) {
+            error "config protocol.sha256 is not the checksum of docs/V1_PROTOKOL.md"
+        }
+    }
     wanted
 }
 
+workflow.onComplete {
+    runManifestComplete(workflow, params)
+}
+
 workflow {
-    def orgs = Channel.fromList(organisms())
+    def orgs = Channel.fromList(organisms('main'))
     if (workflow.stubRun && !params.stub_panel) {
         error "-stub-run needs --stub_panel (the panel decisions to fan the models out from)"
     }
@@ -53,22 +73,28 @@ workflow {
     EVIDENCE(GENOMES.out.stores.join(modelled.map { [it] }), MODELS.out.folds, MODELS.out.units,
              MODELS.out.finals)
     COMPARISON(modelled, GENOMES.out.panel, EVIDENCE.out.rgi, MODELS.out.metrics)
+    RUN_OUTPUTS(EVIDENCE.out.grading.map { m, r -> r }
+                    .mix(EVIDENCE.out.lp, COMPARISON.out.compare.map { o, r -> r })
+                    .collect().ifEmpty([]))
 }
 
 workflow DOWNLOAD {
-    def orgs = Channel.fromList(organisms())
+    def orgs = Channel.fromList(organisms('DOWNLOAD'))
     DOWNLOAD_BVBRC(orgs)
+    RUN_OUTPUTS(DOWNLOAD_BVBRC.out.done.map { o, r -> r }.collect())
 }
 
 workflow CONTEXT {
-    def orgs = Channel.fromList(organisms())
+    def orgs = Channel.fromList(organisms('CONTEXT'))
     CONTEXT_QUERY(orgs)
     CONTEXT_BUILD(CONTEXT_QUERY.out.done.map { org, r -> org })
+    RUN_OUTPUTS(CONTEXT_BUILD.out.done.map { o, r -> r }.collect())
 }
 
 workflow KB {
-    def orgs = Channel.fromList(organisms())
+    def orgs = Channel.fromList(organisms('KB'))
     CONTEXT_BUILD(orgs)
     BUILD_KB(CONTEXT_BUILD.out.done.map { org, r -> r }.collect())
     HYPOTHESES(BUILD_KB.out.done)
+    RUN_OUTPUTS(HYPOTHESES.out.done.collect())
 }

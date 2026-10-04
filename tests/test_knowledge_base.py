@@ -239,6 +239,8 @@ def built(tmp_path_factory):
                  ).to_csv(p["context_dir"] / "unitig_context.csv", index=False)
     (p["lineage_dir"] / "versions.json").write_text(json.dumps({"poppunk": "2.7.8",
                                                                  "graph_tool": "2.98"}))
+    (p["genome_qc_dir"] / "versions.json").write_text(json.dumps({"checkm2": "1.1.0",
+                                                                   "quast": "QUAST v5.3.0"}))
     (root / "card").mkdir()
     (root / "card" / "card.json").write_text(json.dumps({"_version": "4.0.1"}))
     from lib import databases
@@ -279,6 +281,7 @@ def test_build_loads_every_layer_and_rechecks_the_grades(built):
         tools = json.loads(rel[2])
         assert tools["graph_tool"] == "2.98" and tools["unitig_caller"] == "1.3.1"
         assert tools["rgi"] == "6.0.8" and "xgboost" in tools
+        assert (tools["checkm2"], tools["quast"]) == ("1.1.0", "QUAST v5.3.0")
         assert conn.execute("SELECT version, downloaded_on FROM reference_database").fetchone() \
             == ("4.0.1", "2026-11-02")
         assert conn.execute("SELECT ncbi_taxid, assembly_accession, sra_accession, "

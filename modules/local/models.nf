@@ -17,11 +17,11 @@ process MODEL_MATRIX {
     """
     ${py('03u_unitig_matrix.py')} --organism ${meta.organism} --antibiotic ${meta.antibiotic} \\
         --threads ${task.cpus}
-    ${receipt('model_matrix', meta.id)}
+    ${receipt(task, 'model_matrix', meta.id)}
     """
 
     stub:
-    stubReceipt('model_matrix', meta.id)
+    stubReceipt(task, 'model_matrix', meta.id)
 }
 
 process CV_FOLDS {
@@ -40,7 +40,7 @@ process CV_FOLDS {
     ${py('04_nested_cv.py')} folds ${args}
     ${py('04_nested_cv.py')} units ${args} > units.txt
     EVALUABLE=\$( [ -s units.txt ] && echo true || echo false )
-    ${receipt('cv_folds', meta.id)}
+    ${receipt(task, 'cv_folds', meta.id)}
     """
 
     stub:
@@ -50,7 +50,7 @@ process CV_FOLDS {
     """
     printf '%s\\n' ${lines.collect { "'${it}'" }.join(' ')} > units.txt
     EVALUABLE=true
-    ${stubReceipt('cv_folds', meta.id)}
+    ${stubReceipt(task, 'cv_folds', meta.id)}
     """
 }
 
@@ -68,11 +68,11 @@ process CV_UNIT {
     """
     ${py('04_nested_cv.py')} unit --organism ${meta.organism} --antibiotic ${meta.antibiotic} \\
         --arm ${arm} --repeat ${repeat} --fold ${fold} --threads ${task.cpus}
-    ${receipt('cv_unit', "${meta.id} ${arm} ${repeat} ${fold}")}
+    ${receipt(task, 'cv_unit', "${meta.id} ${arm} ${repeat} ${fold}")}
     """
 
     stub:
-    stubReceipt('cv_unit', "${meta.id} ${arm} ${repeat} ${fold}")
+    stubReceipt(task, 'cv_unit', "${meta.id} ${arm} ${repeat} ${fold}")
 }
 
 process CV_FINAL {
@@ -89,11 +89,11 @@ process CV_FINAL {
     """
     ${py('04_nested_cv.py')} final --organism ${meta.organism} --antibiotic ${meta.antibiotic} \\
         --threads ${task.cpus}
-    ${receipt('cv_final', meta.id)}
+    ${receipt(task, 'cv_final', meta.id)}
     """
 
     stub:
-    stubReceipt('cv_final', meta.id)
+    stubReceipt(task, 'cv_final', meta.id)
 }
 
 process CV_METRICS {
@@ -109,9 +109,9 @@ process CV_METRICS {
     script:
     """
     ${py('04_nested_cv.py')} metrics --organism ${meta.organism} --antibiotic ${meta.antibiotic}
-    ${receipt('cv_metrics', meta.id)}
+    ${receipt(task, 'cv_metrics', meta.id)}
     """
 
     stub:
-    stubReceipt('cv_metrics', meta.id)
+    stubReceipt(task, 'cv_metrics', meta.id)
 }

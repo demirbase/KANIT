@@ -118,6 +118,15 @@ def _read_quast(quast_out):
     return out
 
 
+def _version(tool_out):
+    """First line of the version file the workflow writes next to a tool's report."""
+    f = Path(tool_out) / "version.txt"
+    if not f.exists():
+        return None
+    lines = [ln.strip() for ln in f.read_text().splitlines() if ln.strip()]
+    return lines[0] if lines else None
+
+
 def classify_row(gid, comp, cont, n50, nctg, tlen, thr):
     """Apply thresholds to one genome's metrics -> row dict.
 
@@ -210,6 +219,13 @@ def do_post(organism, config, thr):
                           ("completeness", "contamination", "n50", "n_contigs")},
         "tools": {"checkm2": checkm2 is not None, "quast": quast is not None},
     }
+    versions = {"checkm2": _version(qc_out / "checkm2"), "quast": _version(qc_out / "quast")}
+    missing = [t for t, v in versions.items() if v is None and summary["tools"][t]]
+    if missing:
+        logger.warning("no version.txt for %s (the workflow writes it); recorded as null",
+                       ", ".join(missing))
+    with open(qc_out / "versions.json", "w", encoding="utf-8") as f:
+        json.dump(versions, f, indent=2)
     summary_path = qc_out / f"02d_genome_qc_summary_{organism}.json"
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
