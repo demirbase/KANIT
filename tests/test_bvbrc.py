@@ -135,6 +135,14 @@ def test_pivot_binary():
     assert pd.isna(wide.loc[wide["Genome ID"] == "2", "gentamicin"]).all()
 
 
+def test_drugs_without_class():
+    wide = pd.DataFrame({"Genome ID": list("abcde"), "ampicillin": [1, 1, 0, 0, 1],
+                         "mupirocin": [1, 1, 0, 0, np.nan], "beta-lactam": [1, 1, 0, 0, 0],
+                         "tiamulin": [1, 0, 0, 0, 0]})
+    assert bvbrc.drugs_without_class(wide, 2) == {"mupirocin": {"resistant": 2,
+                                                                "susceptible": 2}}
+
+
 def test_check_fasta():
     fa = b">c1 x\nACGT\nAC\n>c2\nGGG\n"
     assert bvbrc.check_fasta(fa, "2", "9") == (2, 9, "")
@@ -233,8 +241,9 @@ def test_snapshot_end_to_end(tmp_path, monkeypatch):
     fake = FakeApi()
     again = m.fetch(meta, genomes_dir, bvbrc.Api(fake, sleep=lambda s: None), workers=1)
     assert len(fake.calls) == 1 and again["status"].tolist() == report["status"].tolist()
-    snap = m.freeze(meta, meta / "amr_phenotypes.csv")
+    snap = m.freeze(meta, meta / "amr_phenotypes.csv", min_minority=150)
     assert (snap["n_genomes"], snap["n_assemblies_failed"], snap["n_antibiotics"]) == (3, 1, 2)
+    assert snap["drugs_without_class"] == {}
     wide = pd.read_csv(meta / "amr_phenotypes.csv", dtype={"Genome ID": str})
     assert wide["Genome ID"].tolist() == ["562.1", "562.2", "562.3"]
     assert json.loads((meta / "snapshot.json").read_text())["query"]["taxids"] == [562]

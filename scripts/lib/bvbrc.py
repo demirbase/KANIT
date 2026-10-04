@@ -275,6 +275,20 @@ def pivot_binary(cleaned_long: pd.DataFrame) -> pd.DataFrame:
     return wide
 
 
+def drugs_without_class(wide: pd.DataFrame, min_minority: int) -> dict[str, dict[str, int]]:
+    """Single drugs without a registry class whose smaller class reaches min_minority
+    before quality control. They may enter the panel, and a drug that does needs its
+    class in the registry and in Appendix A before any model is trained (§3)."""
+    out = {}
+    for ab in wide.columns.drop("Genome ID"):
+        if not is_single_drug(ab) or antibiotic_to_class(ab) is not None:
+            continue
+        n_r, n_s = int((wide[ab] == 1).sum()), int((wide[ab] == 0).sum())
+        if min(n_r, n_s) >= min_minority:
+            out[str(ab)] = {"resistant": n_r, "susceptible": n_s}
+    return out
+
+
 # ---- assemblies -----------------------------------------------------------------------
 def check_fasta(data: bytes, contigs: str, length: str) -> tuple[int, int, str]:
     """(sequences, length, problem) of an assembly against its genome record; problem

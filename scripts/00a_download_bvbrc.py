@@ -10,7 +10,9 @@ Subcommands (internet; the DOWNLOAD entry runs them on a login node):
           number of sequences and length; passed genomes are skipped, so it resumes
   freeze  the phenotype table of the genomes whose assembly passed and snapshot.json:
           query date, API version, filters, counts and the checksum of every
-          snapshot file (the assemblies' checksums are in download_report.csv)
+          snapshot file (the assemblies' checksums are in download_report.csv); it
+          warns of single drugs without a registry class whose smaller class already
+          reaches the panel threshold before quality control (protocol §3)
   verify  every checksum of the frozen snapshot, the assemblies included
   all     query (unless done), fetch and freeze; with a frozen snapshot, verify only
 
@@ -161,7 +163,7 @@ def fetch(meta: Path, genomes_dir: Path, api: bvbrc.Api, *, workers: int) -> pd.
     return report
 
 
-def freeze(meta: Path, phenotypes_file: Path) -> dict:
+def freeze(meta: Path, phenotypes_file: Path, *, min_minority: int) -> dict:
     g = pd.read_csv(meta / "genomes.csv", dtype=str, keep_default_na=False)
     report = _read_report(meta / "download_report.csv")
     unfetched = sorted(set(g["genome_id"]) - set(report["genome_id"]))
@@ -175,9 +177,14 @@ def freeze(meta: Path, phenotypes_file: Path) -> dict:
     for name in SNAPSHOT_FILES:
         p = phenotypes_file if name == "amr_phenotypes.csv" else meta / name
         files[_rel(p)] = {"sha256": sha256_file(p), "bytes": p.stat().st_size}
+    no_class = bvbrc.drugs_without_class(wide, min_minority)
+    if no_class:
+        print(f"  WARNING: drugs without a registry class may pass the panel: {no_class}; "
+              "register their class (and Appendix A) before the main run (protocol §3)")
     snap = {"frozen_at": _now(), "query": json.loads((meta / "query.json").read_text()),
             "n_genomes": len(wide), "n_assemblies_failed": len(g) - len(passed),
-            "n_antibiotics": len(wide.columns) - 1, "files": files}
+            "n_antibiotics": len(wide.columns) - 1, "drugs_without_class": no_class,
+            "files": files}
     _write_json(snap, meta / "snapshot.json")
     return snap
 
@@ -223,7 +230,7 @@ def main():
             time.sleep(60)                          # a second pass for transient failures
             fetch(meta, genomes_dir, api, workers=args.workers)
     if args.command in ("freeze", "all"):
-        s = freeze(meta, phenotypes_file)
+        s = freeze(meta, phenotypes_file, min_minority=int(config["panel"]["min_minority"]))
         print(f"  frozen: {s['n_genomes']} genomes, {s['n_antibiotics']} antibiotics, "
               f"{s['n_assemblies_failed']} assemblies failed")
 
