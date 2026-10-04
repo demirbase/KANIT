@@ -259,7 +259,8 @@ process SACCT_DUMP {
     stubReceipt(task, 'sacct', workflow.runName)
 }
 
-// resources of every task: receipts, trace and sacct joined on the SLURM job
+// resources of every task (receipts, trace and sacct joined on the SLURM job) and the
+// run report (run_report.html: run, completeness, resources, backup)
 process RUN_RESOURCES {
     label 'light'
     cache false
@@ -273,6 +274,7 @@ process RUN_RESOURCES {
     script:
     """
     ${py('run_resources.py')} --run-dir '${params.trace_dir}'
+    ${py('run_report.py')} --run-dir '${params.trace_dir}'
     ${receipt(task, 'run_resources', workflow.runName)}
     """
 
