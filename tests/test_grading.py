@@ -197,3 +197,25 @@ def test_grading_script_end_to_end(tmp_path, monkeypatch, load_script):
     pd.DataFrame({"pattern_id": [1, 2]}).to_csv(paths["candidates_file"], index=False)
     with pytest.raises(SystemExit, match="rerun 09"):
         m.main()
+
+
+@pytest.mark.parametrize("rule", ["allele_aware", "homolog_only"])
+def test_truth_table_through_both_modes(rule):
+    """All 48 combinations through grade_patterns: each mode grades from its own CARD
+    state, and the rule picks the grade of its mode."""
+    cases = list(_truth())
+    expected = {(s, tuple(p.values())): g for s, p, g in cases}
+    states = list(gr.CARD_STATES)
+    rows, bits = [], {}
+    for i, (state, passed, _) in enumerate(cases):
+        other = states[(states.index(state) + 1) % 3]          # the other mode differs
+        rows.append({"pattern_id": i, "n_members": 1, "allele_aware_state": state,
+                     "allele_aware_reasons": "", "homolog_only_state": other,
+                     "homolog_only_reasons": ""})
+        bits[i] = "".join("1" if passed[layer] else "0" for layer in gr.LAYERS)
+    g = gr.grade_patterns(pd.DataFrame(rows), _layers(bits), rule).set_index("pattern_id")
+    for i, (state, passed, want) in enumerate(cases):
+        other = states[(states.index(state) + 1) % 3]
+        assert g.loc[i, "allele_aware_grade"] == want
+        assert g.loc[i, "homolog_only_grade"] == expected[(other, tuple(passed.values()))]
+        assert g.loc[i, "grade"] == g.loc[i, f"{rule}_grade"]
