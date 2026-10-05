@@ -55,6 +55,19 @@ def organisms(String entry) {
         if (run.config.protocol.text_matches == false) {
             error "config protocol.sha256 is not the checksum of docs/V1_PROTOKOL.md"
         }
+        // the tested images and databases (config frozen, plan F6.2)
+        def frozen = kanitConfig().frozen ?: [:]
+        (frozen.containers ?: [:]).each { k, sum ->
+            def rec = run.containers?.get(k)
+            if (rec != null && rec.sha256 != sum) {
+                error "${params[k]} is not the frozen image (sha256 ${rec.sha256 ?: 'missing'}, " +
+                      "frozen ${sum}): runs use the tested containers (config frozen.containers)"
+            }
+        }
+        if (frozen.databases_manifest && run.databases.manifest.sha256 != frozen.databases_manifest) {
+            error "The database manifest is not the frozen one (sha256 " +
+                  "${run.databases.manifest.sha256 ?: 'missing'}; config frozen.databases_manifest)"
+        }
         if (workflow.profile.tokenize(',').contains('truba') && !params.backup_remote) {
             error "Set --backup_remote (an rclone remote and folder, e.g. gdrive:KANIT_backup), " +
                   "or --backup_remote none to run without the verified backup"

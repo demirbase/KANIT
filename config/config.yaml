@@ -105,6 +105,18 @@ protocol:
   version: "1.0"
   sha256: "76d834e27a01cee1e250cf1cc3ee17c2f51956ddc0aea41781ce0476ee3ef5f4"
 
+# The frozen environment (plan F6.2): the four Apptainer images that passed the unit and
+# end-to-end tests (F5.4, run 20261005T151352; archived with their lock files in
+# gdrive:KANIT_v1/containers) and the manifest of the reference databases downloaded on
+# 2026-10-04 (scripts/databases.py). A run that is not a stub stops when one differs.
+frozen:
+  containers:
+    container_amr:     "b8802de48ce1e7a5ae3eff605c0edd27c9982be379fcafc82e77144e4c9a6910"
+    container_tools:   "90caba9a8de8a2cbe8ed06f36c6819df45855b36667b99b0d21196153dc31343"
+    container_pyseer:  "906de490d090c628fa1163a86fd43515d7c0107f0f1b994dbbaff4fba4958c65"
+    container_checkm2: "26fc12f5d664d219ac032a7d070de72c47003fe23c610d9f44189f927bb9ef11"
+  databases_manifest:  "754e52323e13d1d002cdc0cc315f03d32d7f9af13bc86bacec3440027446e0c4"
+
 # ----------------------------------------------------------------------------
 # PANEL (step 02e — lib/panel.py)
 # ----------------------------------------------------------------------------
