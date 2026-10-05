@@ -87,6 +87,11 @@
                     ],
                     "description": "SLURM partition of every task."
                 },
+                "exclude_nodes": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9,\\[\\]-]*$",
+                    "description": "Nodes the jobs must not run on (sbatch --exclude), e.g. barbun45,barbun46,hamsi20."
+                },
                 "containers_dir": {
                     "type": "string",
                     "description": "Directory of the Apptainer images."
@@ -97,7 +102,7 @@
                 },
                 "container_tools": {
                     "type": "string",
-                    "description": "Image with QUAST, pyseer, AMRFinderPlus and ResFinder."
+                    "description": "Image with QUAST, AMRFinderPlus and ResFinder."
                 },
                 "container_checkm2": {
                     "type": "string",
