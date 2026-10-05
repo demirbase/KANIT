@@ -32,7 +32,7 @@ from lib.io_utils import run_command
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-from lib import registry  # noqa: E402
+from lib import panel, registry  # noqa: E402
 from lib.config import load_config, resolve_path, resolve_tool  # noqa: E402
 from lib.lineage import lineage_summary  # noqa: E402
 from lib.run_metadata import _pkg_version, _tool_version, write_versions  # noqa: E402
@@ -276,10 +276,13 @@ def main():
         lineage_dir = resolve_path("data_dir", config=config) / "processed" / organism / "lineage"
     lineage_dir.mkdir(parents=True, exist_ok=True)
 
-    genome_ids = sorted(p.stem for p in genomes_dir.glob("*.fna"))
+    try:
+        genome_ids = panel.snapshot_genomes(organism, config)   # not every file of the folder
+    except FileNotFoundError as e:
+        sys.exit(f"ERROR: {e}")
     if not genome_ids:
-        sys.exit(f"ERROR: no .fna assemblies in {genomes_dir}")
-    print(f"  Genomes to cluster: {len(genome_ids)} (organism-level, all antibiotics)")
+        sys.exit(f"ERROR: the snapshot of {organism} has no genomes")
+    print(f"  Genomes to cluster: {len(genome_ids)} (the organism's snapshot, all antibiotics)")
 
     if args.clusters_csv:
         raw_clusters = Path(args.clusters_csv)

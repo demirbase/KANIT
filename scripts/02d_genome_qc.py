@@ -39,6 +39,7 @@ Usage:
 import argparse
 import datetime
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -47,6 +48,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
+from lib import panel  # noqa: E402
 from lib.config import load_config, resolve_path  # noqa: E402
 from lib.logging_utils import get_logger  # noqa: E402
 
@@ -61,22 +63,35 @@ def _qc_dirs(organism, config):
 
 
 def do_prep(organism, config):
+    """The tools read a folder of links to the snapshot's assemblies, not the genomes
+    folder itself, which may hold assemblies of an earlier download."""
     genomes_dir, qc_out = _qc_dirs(organism, config)
-    fna = sorted(genomes_dir.glob("*.fna"))
-    if not fna:
-        logger.error("no .fna assemblies under %s", genomes_dir)
+    try:
+        ids = panel.snapshot_genomes(organism, config)
+    except FileNotFoundError as e:
+        logger.error("%s", e)
+        sys.exit(1)
+    if not ids:
+        logger.error("the snapshot of %s has no genomes", organism)
         sys.exit(1)
     qc_out.mkdir(parents=True, exist_ok=True)
+    inputs = qc_out / "inputs"
+    if inputs.exists():
+        shutil.rmtree(inputs)
+    inputs.mkdir()
+    for g in ids:
+        (inputs / f"{g}.fna").symlink_to((genomes_dir / f"{g}.fna").resolve())
+    fna = sorted(inputs.glob("*.fna"))
     checkm2_out = qc_out / "checkm2"
     quast_out = qc_out / "quast"
 
     paths_sh = qc_out / f"02d_qc_paths_{organism}.sh"
     with open(paths_sh, "w", encoding="utf-8") as f:
-        f.write(f'GENOMES_DIR="{genomes_dir}"\n')
+        f.write(f'GENOMES_DIR="{inputs}"\n')
         f.write(f'CHECKM2_OUT="{checkm2_out}"\n')
         f.write(f'QUAST_OUT="{quast_out}"\n')
         f.write(f'N_GENOMES={len(fna)}\n')
-    logger.info("prep: %d assemblies in %s", len(fna), genomes_dir)
+    logger.info("prep: %d assemblies of the snapshot linked in %s", len(fna), inputs)
     logger.info("prep: CheckM2 -> %s | QUAST -> %s", checkm2_out, quast_out)
     logger.info("prep: SLURM sources -> %s", paths_sh)
 

@@ -34,6 +34,22 @@ def input_paths(organism: str, config: dict) -> dict[str, Path]:
     }
 
 
+def snapshot_genomes(organism: str, config: dict) -> list[str]:
+    """The genomes of the organism's data snapshot: those with a phenotype whose assembly
+    passed (00a's phenotype table). Quality control and lineages use these and no other
+    file of the genomes folder, which may hold assemblies of an earlier download."""
+    table = resolve_path("metadata_file", organism=organism, config=config)
+    if not table.exists():
+        raise FileNotFoundError(f"no phenotype table {table}; run the DOWNLOAD entry first")
+    ids = pd.read_csv(table, usecols=["Genome ID"], dtype={"Genome ID": str})["Genome ID"]
+    genomes_dir = resolve_path("raw_genomes_dir", organism=organism, config=config)
+    missing = [g for g in ids if not (genomes_dir / f"{g}.fna").exists()]
+    if missing:
+        raise FileNotFoundError(f"{len(missing)} assembly file(s) of the snapshot missing in "
+                                f"{genomes_dir}, e.g. {missing[:3]}")
+    return sorted(ids)
+
+
 def read_inputs(organism: str, config: dict) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """(phenotypes, qc_table, clusters) with genome identifiers as strings."""
     paths = input_paths(organism, config)

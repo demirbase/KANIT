@@ -90,3 +90,25 @@ def test_post_records_the_tool_versions(mod, tmp_path):
                                  "genome_qc_dir": str(qc)}}
     mod.do_post("ecoli", config, THR)
     assert json.loads((qc / "versions.json").read_text()) == {"checkm2": "1.1.0", "quast": None}
+
+
+def test_prep_links_only_the_snapshot_genomes(mod, tmp_path):
+    """An assembly left in the genomes folder by an earlier download is not checked."""
+    import pandas as pd
+    from lib import panel
+    genomes, qc = tmp_path / "genomes", tmp_path / "qc"
+    genomes.mkdir()
+    for g in ("562.1", "562.2", "562.9"):                     # 562.9: an earlier download
+        (genomes / f"{g}.fna").write_text(">c\nACGT\n")
+    pheno = tmp_path / "meta" / "amr_phenotypes.csv"
+    pheno.parent.mkdir()
+    pd.DataFrame({"Genome ID": ["562.2", "562.1"], "ampicillin": [1, 0]}).to_csv(pheno, index=False)
+    config = {"paths_organism": {"raw_genomes_dir": str(genomes), "genome_qc_dir": str(qc),
+                                 "metadata_file": str(pheno)}}
+    assert panel.snapshot_genomes("ecoli", config) == ["562.1", "562.2"]
+    mod.do_prep("ecoli", config)
+    assert sorted(p.name for p in (qc / "inputs").iterdir()) == ["562.1.fna", "562.2.fna"]
+    assert f'GENOMES_DIR="{qc / "inputs"}"' in (qc / "02d_qc_paths_ecoli.sh").read_text()
+    (genomes / "562.2.fna").unlink()
+    with pytest.raises(FileNotFoundError):
+        panel.snapshot_genomes("ecoli", config)
