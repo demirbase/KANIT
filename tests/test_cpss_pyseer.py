@@ -139,6 +139,16 @@ def test_rtab_kinship_and_samples(model, tmp_path):
     assert (pl.kinship(mm, kin, block=3) == g @ g.T).all()
 
 
+def test_pyseer_sample_names_keep_their_digits(tmp_path):
+    # pyseer reads the sample column with pandas' type inference (index_col=0)
+    ids = ["550.2110", "550.211", "550.21"]
+    for names, kept in ((ids, False), (pl.sample_names(ids), True)):
+        pd.DataFrame({"samples": names, "resistant": [1, 0, 1]}).to_csv(
+            tmp_path / "p.tsv", sep="\t", index=False)
+        read = pd.read_csv(tmp_path / "p.tsv", sep="\t", index_col=0).index.astype(str)
+        assert (read.tolist() == list(names)) is kept
+
+
 def test_lambda_and_qq():
     p = np.linspace(0.0005, 0.9995, 1000)
     assert pl.genomic_lambda(p) == pytest.approx(1.0, abs=0.01)
@@ -169,6 +179,7 @@ def test_pyseer_prep_and_post(model, tmp_path, monkeypatch):
         f"p{p}" for p in tested]
     k = pd.read_csv(out / "kinship.tsv", sep="\t", index_col=0)
     assert (k.to_numpy() == k.to_numpy().T).all() and list(k.index) == list(k.columns)
+    assert list(k.columns) == pl.sample_names(mm.genomes["Genome ID"].astype(str))
     script = (out / "run_pyseer.sh").read_text()
     assert "--lmm" in script and "--min-af 0 --max-af 1" in script and "--cpu 2" in script
     p = {t: 0.5 for t in tested}

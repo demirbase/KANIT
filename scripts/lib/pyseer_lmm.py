@@ -48,8 +48,15 @@ def kinship(mm, pattern_ids, block: int = 4096) -> np.ndarray:
     return np.rint(k).astype(np.int64)
 
 
+def sample_names(genome_ids) -> list[str]:
+    """pyseer's sample names: the genome ids behind a letter. pyseer reads the phenotype
+    and kinship tables with pandas' type inference, which turns numeric-looking ids into
+    floats: BV-BRC's 550.2110 becomes 550.211 and no longer matches its column."""
+    return [f"s{g}" for g in genome_ids]
+
+
 def write_rtab(path, names, genome_ids, bits) -> None:
-    """pyseer's --pres format: a header of genome ids, one 0/1 row per variant.
+    """pyseer's --pres format: a header of sample names, one 0/1 row per variant.
     ``bits`` is variants × genomes."""
     bits = np.asarray(bits, dtype=np.uint8)
     n = bits.shape[1]
@@ -66,7 +73,7 @@ def write_inputs(mm, out_dir, tested, *, every: int, background_max: int) -> dic
     """phenotypes.tsv, tested.Rtab, background.Rtab and kinship.tsv for pyseer."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    ids = mm.genomes["Genome ID"].astype(str).tolist()
+    ids = sample_names(mm.genomes["Genome ID"].astype(str))
     pd.DataFrame({"samples": ids, "resistant": mm.labels.astype(int)}).to_csv(
         out / "phenotypes.tsv", sep="\t", index=False)
     tested = np.asarray(sorted(set(int(p) for p in tested)), dtype=np.int64)

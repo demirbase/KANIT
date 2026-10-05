@@ -74,7 +74,7 @@ def normalize_clusters(clusters_csv, genome_ids, *,
     loudly if any Taxon fails to map (so a silent mismatch can't corrupt the CV).
     Returns a DataFrame with columns ['Genome ID', 'Cluster'] (Cluster as str).
     """
-    df = pd.read_csv(clusters_csv, encoding="utf-8")
+    df = pd.read_csv(clusters_csv, encoding="utf-8", dtype={taxon_col: str})
     for c in (taxon_col, cluster_col):
         if c not in df.columns:
             raise KeyError(f"Column '{c}' not in {clusters_csv} (have {df.columns.tolist()}).")
