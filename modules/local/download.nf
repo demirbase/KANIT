@@ -7,6 +7,7 @@ include { py; receipt; stubReceipt } from './common'
 process DOWNLOAD_BVBRC {
     tag "${org}"
     label 'internet'
+    maxForks 2                      // BV-BRC: two organisms at a time, 8 assembly workers each
 
     input:
     val org
