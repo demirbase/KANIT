@@ -187,3 +187,140 @@ def test_fetch_checks_taxon_and_assembly(tmp_path):
     n_downloads = sum("/download" in c for c in fake.calls)
     m.fetch(config, workers=2, api=api)                                # S1 is not fetched again
     assert sum("/download" in c for c in fake.calls) == n_downloads + 1   # only S3 again
+
+
+# ---- the final models on the external isolates (lib/cabbage_predict.py) --------------
+
+@pytest.fixture(scope="module")
+def trained(tmp_path_factory):
+    import numpy as np
+    import xgboost as xgb
+    from lib import matrix_store
+    tmp = tmp_path_factory.mktemp("cabbage_model")
+    rng = np.random.default_rng(1)
+    n = 120
+    ids = [f"g{i:03d}" for i in range(n)]
+    y = (rng.random(n) < 0.5).astype(int)
+    rows = [("ACGTSIGA", y), ("ACGTSIGB", y)]                    # one pattern, two members
+    rows += [(f"ACGTNOISE{j}", (rng.random(n) < 0.5).astype(int)) for j in range(20)]
+    with open(tmp / "u.rtab", "w") as f:
+        f.write("Unitig_sequence\t" + "\t".join(ids) + "\n")
+        for seq, bits in rows:
+            f.write(seq + "\t" + "\t".join(map(str, bits)) + "\n")
+    matrix_store.build_store(tmp / "u.rtab", tmp / "store", min_support=5)
+    genomes = pd.DataFrame({"Genome ID": ids, "label": y, "lineage": np.arange(n) // 6})
+    matrix_store.build_model_matrix(tmp / "store", genomes, tmp / "model", min_support=5)
+    mm, store = matrix_store.ModelMatrix(tmp / "model"), matrix_store.Store(tmp / "store")
+    x = mm.rows(np.arange(n)).astype(np.float32)
+    booster = xgb.train({"objective": "binary:logistic", "max_depth": 2, "eta": 0.5, "seed": 0},
+                        xgb.DMatrix(x, label=y), 10)
+    return mm, store, booster
+
+
+def test_patterns_presence_and_prediction(trained):
+    from lib import cabbage_predict as cp
+    mm, store, booster = trained
+    used = cp.used_patterns(booster)
+    q = cp.query_table(mm, store, used)
+    sig = set(q.loc[q["sequence"].str.startswith("ACGTSIG"), "pattern_id"])
+    assert len(sig) == 1 and q["sequence"].str.startswith("ACGTSIG").sum() == 2
+    rtab = pd.DataFrame({"e1": [1, 1], "e2": [1, 0], "e3": [0, 0]},
+                        index=["ACGTSIGA", "ACGTSIGB"]).astype("uint8")
+    pres = cp.pattern_presence(q, rtab)
+    (pid,) = sig
+    assert pres.loc[pid].tolist() == [1, 1, 0]                 # half of the members is enough
+    assert pres.drop(index=pid).to_numpy().sum() == 0          # members the Rtab lacks: absent
+    p = cp.predict(booster, mm.n_patterns, pres)
+    assert p["e1"] == p["e2"] and p["e1"] > 0.5 > p["e3"]
+    with pytest.raises(ValueError, match="features"):
+        cp.predict(booster, mm.n_patterns + 1, pres)
+
+
+def test_read_rtab(tmp_path):
+    from lib import cabbage_predict as cp
+    (tmp_path / "q.rtab").write_text("Unitig_sequence\tS1\tS2\nACGT\t1\t0\nTTGA\t0\t0\n")
+    r = cp.read_rtab(tmp_path / "q.rtab")
+    assert r.loc["ACGT"].tolist() == [1, 0] and list(r.columns) == ["S1", "S2"]
+
+
+def test_external_metrics_and_bootstrap():
+    import numpy as np
+    from lib import cabbage_predict as cp
+    y = np.array([1, 1, 1, 0, 0, 0])
+    p = np.array([0.9, 0.8, 0.3, 0.2, 0.6, 0.1])
+    m = cp.metrics(y, p)
+    assert m["sensitivity"] == pytest.approx(2 / 3) and m["specificity"] == pytest.approx(2 / 3)
+    assert m["very_major_error_rate"] == pytest.approx(1 / 3) and m["pr_auc_baseline"] == 0.5
+    assert m["roc_auc"] == pytest.approx(8 / 9)
+    w = cp.metrics(y, p, w=[2, 1, 1, 1, 1, 1])                   # weights act as copies
+    yy, pp = np.r_[y, 1], np.r_[p, 0.9]
+    assert w["roc_auc"] == pytest.approx(cp.metrics(yy, pp)["roc_auc"])
+    lineage = ["a", "a", "b", "b", "c", "c"]
+    b = cp.bootstrap(y, p, lineage, n_boot=200)
+    assert b["n_lineages"] == 3 and b["roc_auc"]["low"] <= m["roc_auc"] <= b["roc_auc"]["high"]
+    small = cp.assess(y, p, lineage, min_per_class=10)
+    assert small == {"n": 6, "n_resistant": 3, "n_susceptible": 3, "assessed": False}
+    big = cp.assess(y, p, lineage, min_per_class=3, n_boot=50)
+    assert big["assessed"] and "intervals" in big and big["balanced_accuracy"] == pytest.approx(2 / 3)
+
+
+def test_prepare_and_predict(trained, tmp_path):
+    import importlib.util
+    import json
+
+    from lib.config import load_config
+    mm, store, booster = trained
+    spec = importlib.util.spec_from_file_location("amrtest_19b", PROJECT_ROOT / "scripts" / "19_cabbage.py")
+    m = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = m
+    spec.loader.exec_module(m)
+    cv = tmp_path / "cv"
+    (cv / "final").mkdir(parents=True)
+    booster.save_model(str(cv / "final" / "model.ubj"))
+    (cv / "cv_design.json").write_text(json.dumps({"evaluable": True}))
+    (cv / "metrics.json").write_text(json.dumps(
+        {"arms": {"lineage_aware": {"roc_auc": 0.9, "ci": {"low": 0.8, "high": 0.95}}}}))
+    (tmp_path / "panel").mkdir()
+    pd.DataFrame({"organism": ["ecoli"], "antibiotic": ["ciprofloxacin"],
+                  "decision": ["included"]}).to_csv(tmp_path / "panel" / "panel_decisions.csv",
+                                                    index=False)
+    config = load_config()
+    config["paths_organism"] = {
+        **config["paths_organism"], "panel_dir": str(tmp_path / "panel"), "cv_dir": str(cv),
+        "matrix_dir": str(mm.dir), "unitig_store_dir": str(store.dir),
+        "cabbage_dir": str(tmp_path / "cab"), "cabbage_organism_dir": str(tmp_path / "cab" / "{organism}"),
+        "cabbage_genomes_dir": str(tmp_path / "g" / "{organism}")}
+    out = tmp_path / "cab" / "ecoli"
+    (out / "checkm2").mkdir(parents=True)
+    ext = [f"E{i}" for i in range(24)]                  # E0–E11 resistant, E12–E23 susceptible
+    pd.DataFrame({"organism": "ecoli", "biosample_id": ext + ["X"], "assembly_id": "GCA_1.1",
+                  "status": ["passed"] * 24 + ["failed"]}).to_csv(
+        tmp_path / "cab" / "cabbage_download_report.csv", index=False)
+    pd.DataFrame({"Name": ext, "Completeness": 99.0,
+                  "Contamination": [1.0] * 23 + [9.0]}).to_csv(out / "checkm2" / "quality_report.tsv",
+                                                               sep="\t", index=False)
+    pd.DataFrame({"organism": "ecoli", "biosample_id": ext, "antibiotic": "ciprofloxacin",
+                  "label": [1] * 12 + [0] * 12, "n_records": 1, "how": "single"}).to_csv(
+        tmp_path / "cab" / "cabbage_phenotypes.csv", index=False)
+    s = m.prepare("ecoli", config)
+    assert s["n_qc_passed"] == 23 and s["models"] == ["ciprofloxacin"]
+    assert len((out / "refs.txt").read_text().splitlines()) == 23
+    assert {"ACGTSIGA", "ACGTSIGB"} <= set((out / "unitigs.txt").read_text().split())
+    # what unitig-caller and poppunk_assign would write
+    called = ext[:23]
+    with open(out / "calls.rtab", "w") as f:
+        f.write("Unitig_sequence\t" + "\t".join(called) + "\n")
+        for u in ("ACGTSIGA", "ACGTSIGB"):
+            f.write(u + "\t" + "\t".join("1" if int(b[1:]) < 12 else "0" for b in called) + "\n")
+    (out / "poppunk").mkdir()
+    pd.DataFrame({"Taxon": ext[:22], "Cluster": [str(i % 4) if i % 2 else "999" for i in range(22)]}
+                 ).to_csv(out / "poppunk" / "poppunk_clusters.csv", index=False)
+    r = m.predict("ecoli", config)["pairs"]["ciprofloxacin"]
+    assert r["n_not_called"] == 1 and r["n_not_assigned"] == 1           # E23 QC, E22 lineage
+    a = r["all"]
+    assert a["assessed"] and a["n_resistant"] == 12 and a["n_susceptible"] == 10
+    assert a["roc_auc"] == 1.0 and a["balanced_accuracy"] == 1.0
+    assert r["lineage_seen"]["n"] == 11 and r["lineage_unseen"]["n"] == 11
+    assert r["internal_lineage_aware"]["roc_auc"] == 0.9
+    pred = pd.read_csv(out / "cabbage_predictions.csv")
+    assert len(pred) == 22 and set(pred["lineage_seen"]) == {True, False}

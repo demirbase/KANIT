@@ -84,6 +84,7 @@ paths_organism:
   cabbage_data_dir:     "data/external/cabbage"
   cabbage_genomes_dir:  "data/external/cabbage/genomes/{organism}"
   cabbage_dir:          "results/cabbage"
+  cabbage_organism_dir: "results/{organism}/cabbage"
   # Reference databases: version, download date and checksums (databases.py, §13).
   databases_manifest:   "data/external/databases.json"
   # Knowledge base (build_kb.py; docs/V1_BILGI_TABANI.md).

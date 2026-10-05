@@ -15,6 +15,15 @@ Subcommands:
             sequences, length); into cabbage_genomes_dir as <BioSample>.fna. A passed
             assembly already on disk is not fetched again. Writes
             cabbage_download_report.csv and cabbage_fetch.json; needs internet
+  prepare   per organism, after CheckM2 ran on its external assemblies
+            (cabbage_organism_dir/checkm2/quality_report.tsv): the assemblies that pass
+            §2.3 (refs.txt for unitig-caller, poppunk_query.txt for poppunk_assign) and, for
+            every evaluable panel model, the member unitigs of the patterns its final model
+            uses (query_<antibiotic>.csv; all of them in unitigs.txt)
+  predict   per organism, after unitig-caller (simple mode, calls.rtab) and poppunk_assign
+            (poppunk/poppunk_clusters.csv): every model's prediction of the external isolates
+            with a phenotype for its antibiotic and the metrics of §14 item 4, next to the
+            model's lineage-aware estimate (cabbage_predictions.csv, cabbage_metrics.json)
 """
 import argparse
 import hashlib
@@ -31,7 +40,8 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from lib import bvbrc, cabbage, ncbi_datasets, registry  # noqa: E402
+from lib import bvbrc, cabbage, folds, ncbi_datasets, panel, registry  # noqa: E402
+from lib import cabbage_predict as cp  # noqa: E402
 from lib.config import load_config, resolve_path  # noqa: E402
 
 USER_AGENT = "KANIT (https://github.com/iumobg/KANIT)"
@@ -184,18 +194,129 @@ def fetch(config: dict, *, workers: int, api=None) -> pd.DataFrame:
     return report
 
 
+def models_of(organism: str, config: dict) -> list[str]:
+    """The antibiotics of the organism's evaluable panel models that have a final model."""
+    out = []
+    for org, ab in panel.included_pairs(resolve_path("panel_dir", config=config)
+                                        / "panel_decisions.csv"):
+        cv = resolve_path("cv_dir", organism=org, antibiotic=ab, config=config)
+        design = cv / "cv_design.json"
+        if (org == organism and design.exists() and json.loads(design.read_text())["evaluable"]
+                and (cv / "final" / "model.ubj").exists()):
+            out.append(ab)
+    return sorted(out)
+
+
+def prepare(organism: str, config: dict) -> dict:
+    import xgboost as xgb
+    from lib.matrix_store import ModelMatrix, Store
+    out = resolve_path("cabbage_organism_dir", organism=organism, config=config)
+    report = pd.read_csv(resolve_path("cabbage_dir", config=config) / "cabbage_download_report.csv",
+                         dtype=str, keep_default_na=False)
+    fetched = set(report.loc[(report["organism"] == organism) & (report["status"] == "passed"),
+                             "biosample_id"])
+    qc = cp.qc_table(out / "checkm2" / "quality_report.tsv")
+    qc = qc[qc["biosample_id"].isin(fetched)]
+    qc.to_csv(out / "cabbage_qc.csv", index=False)
+    genomes_dir = resolve_path("cabbage_genomes_dir", organism=organism, config=config)
+    passed = sorted(qc.loc[qc["passes"], "biosample_id"])
+    (out / "refs.txt").write_text("".join(f"{(genomes_dir / f'{b}.fna').resolve()}\n" for b in passed))
+    (out / "poppunk_query.txt").write_text(
+        "".join(f"{b}\t{(genomes_dir / f'{b}.fna').resolve()}\n" for b in passed))
+    store = Store(resolve_path("unitig_store_dir", organism=organism, config=config))
+    members, sequences = {}, set()
+    abs_ = models_of(organism, config)
+    for ab in abs_:
+        cv = resolve_path("cv_dir", organism=organism, antibiotic=ab, config=config)
+        mm = ModelMatrix(resolve_path("matrix_dir", organism=organism, antibiotic=ab, config=config))
+        used = cp.used_patterns(xgb.Booster(model_file=str(cv / "final" / "model.ubj")))
+        m = mm.members()
+        members[ab] = m[m["pattern_id"].isin(set(used.tolist()))]
+    wanted = sorted({int(i) for m in members.values() for i in m["unitig_index"]})
+    seq_of = dict(zip(wanted, store.sequences(wanted), strict=True))
+    for ab, m in members.items():
+        q = m.assign(sequence=m["unitig_index"].map(seq_of)).sort_values("unitig_index")
+        q.to_csv(out / f"query_{ab}.csv", index=False)
+        sequences |= set(q["sequence"])
+    (out / "unitigs.txt").write_text("".join(f"{s}\n" for s in sorted(sequences)))
+    summary = {"organism": organism, "n_fetched": len(fetched), "n_qc_checked": len(qc),
+               "n_qc_passed": len(passed), "models": abs_, "n_unitigs": len(sequences)}
+    (out / "cabbage_prepare.json").write_text(json.dumps(summary, indent=2) + "\n")
+    return summary
+
+
+def predict(organism: str, config: dict) -> dict:
+    import xgboost as xgb
+    from lib.matrix_store import ModelMatrix
+    c = config["cabbage"]
+    out = resolve_path("cabbage_organism_dir", organism=organism, config=config)
+    rtab = cp.read_rtab(out / "calls.rtab")
+    clusters = pd.read_csv(out / "poppunk" / "poppunk_clusters.csv", dtype=str)
+    lineage = dict(zip(clusters["Taxon"], clusters["Cluster"], strict=True))
+    phen = pd.read_csv(resolve_path("cabbage_dir", config=config) / "cabbage_phenotypes.csv",
+                       dtype={"biosample_id": str})
+    phen = phen[phen["organism"] == organism]
+    rows, result = [], {}
+    for ab in models_of(organism, config):
+        cv = resolve_path("cv_dir", organism=organism, antibiotic=ab, config=config)
+        mm = ModelMatrix(resolve_path("matrix_dir", organism=organism, antibiotic=ab, config=config))
+        booster = xgb.Booster(model_file=str(cv / "final" / "model.ubj"))
+        q = pd.read_csv(out / f"query_{ab}.csv")
+        truth = phen[phen["antibiotic"] == ab].set_index("biosample_id")["label"]
+        isolates = [b for b in truth.index if b in rtab.columns]
+        assigned = [b for b in isolates if b in lineage]
+        p = cp.predict(booster, mm.n_patterns, cp.pattern_presence(q, rtab[assigned]))
+        model_lineages = set(mm.genomes["lineage"].astype(str))
+        d = pd.DataFrame({"organism": organism, "antibiotic": ab, "biosample_id": assigned,
+                          "y": truth.reindex(assigned).to_numpy(dtype=int),
+                          "p": p.reindex(assigned).to_numpy(),
+                          "lineage": [lineage[b] for b in assigned]})
+        d["lineage_seen"] = [cp.lineage_seen(x, model_lineages) for x in d["lineage"]]
+        rows.append(d)
+        kw = {"min_per_class": int(c["min_per_class"]),
+              "n_boot": int(config["cv"]["n_bootstrap"]), "threshold": float(config["cv"]["threshold"])}
+        internal = json.loads((cv / "metrics.json").read_text())["arms"][folds.LINEAGE_AWARE]
+        result[ab] = {
+            "n_with_phenotype": len(truth), "n_not_called": len(truth) - len(isolates),
+            "n_not_assigned": len(isolates) - len(assigned),
+            "n_patterns_used": int(q["pattern_id"].nunique()),
+            "all": cp.assess(d["y"], d["p"], d["lineage"], **kw),
+            "lineage_seen": cp.assess(*(d.loc[d["lineage_seen"], k] for k in ("y", "p", "lineage")), **kw),
+            "lineage_unseen": cp.assess(*(d.loc[~d["lineage_seen"], k] for k in ("y", "p", "lineage")), **kw),
+            "internal_lineage_aware": {"roc_auc": internal["roc_auc"], "ci": internal.get("ci")}}
+    pred = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+    pred.to_csv(out / "cabbage_predictions.csv", index=False)
+    summary = {"created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+               "organism": organism, "pairs": result}
+    (out / "cabbage_metrics.json").write_text(json.dumps(summary, indent=2) + "\n")
+    return summary
+
+
 def main():
     config = load_config()
     ap = argparse.ArgumentParser(description="External validation on CABBAGE.")
-    ap.add_argument("command", choices=["download", "select", "fetch"])
+    ap.add_argument("command", choices=["download", "select", "fetch", "prepare", "predict"])
     ap.add_argument("--workers", type=int, default=4, help="assemblies fetched at once")
+    ap.add_argument("--organism", help="prepare, predict: the organism")
     args = ap.parse_args()
+    if args.command in ("prepare", "predict") and not args.organism:
+        sys.exit(f"ERROR: {args.command} needs --organism")
     print(f"CABBAGE — {args.command}")
     if args.command == "download":
         print(f"  ✓ {download(config)}")
     elif args.command == "fetch":
         r = fetch(config, workers=args.workers)
         print("  " + ", ".join(f"{k} {v}" for k, v in r["status"].value_counts().items()))
+    elif args.command == "prepare":
+        s = prepare(args.organism, config)
+        print(f"  {s['n_qc_passed']} of {s['n_qc_checked']} assemblies pass QC; "
+              f"{len(s['models'])} models, {s['n_unitigs']} unitigs to search")
+    elif args.command == "predict":
+        s = predict(args.organism, config)
+        for ab, r in s["pairs"].items():
+            a = r["all"]
+            auc = f"ROC-AUC {a['roc_auc']:.3f}" if a["assessed"] else "not assessed"
+            print(f"  {ab:32s} R {a['n_resistant']:4d} S {a['n_susceptible']:4d}  {auc}")
     else:
         s = select(config)
         print(f"  {s['n_isolates']} isolates, {s['n_phenotypes']} phenotypes")
