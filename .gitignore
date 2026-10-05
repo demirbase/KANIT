@@ -116,6 +116,9 @@ optuna_studies/
 # MLOps RUN ARTIFACTS (generated run metadata / metrics)
 # ============================================================================
 runs/**
+# The end-to-end test's tree (--config_overlay tests/data/e2e_overlay.yaml moves every
+# location under e2e/); a symlink to scratch on the HPC, hence no trailing slash
+/e2e
 # No !runs/.gitkeep exception: runs/ is a symlink to scratch on the HPC, and a
 # tracked file under it makes `git reset --hard` replace the symlink with a real
 # directory (see the data/ note above). The pipeline mkdir -p's runs/ anyway.
