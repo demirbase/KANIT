@@ -79,6 +79,10 @@ paths_organism:
   external_dir:         "results/{organism}/external"
   # NCBI context of the candidate unitigs (18): cache/ and unitig_context.csv.
   context_dir:          "results/{organism}/context"
+  # External validation on CABBAGE (19_cabbage.py; protocol §14 item 4): the release and the
+  # eligible external isolates of every organism
+  cabbage_data_dir:     "data/external/cabbage"
+  cabbage_dir:          "results/cabbage"
   # Reference databases: version, download date and checksums (databases.py, §13).
   databases_manifest:   "data/external/databases.json"
   # Knowledge base (build_kb.py; docs/V1_BILGI_TABANI.md).
@@ -308,6 +312,12 @@ context:                    # 18_ncbi_context.py, lib/ncbi_context.py (protocol 
   evalue: 10
   max_members: 10           # a pattern with more members contributes its longest
   batch_size: 100           # unitigs per BLAST submission
+
+cabbage:                    # 19_cabbage.py, lib/cabbage.py (protocol §14 item 4; secondary analysis)
+  release: "2026-07"        # EBI AMR Portal release
+  url: "https://ftp.ebi.ac.uk/pub/databases/amr_portal/releases/2026-07/phenotype.parquet"
+  md5: "d2ccca428bf39462f9ba6aefb33ffdf9"
+  min_per_class: 10         # a pair is assessed with at least this many R and S isolates
 
 # Label permutation test of every model (12b_label_permutation.py; protocol §8.6)
 label_permutation:

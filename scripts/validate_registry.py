@@ -101,6 +101,10 @@ def _check_registry(errors: list[str], warnings: list[str]) -> None:
             if t in owner:
                 errors.append(f"taxon {t} is listed under '{owner[t]}' and '{slug}'")
             owner[t] = slug
+        names = block.get("species_names") or []
+        if not isinstance(names, list) or len(names) != len(taxids) or not all(
+                isinstance(x, str) and x.strip() for x in names):
+            errors.append(f"organism '{slug}': species_names must name every taxid, in order")
 
 
 def _check_kb(db: Path, errors: list[str], warnings: list[str]) -> None:
