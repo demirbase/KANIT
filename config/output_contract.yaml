@@ -170,12 +170,22 @@ tables:
     description: "RGI hits (Perfect and Strict) of every store genome against CARD."
     fields:
       - {name: genome_id, type: string, required: true, description: "BV-BRC genome identifier"}
+      - {name: contig, type: string, required: true, description: "Contig of the hit (FASTA identifier)"}
+      - {name: start, type: integer, required: true, minimum: 0, description: "Start on the contig (0-based)"}
+      - {name: end, type: integer, required: true, minimum: 1, description: "End on the contig (half-open)"}
+      - {name: strand, type: string, required: true, enum: ["+", "-"], description: "Strand of the hit"}
+      - {name: cut_off, type: string, required: true, enum: [Perfect, Strict], description: "RGI cut-off of the hit"}
       - {name: aro, type: string, required: true, description: "CARD ARO accession"}
       - {name: aro_name, type: string, description: "CARD term name"}
-      - {name: model_type, type: string, description: "CARD model type"}
+      - {name: model_type, type: string, enum: [homolog, variant, overexpression, rrna_variant], description: "CARD model type"}
+      - {name: snps, type: string, description: "SNPs in the best-hit ARO (variant models)"}
       - {name: gene_family, type: string, description: "CARD gene family"}
       - {name: drug_class, type: string, description: "CARD drug classes (semicolon-separated)"}
       - {name: mechanism, type: string, description: "CARD resistance mechanism"}
+      - {name: dna, type: string, description: "Predicted DNA sequence (variant, overexpression and rRNA models only)"}
+      - {name: protein, type: string, description: "Predicted protein sequence (the same models only)"}
+      - {name: ref_protein, type: string, description: "CARD reference protein sequence (the same models only)"}
+      - {name: model_id, type: string, description: "CARD model identifier"}
 
   # ---- 04 nested cross-validation ---------------------------------------------
   oof_predictions:
