@@ -113,11 +113,18 @@ def test_step_end_to_end(tmp_path):
     assert m.prep("ecoli", config, ext, threads=2) == sorted(ids)
     script = (ext / "run_external.sh").read_text()
     assert "--organism Escherichia" in script and '-s "Escherichia coli"' in script
-    assert "--point --ignore_missing_species" in script and "ReferenceGeneCatalog.txt" in script
+    assert "--point --ignore_missing_species" in script and "amrfinder_catalog.tsv" in script
     # run_external.sh in two shards, with stand-ins for the two tools
     db = root / "afpdb"
     db.mkdir()
-    (db / "ReferenceGeneCatalog.txt").write_text("class\tsubclass\nQUINOLONE\tQUINOLONE\n")
+    # the tables amrfinder_update fetches: class and subclass are read from every one
+    # that has them, wherever the columns are
+    (db / "fam.tsv").write_text("#node_id\tparent_node_id\treportable\ttype\tsubtype\tclass\t"
+                                "subclass\tfamily_name\nqnrS\tQNR\t1\tAMR\tAMR\tQUINOLONE\t"
+                                "QUINOLONE\tquinolone resistance protein QnrS\n")
+    (db / "AMRProt-mutation.tsv").write_text("#accession\tsubclass\tclass\tsymbol\n"
+                                             "WP_1\tCOLISTIN\tCOLISTIN\tpmrB_R256G\n")
+    (db / "version.txt").write_text("2025-07-16.1\n")
     fake = root / "fake_amrfinder"
     fake.write_text(f"""#!/usr/bin/env bash
 case "$1" in
@@ -146,6 +153,7 @@ printf 'ciprofloxacin\\tquinolone\\t%s\\t1\\tx\\n' "$r" > "$o/pheno_table_escher
     for k in (1, 0):
         subprocess.run(["bash", str(ext / "run_external.sh"), str(k), "2"], check=True, env=env)
     assert len(list((ext / "amrfinder").glob("*.done"))) == 12
+    assert ex.catalog_tokens(ext / "amrfinder_catalog.tsv") >= {"QUINOLONE", "COLISTIN"}
     assert (ext / "amrfinder" / "g0.tsv.db").read_text().strip() == str(db)   # $AMRFINDER_DB
     v = m.collect("ecoli", config, ext)
     assert v["amrfinderplus_database"] == "2025-07-16.1" and v["n_genomes"] == 12

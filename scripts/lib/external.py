@@ -51,7 +51,7 @@ def read_amrfinder(path, genome_id: str) -> pd.DataFrame:
 
 
 def catalog_tokens(path) -> set[str]:
-    """Class and subclass tokens of AMRFinderPlus's ReferenceGeneCatalog."""
+    """Class and subclass tokens of AMRFinderPlus's database (amrfinder_catalog.tsv)."""
     d = pd.read_csv(path, sep="\t", dtype=str, keep_default_na=False)
     cols = {c.lower(): c for c in d.columns}
     if "class" not in cols or "subclass" not in cols:

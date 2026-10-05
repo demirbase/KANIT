@@ -6,7 +6,7 @@ Subcommands, so that the tools can run in their own container:
   prep     the genomes of the organism's panel models (genomes.txt) and
            run_external.sh, which runs AMRFinderPlus and ResFinder on each genome
            (a finished genome is not run again), records the tool versions and
-           copies AMRFinderPlus's reference catalogue
+           the class and subclass vocabulary of AMRFinderPlus's database
   run      runs run_external.sh with the tools found on PATH
   collect  every genome's reports into amrfinder_calls.csv, amrfinder_genomes.csv
            and resfinder_calls.csv; a missing report stops it
@@ -57,7 +57,9 @@ def command(out_dir: Path, genomes_dir: Path, *, amrfinder_organism: str, specie
             threads: int) -> str:
     """run_external.sh [K N]: AMRFinderPlus (--plus; core is selected later) and ResFinder
     with PointFinder on every N-th genome of genomes.txt from the K-th (all by default);
-    shard 0 also records the versions and copies AMRFinderPlus's catalogue. $AMRFINDER
+    shard 0 also records the versions and the class/subclass pairs of every table of
+    AMRFinderPlus's database (amrfinder_catalog.tsv; amrfinder_update does not fetch the
+    ReferenceGeneCatalog, which is read too when present). $AMRFINDER
     and $RESFINDER override the executables; AMRFinderPlus's database is $AMRFINDER_DB
     when set, ResFinder's databases come from its CGE_* variables."""
     return "\n".join([
@@ -70,7 +72,14 @@ def command(out_dir: Path, genomes_dir: Path, *, amrfinder_organism: str, specie
         '  "$AMRFINDER" --version > amrfinder_version.txt 2>&1',
         '  "$AMRFINDER" --database_version ${DBARG[@]+"${DBARG[@]}"} > amrfinder_database_version.txt 2>&1',
         "  DB=$(sed -n \"s/^Database directory: '\\(.*\\)'.*/\\1/p\" amrfinder_database_version.txt)",
-        '  cp "$DB/ReferenceGeneCatalog.txt" amrfinder_catalog.tsv',
+        '  { printf "class\\tsubclass\\n"; for f in "$DB"/*.tsv "$DB"/*.txt; do',
+        '      [ -e "$f" ] || continue',
+        "      awk -F'\\t' 'NR == 1 { for (i = 1; i <= NF; i++) { h = tolower($i); "
+        'sub(/^#/, "", h); if (h == "class") c = i; if (h == "subclass") s = i } next } '
+        'c && s { print $c "\\t" $s }\' "$f"',
+        '  done; } > amrfinder_catalog.tsv',
+        '  [ "$(wc -l < amrfinder_catalog.tsv)" -gt 1 ] || '
+        '{ echo "no class/subclass table in $DB" >&2; exit 1; }',
         "  $RESFINDER --version > resfinder_version.txt 2>&1",
         "fi",
         "awk -v k=\"$K\" -v n=\"$N\" '(NR - 1) % n == k' genomes.txt | while read -r g; do",
@@ -134,7 +143,7 @@ def collect(organism, config, out_dir: Path) -> dict:
     pd.DataFrame(rows, columns=["genome_id", "antibiotic", "resistant"]).to_csv(
         out_dir / "resfinder_calls.csv", index=False)
     if not (out_dir / "amrfinder_catalog.tsv").exists():
-        sys.exit("ERROR: amrfinder_catalog.tsv missing (run_external.sh copies it).")
+        sys.exit("ERROR: amrfinder_catalog.tsv missing (run_external.sh writes it).")
     db = _first_line(out_dir / "amrfinder_database_version.txt")
     versions = {"amrfinderplus": _first_line(out_dir / "amrfinder_version.txt"),
                 "amrfinderplus_database": next(
