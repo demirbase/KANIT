@@ -2,8 +2,12 @@
 // tree (config/config.yaml paths); a task emits receipt.json, which the tasks that
 // depend on it stage as input, so that -resume reruns them when it reruns.
 
+// the steps read --config_overlay through KANIT_CONFIG_OVERLAY, set only when there
+// is one (an empty env value makes Nextflow warn on every task)
 def py(String script) {
-    "${params.python} ${projectDir}/scripts/${script}"
+    String overlay = params.config_overlay ?
+        "KANIT_CONFIG_OVERLAY='${new File(params.config_overlay.toString()).getAbsolutePath()}' " : ''
+    "${overlay}${params.python} ${projectDir}/scripts/${script}"
 }
 
 // receipt.json of a task, which is also its step manifest (scripts/receipt.py): the
