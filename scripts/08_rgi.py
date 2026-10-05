@@ -63,12 +63,17 @@ def load(config):
 
 
 def run(organism, config, *, threads, shard):
-    db = resolve_path("rgi_db_dir", config=config)
-    out = resolve_path("rgi_dir", organism=organism, config=config)
-    out.mkdir(parents=True, exist_ok=True)
-    fna_dir = resolve_path("raw_genomes_dir", organism=organism, config=config)
     k, n = shard
-    todo = [g for i, g in enumerate(genomes_of(organism, config)) if i % n == k]
+    run_genomes([g for i, g in enumerate(genomes_of(organism, config)) if i % n == k],
+                resolve_path("raw_genomes_dir", organism=organism, config=config),
+                resolve_path("rgi_dir", organism=organism, config=config),
+                resolve_path("rgi_db_dir", config=config), threads=threads)
+
+
+def run_genomes(todo, fna_dir: Path, out: Path, db: Path, *, threads):
+    """`rgi main` on every genome of ``todo`` (<fna_dir>/<genome>.fna) into
+    <out>/<genome>.txt; a finished genome (<genome>.done) is not run again."""
+    out.mkdir(parents=True, exist_ok=True)
     tool = _rgi()
     for i, g in enumerate(todo, 1):
         if (out / f"{g}.done").exists():

@@ -24,9 +24,19 @@ Subcommands:
             (poppunk/poppunk_clusters.csv): every model's prediction of the external isolates
             with a phenotype for its antibiotic and the metrics of §14 item 4, next to the
             model's lineage-aware estimate (cabbage_predictions.csv, cabbage_metrics.json)
+  external-prep, external-collect
+            AMRFinderPlus and ResFinder on the assemblies that pass QC, with step 16's
+            run_external.sh and collection (cabbage_organism_dir/external)
+  rgi, rgi-collect
+            RGI on the same assemblies, with step 08's command (cabbage_organism_dir/rgi;
+            --shard K --shards N)
+  compare   the genotype-based predictors of §11 and the model on the isolates the model was
+            assessed on, with the same rules and lineage-cluster bootstrap intervals
+            (cabbage_comparison.csv)
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import sys
@@ -40,8 +50,9 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from lib import bvbrc, cabbage, folds, ncbi_datasets, panel, registry  # noqa: E402
+from lib import bvbrc, cabbage, card_layer, folds, ncbi_datasets, panel, registry  # noqa: E402
 from lib import cabbage_predict as cp  # noqa: E402
+from lib import external as ex  # noqa: E402
 from lib.config import load_config, resolve_path  # noqa: E402
 
 USER_AGENT = "KANIT (https://github.com/iumobg/KANIT)"
@@ -292,14 +303,109 @@ def predict(organism: str, config: dict) -> dict:
     return summary
 
 
+def _step(name: str):
+    """The module of another step (its file name starts with a digit)."""
+    spec = importlib.util.spec_from_file_location(f"kanit_step_{name}",
+                                                  PROJECT_ROOT / "scripts" / f"{name}.py")
+    m = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = m
+    spec.loader.exec_module(m)
+    return m
+
+
+def qc_passed(organism: str, config: dict) -> list[str]:
+    qc = pd.read_csv(resolve_path("cabbage_organism_dir", organism=organism, config=config)
+                     / "cabbage_qc.csv", dtype={"biosample_id": str})
+    return sorted(qc.loc[qc["passes"].astype(bool), "biosample_id"])
+
+
+def external_prep(organism: str, config: dict, *, threads: int) -> Path:
+    out = resolve_path("cabbage_organism_dir", organism=organism, config=config) / "external"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "genomes.txt").write_text("".join(f"{g}\n" for g in qc_passed(organism, config)))
+    org = registry.get_organism(organism)
+    script = out / "run_external.sh"
+    script.write_text(_step("16_external").command(
+        out, resolve_path("cabbage_genomes_dir", organism=organism, config=config),
+        amrfinder_organism=org["amrfinder_organism"], species=org["resfinder_species"],
+        threads=threads))
+    script.chmod(0o755)
+    return script
+
+
+def rgi_collect(organism: str, config: dict) -> pd.DataFrame:
+    out = resolve_path("cabbage_organism_dir", organism=organism, config=config) / "rgi"
+    genomes = qc_passed(organism, config)
+    missing = [g for g in genomes if not (out / f"{g}.done").exists()]
+    if missing:
+        sys.exit(f"ERROR: RGI not finished for {len(missing)} genome(s), e.g. {missing[:5]}")
+    hits = pd.concat([card_layer.read_rgi(out / f"{g}.txt", g) for g in genomes], ignore_index=True)
+    hits = hits[["genome_id", "aro", "model_type", "drug_class"]]
+    hits.to_csv(out / "rgi_hits.csv", index=False)
+    return hits
+
+
+def compare(organism: str, config: dict) -> pd.DataFrame:
+    from lib.matrix_store import Store
+    out = resolve_path("cabbage_organism_dir", organism=organism, config=config)
+    assessed = {ab for ab, r in json.loads((out / "cabbage_metrics.json").read_text())["pairs"].items()
+                if r["all"]["assessed"]}
+    pred = pd.read_csv(out / "cabbage_predictions.csv", dtype={"biosample_id": str, "lineage": str})
+    calls = pd.read_csv(out / "external" / "amrfinder_calls.csv", dtype={"genome_id": str},
+                        keep_default_na=False)
+    rf = pd.read_csv(out / "external" / "resfinder_calls.csv", dtype={"genome_id": str})
+    catalog = ex.catalog_tokens(out / "external" / "amrfinder_catalog.tsv")
+    rgi = pd.read_csv(out / "rgi" / "rgi_hits.csv", dtype={"genome_id": str, "aro": str},
+                      keep_default_na=False)
+    # the near-universal genes of the organism's own genomes, as in the main comparison (§11)
+    main_rgi = pd.read_csv(resolve_path("rgi_dir", organism=organism, config=config) / "rgi_hits.csv",
+                           dtype={"genome_id": str, "aro": str}, keep_default_na=False,
+                           usecols=["genome_id", "aro", "model_type", "drug_class"])
+    near = card_layer.near_universal_aros(
+        main_rgi, Store(resolve_path("unitig_store_dir", organism=organism, config=config)).genomes,
+        config["card"]["near_universal"])
+    keywords = registry.load_amrfinder_keywords()
+    threshold, n_boot = float(config["cv"]["threshold"]), int(config["cv"]["n_bootstrap"])
+    parts = []
+    for ab, d in pred[pred["antibiotic"].isin(assessed)].groupby("antibiotic"):
+        g = d["biosample_id"].tolist()
+        truth = pd.Series(d["y"].astype(int).to_numpy(), index=g)
+        targets = registry.card_drug_classes(ab)
+        preds = {
+            "amrfinderplus": ex.predict_amrfinder(calls, g, keywords.get(ab, set()), catalog),
+            "resfinder": ex.predict_resfinder(rf, g, ab),
+            "rgi_all": ex.predict_rgi(rgi, g, targets, near, drop_near_universal=False),
+            "rgi_without_near_universal": ex.predict_rgi(rgi, g, targets, near,
+                                                         drop_near_universal=True),
+            "model": pd.Series((d["p"].to_numpy() >= threshold).astype(int), index=g)}
+        t = ex.compare_model(f"{organism}__{ab}", truth, preds)
+        for i, tool in enumerate(t["tool"]):
+            if preds.get(tool) is None:
+                continue
+            ci = cp.bootstrap(truth.to_numpy(), preds[tool].reindex(g).to_numpy(dtype=float),
+                              d["lineage"], n_boot=n_boot, threshold=threshold)
+            for k in ("balanced_accuracy", "sensitivity", "specificity",
+                      "very_major_error_rate", "major_error_rate"):
+                t.loc[i, f"{k}_low"], t.loc[i, f"{k}_high"] = ci[k]["low"], ci[k]["high"]
+        parts.append(t)
+    table = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+    table.to_csv(out / "cabbage_comparison.csv", index=False)
+    return table
+
+
 def main():
     config = load_config()
     ap = argparse.ArgumentParser(description="External validation on CABBAGE.")
-    ap.add_argument("command", choices=["download", "select", "fetch", "prepare", "predict"])
+    ap.add_argument("command", choices=["download", "select", "fetch", "prepare", "predict",
+                                        "external-prep", "external-collect", "rgi",
+                                        "rgi-collect", "compare"])
     ap.add_argument("--workers", type=int, default=4, help="assemblies fetched at once")
-    ap.add_argument("--organism", help="prepare, predict: the organism")
+    ap.add_argument("--organism", help="the organism of the per-organism commands")
+    ap.add_argument("--threads", type=int, default=1)
+    ap.add_argument("--shard", type=int, default=0, help="rgi: this shard (0-based)")
+    ap.add_argument("--shards", type=int, default=1, help="rgi: number of shards")
     args = ap.parse_args()
-    if args.command in ("prepare", "predict") and not args.organism:
+    if args.command not in ("download", "select", "fetch") and not args.organism:
         sys.exit(f"ERROR: {args.command} needs --organism")
     print(f"CABBAGE — {args.command}")
     if args.command == "download":
@@ -317,6 +423,24 @@ def main():
             a = r["all"]
             auc = f"ROC-AUC {a['roc_auc']:.3f}" if a["assessed"] else "not assessed"
             print(f"  {ab:32s} R {a['n_resistant']:4d} S {a['n_susceptible']:4d}  {auc}")
+    elif args.command == "external-prep":
+        print(f"  ✓ {external_prep(args.organism, config, threads=args.threads)}")
+    elif args.command == "external-collect":
+        out = resolve_path("cabbage_organism_dir", organism=args.organism, config=config)
+        print(f"  {_step('16_external').collect(args.organism, config, out / 'external')}")
+    elif args.command == "rgi":
+        genomes = qc_passed(args.organism, config)
+        _step("08_rgi").run_genomes(
+            [g for i, g in enumerate(genomes) if i % args.shards == args.shard],
+            resolve_path("cabbage_genomes_dir", organism=args.organism, config=config),
+            resolve_path("cabbage_organism_dir", organism=args.organism, config=config) / "rgi",
+            resolve_path("rgi_db_dir", config=config), threads=args.threads)
+    elif args.command == "rgi-collect":
+        print(f"  {len(rgi_collect(args.organism, config))} RGI hits")
+    elif args.command == "compare":
+        t = compare(args.organism, config)
+        if not t.empty:
+            print(t[["model_id", "tool", "assessable", "balanced_accuracy"]].to_string(index=False))
     else:
         s = select(config)
         print(f"  {s['n_isolates']} isolates, {s['n_phenotypes']} phenotypes")
