@@ -28,11 +28,16 @@ import hashlib
 import os
 import shutil
 import subprocess
+import sys
 import tarfile
 from dataclasses import dataclass
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+
+from lib.config import load_config  # noqa: E402
+
 ROOTS = ["results", "data/processed", "data/external", "data/raw", "models"]
 RUNS = "runs/nextflow"
 EXCLUDE = ["*/unitig_store/call/*"]
@@ -79,13 +84,14 @@ def _direct_files(d: Path) -> list[Path]:
     return sorted(f for f in d.iterdir() if f.is_file())
 
 
-def units(project: Path = PROJECT_ROOT, *, current_run: str | None = None) -> list[Unit]:
+def units(project: Path = PROJECT_ROOT, *, current_run: str | None = None,
+          roots=ROOTS) -> list[Unit]:
     out: list[Unit] = []
 
     def rel(p: Path) -> str:
         return str(p.relative_to(project))
 
-    for root in ROOTS:
+    for root in roots:
         r = project / root
         if not r.is_dir():
             continue
@@ -156,11 +162,11 @@ def write_archive(unit: Unit, out: Path, *, threads: int) -> None:
 
 
 def pack(stage: Path, ledger: Path, *, current_run: str | None, threads: int,
-         project: Path = PROJECT_ROOT) -> list[dict]:
+         project: Path = PROJECT_ROOT, roots=ROOTS) -> list[dict]:
     stage.mkdir(parents=True, exist_ok=True)
     done = read_ledger(ledger)
     rows = []
-    for u in units(project, current_run=current_run):
+    for u in units(project, current_run=current_run, roots=roots):
         fp = u.fingerprint()
         last = done.get((u.path, u.mode))
         if last and last["fingerprint"] == fp:
@@ -189,7 +195,10 @@ def main():
                     help="also copy backup_manifest.tsv here")
     ap.add_argument("--threads", type=int, default=8)
     args = ap.parse_args()
-    rows = pack(args.stage, args.ledger, current_run=args.current_run, threads=args.threads)
+    prefix = load_config().get("paths_prefix")          # an overlay's separate tree (e2e/)
+    roots = [f"{prefix.rstrip('/')}/{r}" for r in ROOTS] if prefix else ROOTS
+    rows = pack(args.stage, args.ledger, current_run=args.current_run, threads=args.threads,
+                roots=roots)
     if args.run_dir:
         args.run_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(args.stage / "backup_manifest.tsv", args.run_dir / "backup_manifest.tsv")

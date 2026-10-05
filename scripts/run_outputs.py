@@ -102,12 +102,15 @@ def main():
     args = ap.parse_args()
     out = args.out.resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
-    table = manifest(load_config(), out, threads=args.threads)
+    config = load_config()
+    prefix = config.get("paths_prefix")                 # an overlay's separate tree (e2e/)
+    roots = [f"{prefix.rstrip('/')}/{r}" for r in ROOTS] if prefix else ROOTS
+    table = manifest(config, out, roots=roots, threads=args.threads)
     tmp = out.with_name(out.name + ".tmp")
     table.to_csv(tmp, index=False)
     os.replace(tmp, out)
     summary = {"n_files": len(table), "bytes": int(table["bytes"].sum()),
-               "sha256": sha256_file(out), "roots": ROOTS,
+               "sha256": sha256_file(out), "roots": roots,
                "by_location": {k: int(n) for k, n in table["location"].value_counts().items()}}
     (out.parent / "outputs_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(f"RUN OUTPUTS — {summary['n_files']} files, {summary['bytes'] / 1e9:.1f} GB -> {out}")
