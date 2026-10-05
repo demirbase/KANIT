@@ -159,6 +159,11 @@ def select(ph: pd.DataFrame, organisms: dict, ids: dict[str, set[str]]
             counts)
 
 
+def taxon_ok(tax_id: int | None, lineages: dict[int, set[int]], taxids) -> bool:
+    """Whether an NCBI taxon is at or below one of the organism's taxa (§2.1)."""
+    return tax_id is not None and bool(lineages.get(tax_id, {tax_id}) & {int(t) for t in taxids})
+
+
 def pair_counts(phenotypes: pd.DataFrame) -> pd.DataFrame:
     """organism, antibiotic, n_resistant, n_susceptible of the eligible isolates."""
     g = phenotypes.groupby(["organism", "antibiotic"])["label"]

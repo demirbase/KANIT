@@ -82,6 +82,7 @@ paths_organism:
   # External validation on CABBAGE (19_cabbage.py; protocol §14 item 4): the release and the
   # eligible external isolates of every organism
   cabbage_data_dir:     "data/external/cabbage"
+  cabbage_genomes_dir:  "data/external/cabbage/genomes/{organism}"
   cabbage_dir:          "results/cabbage"
   # Reference databases: version, download date and checksums (databases.py, §13).
   databases_manifest:   "data/external/databases.json"
