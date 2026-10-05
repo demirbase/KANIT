@@ -205,10 +205,13 @@ def built(tmp_path_factory):
                                            "variant_not_counted", "")
         pats[f"{mode}_aros"] = ""
     pats.to_csv(p["card_layer_dir"] / "card_patterns.csv", index=False)
-    pd.DataFrame({"genome_id": ids[0], "aro": ["3003294"], "aro_name": ["Escherichia coli gyrA"],
-                  "model_type": ["variant"], "gene_family": ["fluoroquinolone resistant gyrA"],
+    pd.DataFrame({"genome_id": ids[0], "contig": ["c1"], "start": [0], "end": [2628],
+                  "strand": ["+"], "cut_off": ["Strict"], "aro": ["3003294"],
+                  "aro_name": ["Escherichia coli gyrA"], "model_type": ["variant"],
+                  "snps": ["S83L"], "gene_family": ["fluoroquinolone resistant gyrA"],
                   "drug_class": ["fluoroquinolone antibiotic"],
-                  "mechanism": ["antibiotic target alteration"]}).to_csv(
+                  "mechanism": ["antibiotic target alteration"], "dna": ["ATG"],
+                  "protein": ["M"], "ref_protein": ["M"], "model_id": ["1"]}).to_csv(
         p["rgi_dir"] / "rgi_hits.csv", index=False)
     (p["rgi_dir"] / "rgi_summary.json").write_text(json.dumps(
         {"rgi_version": "6.0.8", "card_version": "4.0.1"}))
