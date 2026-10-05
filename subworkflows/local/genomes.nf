@@ -1,5 +1,5 @@
-// Every organism: quality control and lineages, then the panel of all organisms and
-// each organism's unitig store. Emits the panel pairs.
+// Every organism: quality control and lineages, then the panel of all organisms and,
+// after it, the unitig store of each organism with panel pairs. Emits the panel pairs.
 
 include { QC_PREP; CHECKM2; QUAST; QC_POST; LINEAGE; PANEL; STORE } from '../../modules/local/genomes'
 include { meta } from '../../modules/local/common'
@@ -16,12 +16,15 @@ workflow GENOMES {
     LINEAGE(organisms)
     ready = QC_POST.out.done.join(LINEAGE.out.done).map { org, a, b -> [org, [a, b]] }
     PANEL(organisms.collect(), ready.flatMap { org, rs -> rs }.collect())
-    STORE(ready)
     def wanted = params.organisms.tokenize(',') as Set
     pairs = PANEL.out.decisions
         .splitCsv(header: true)
         .filter { row -> row.decision == 'included' && row.organism in wanted }
         .map { row -> meta(row.organism, row.antibiotic) }
+    // the store holds the genomes of the organism's panel pairs (03u reads the panel):
+    // it waits for the panel and is built only for the organisms that have pairs
+    withPairs = pairs.map { it.organism }.unique().map { [it] }
+    STORE(ready.join(withPairs).combine(PANEL.out.receipt).map { org, rs, p -> [org, rs + [p]] })
 
     emit:
     pairs  = pairs                  // meta of every panel pair

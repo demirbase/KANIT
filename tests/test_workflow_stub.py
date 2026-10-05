@@ -39,6 +39,9 @@ def test_default_entry_reaches_every_step(tmp_path):
     assert n["RUN_OUTPUTS"] == n["SACCT_DUMP"] == n["RUN_RESOURCES"] == 1
     assert n["REPORTS"] == n["COMPLETENESS"] == n["COMPLETENESS_GATE"] == 1
     assert "BACKUP_PACK" not in n                     # no --backup_remote: no backup
+    # the unitig store reads the panel: every store starts after the panel is written
+    proc = t["process"].str.split(":").str[-1]
+    assert t.loc[proc == "STORE", "start"].min() >= t.loc[proc == "PANEL", "complete"].max()
     # the run manifest and every task's receipt (its step manifest) are kept with the run
     run = json.loads((tmp_path / "trace" / "run_manifest.json").read_text())
     assert run["run"]["entry"] == "main" and run["run"]["stub"] is True
