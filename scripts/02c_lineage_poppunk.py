@@ -23,12 +23,13 @@ unitig feature steps are unaffected — this only produces the CV split labels.
 
 import argparse
 import json
+import shlex
 import shutil
 import sys
 from pathlib import Path
 
 import pandas as pd
-from lib.io_utils import run_command
+from lib.io_utils import run_logged
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -169,6 +170,11 @@ def run_poppunk(poppunk, refs_path: Path, work_dir: Path, model: str, threads: i
     whose clustering collapses.
     """
     db = work_dir / "db"
+
+    def step(log: str, args: str) -> None:
+        # PopPUNK's whole output goes to work_dir/<log>.log; a failure shows its end
+        run_logged(shlex.split(f"{poppunk} {args}"), work_dir / f"{log}.log")
+
     has_sketch = db.exists() and any(db.glob("*.h5"))
     if reuse_db and has_sketch:
         print("  ✓ Reusing existing PopPUNK sketch database (skipping --create-db).")
@@ -176,20 +182,20 @@ def run_poppunk(poppunk, refs_path: Path, work_dir: Path, model: str, threads: i
         shutil.rmtree(db, ignore_errors=True)
         print(f"  Sketching (k {params['min_k']}-{params['max_k']} step "
               f"{params['k_step']}, sketch {params['sketch_size']})...")
-        run_command(f"{poppunk} --create-db --r-files {refs_path} "
-                    f"--output {db} --threads {int(threads)} {_sketch_args(params)}")
+        step("create_db", f"--create-db --r-files {refs_path} "
+                          f"--output {db} --threads {int(threads)} {_sketch_args(params)}")
         if params.get("qc", True):
             print("  Quality control on the sketch database (--qc-db)...")
-            run_command(f"{poppunk} --qc-db --ref-db {db} --output {db} "
-                        f"--overwrite --threads {int(threads)} {_qc_args(params)}")
+            step("qc_db", f"--qc-db --ref-db {db} --output {db} "
+                          f"--overwrite --threads {int(threads)} {_qc_args(params)}")
 
-    run_command(f"{poppunk} --fit-model {model} --ref-db {db} --output {db} "
-                f"--overwrite --threads {int(threads)}")
+    step(f"fit_{model}", f"--fit-model {model} --ref-db {db} --output {db} "
+                         f"--overwrite --threads {int(threads)}")
     if refine:
         print("  Refining model boundary for strain-level resolution (bgmm/dbscan "
               "alone under-cluster)...")
-        run_command(f"{poppunk} --fit-model refine --ref-db {db} --output {db} "
-                    f"--overwrite --threads {int(threads)}")
+        step("fit_refine", f"--fit-model refine --ref-db {db} --output {db} "
+                           f"--overwrite --threads {int(threads)}")
 
     clusters = db / f"{db.name}_clusters.csv"   # = db/db_clusters.csv
     if not clusters.exists():
