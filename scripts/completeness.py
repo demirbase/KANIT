@@ -137,7 +137,7 @@ def gate(out_dir: Path) -> None:
 def main():
     ap = argparse.ArgumentParser(description="Completeness of a workflow run.")
     ap.add_argument("command", choices=["check", "gate"])
-    ap.add_argument("--entry", choices=["main", "DOWNLOAD", "CONTEXT", "KB"])
+    ap.add_argument("--entry", choices=["main", "DOWNLOAD", "CONTEXT", "KB", "CABBAGE"])
     ap.add_argument("--organisms", help="comma-separated registry ids")
     ap.add_argument("--out-dir", type=Path, required=True)
     args = ap.parse_args()

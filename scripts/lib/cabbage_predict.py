@@ -55,9 +55,11 @@ def query_table(mm, store, patterns) -> pd.DataFrame:
 
 
 def read_rtab(path) -> pd.DataFrame:
-    """unitig-caller's Rtab: one row per unitig sequence, one 0/1 column per genome."""
-    d = pd.read_csv(path, sep="\t", index_col=0, dtype=str)
-    return d.apply(pd.to_numeric).astype(np.uint8)
+    """unitig-caller's Rtab: one row per unitig sequence, one 0/1 column per genome (read
+    as uint8 at once: a large Rtab read as text would not fit in memory)."""
+    with open(path, encoding="utf-8") as f:
+        genomes = f.readline().rstrip("\n").split("\t")[1:]
+    return pd.read_csv(path, sep="\t", index_col=0, dtype={g: np.uint8 for g in genomes})
 
 
 def pattern_presence(query: pd.DataFrame, rtab: pd.DataFrame) -> pd.DataFrame:

@@ -15,11 +15,16 @@ Subcommands:
             sequences, length); into cabbage_genomes_dir as <BioSample>.fna. A passed
             assembly already on disk is not fetched again. Writes
             cabbage_download_report.csv and cabbage_fetch.json; needs internet
+  qc-paths  per organism: the shell variables of the CheckM2 task (GENOMES_DIR, CHECKM2_OUT)
   prepare   per organism, after CheckM2 ran on its external assemblies
             (cabbage_organism_dir/checkm2/quality_report.tsv): the assemblies that pass
             §2.3 (refs.txt for unitig-caller, poppunk_query.txt for poppunk_assign) and, for
             every evaluable panel model, the member unitigs of the patterns its final model
             uses (query_<antibiotic>.csv; all of them in unitigs.txt)
+  assign    per organism: poppunk_assign of the assemblies that pass QC to the organism's
+            PopPUNK clusters, with the QC of §2.4 and without updating them (poppunk/)
+  call      per organism: unitig-caller in simple mode, the query unitigs in the same
+            assemblies (calls.rtab)
   predict   per organism, after unitig-caller (simple mode, calls.rtab) and poppunk_assign
             (poppunk/poppunk_clusters.csv): every model's prediction of the external isolates
             with a phenotype for its antibiotic and the metrics of §14 item 4, next to the
@@ -74,6 +79,8 @@ def table_path(config: dict) -> Path:
 def download(config: dict) -> Path:
     c = config["cabbage"]
     out = table_path(config)
+    if out.exists() and md5_file(out) == c["md5"]:
+        return out
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_name(out.name + ".tmp")
     req = urllib.request.Request(c["url"], headers={"User-Agent": USER_AGENT})
@@ -135,6 +142,12 @@ def select(config: dict) -> dict:
 
 REPORT_COLUMNS = ["organism", "biosample_id", "assembly_id", "tax_id", "organism_name", "status",
                   "problem", "sequences", "length", "bytes", "sha256"]
+PREDICTION_COLUMNS = ["organism", "antibiotic", "biosample_id", "y", "p", "lineage", "lineage_seen"]
+INTERVAL_METRICS = ["balanced_accuracy", "sensitivity", "specificity", "very_major_error_rate",
+                    "major_error_rate"]
+COMPARISON_COLUMNS = (["model_id", "tool", "assessable", "n", "n_resistant", "tp", "fp", "tn", "fn"]
+                      + INTERVAL_METRICS
+                      + [f"{k}_{e}" for k in INTERVAL_METRICS for e in ("low", "high")])
 
 
 def fetch_one(api, base: dict, contigs: str, length: str, genomes_dir: Path) -> dict:
@@ -203,6 +216,49 @@ def fetch(config: dict, *, workers: int, api=None) -> pd.DataFrame:
         "status": {o: {k: int(v) for k, v in row.items()} for o, row in status.iterrows()}},
         indent=2) + "\n")
     return report
+
+
+def qc_paths(organism: str, config: dict) -> str:
+    out = resolve_path("cabbage_organism_dir", organism=organism, config=config) / "checkm2"
+    out.mkdir(parents=True, exist_ok=True)
+    genomes = resolve_path("cabbage_genomes_dir", organism=organism, config=config)
+    return f'GENOMES_DIR="{genomes.resolve()}"\nCHECKM2_OUT="{out.resolve()}"\n'
+
+
+def assign(organism: str, config: dict, *, threads: int) -> Path:
+    from lib.config import resolve_tool
+    from lib.io_utils import run_logged
+    lineage = _step("02c_lineage_poppunk")
+    out = resolve_path("cabbage_organism_dir", organism=organism, config=config)
+    db = resolve_path("lineage_dir", organism=organism, config=config) / "_poppunk_work" / "db"
+    tool = resolve_tool("poppunk_assign")
+    if not tool:
+        sys.exit("ERROR: poppunk_assign not found on PATH (or set AMR_POPPUNK_ASSIGN_BIN).")
+    params = lineage.lineage_params(organism, config)
+    args = [tool, "--db", db, "--query", out / "poppunk_query.txt", "--output", out / "poppunk",
+            "--threads", threads, "--overwrite"]
+    if params.get("qc", True):
+        args += ["--run-qc", *lineage._qc_args(params).split()]
+    run_logged(args, out / "poppunk_assign.log")
+    clusters = out / "poppunk" / "poppunk_clusters.csv"
+    if not clusters.exists():
+        sys.exit(f"ERROR: poppunk_assign wrote no {clusters}")
+    return clusters
+
+
+def call(organism: str, config: dict, *, threads: int) -> Path:
+    from lib.config import resolve_tool
+    from lib.io_utils import run_logged
+    out = resolve_path("cabbage_organism_dir", organism=organism, config=config)
+    tool = resolve_tool("unitig-caller")
+    if not tool:
+        sys.exit("ERROR: unitig-caller not found on PATH (or set AMR_UNITIG_CALLER_BIN).")
+    run_logged([tool, "--simple", "--refs", out / "refs.txt", "--unitigs", out / "unitigs.txt",
+                "--rtab", "--out", out / "calls", "--threads", threads], out / "unitig_caller.log")
+    rtab = out / "calls.rtab"
+    if not rtab.exists():
+        sys.exit(f"ERROR: unitig-caller wrote no {rtab}")
+    return rtab
 
 
 def models_of(organism: str, config: dict) -> list[str]:
@@ -295,8 +351,9 @@ def predict(organism: str, config: dict) -> dict:
             "lineage_seen": cp.assess(*(d.loc[d["lineage_seen"], k] for k in ("y", "p", "lineage")), **kw),
             "lineage_unseen": cp.assess(*(d.loc[~d["lineage_seen"], k] for k in ("y", "p", "lineage")), **kw),
             "internal_lineage_aware": {"roc_auc": internal["roc_auc"], "ci": internal.get("ci")}}
-    pred = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
-    pred.to_csv(out / "cabbage_predictions.csv", index=False)
+    pred = (pd.concat(rows, ignore_index=True) if rows
+            else pd.DataFrame(columns=PREDICTION_COLUMNS))
+    pred[PREDICTION_COLUMNS].to_csv(out / "cabbage_predictions.csv", index=False)
     summary = {"created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                "organism": organism, "pairs": result}
     (out / "cabbage_metrics.json").write_text(json.dumps(summary, indent=2) + "\n")
@@ -384,11 +441,11 @@ def compare(organism: str, config: dict) -> pd.DataFrame:
                 continue
             ci = cp.bootstrap(truth.to_numpy(), preds[tool].reindex(g).to_numpy(dtype=float),
                               d["lineage"], n_boot=n_boot, threshold=threshold)
-            for k in ("balanced_accuracy", "sensitivity", "specificity",
-                      "very_major_error_rate", "major_error_rate"):
+            for k in INTERVAL_METRICS:
                 t.loc[i, f"{k}_low"], t.loc[i, f"{k}_high"] = ci[k]["low"], ci[k]["high"]
         parts.append(t)
-    table = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+    table = (pd.concat(parts, ignore_index=True) if parts
+             else pd.DataFrame(columns=COMPARISON_COLUMNS)).reindex(columns=COMPARISON_COLUMNS)
     table.to_csv(out / "cabbage_comparison.csv", index=False)
     return table
 
@@ -396,9 +453,9 @@ def compare(organism: str, config: dict) -> pd.DataFrame:
 def main():
     config = load_config()
     ap = argparse.ArgumentParser(description="External validation on CABBAGE.")
-    ap.add_argument("command", choices=["download", "select", "fetch", "prepare", "predict",
-                                        "external-prep", "external-collect", "rgi",
-                                        "rgi-collect", "compare"])
+    ap.add_argument("command", choices=["download", "select", "fetch", "qc-paths", "prepare",
+                                        "assign", "call", "predict", "external-prep",
+                                        "external-collect", "rgi", "rgi-collect", "compare"])
     ap.add_argument("--workers", type=int, default=4, help="assemblies fetched at once")
     ap.add_argument("--organism", help="the organism of the per-organism commands")
     ap.add_argument("--threads", type=int, default=1)
@@ -407,6 +464,9 @@ def main():
     args = ap.parse_args()
     if args.command not in ("download", "select", "fetch") and not args.organism:
         sys.exit(f"ERROR: {args.command} needs --organism")
+    if args.command == "qc-paths":                       # its output is a shell file
+        print(qc_paths(args.organism, config), end="")
+        return
     print(f"CABBAGE — {args.command}")
     if args.command == "download":
         print(f"  ✓ {download(config)}")
@@ -423,6 +483,10 @@ def main():
             a = r["all"]
             auc = f"ROC-AUC {a['roc_auc']:.3f}" if a["assessed"] else "not assessed"
             print(f"  {ab:32s} R {a['n_resistant']:4d} S {a['n_susceptible']:4d}  {auc}")
+    elif args.command == "assign":
+        print(f"  ✓ {assign(args.organism, config, threads=args.threads)}")
+    elif args.command == "call":
+        print(f"  ✓ {call(args.organism, config, threads=args.threads)}")
     elif args.command == "external-prep":
         print(f"  ✓ {external_prep(args.organism, config, threads=args.threads)}")
     elif args.command == "external-collect":

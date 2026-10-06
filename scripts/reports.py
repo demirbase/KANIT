@@ -287,7 +287,7 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
 
 def main():
     ap = argparse.ArgumentParser(description="Figures, model reports and the numbers file.")
-    ap.add_argument("--entry", choices=["main", "DOWNLOAD", "CONTEXT", "KB"], required=True)
+    ap.add_argument("--entry", choices=["main", "DOWNLOAD", "CONTEXT", "KB", "CABBAGE"], required=True)
     ap.add_argument("--organisms", required=True)
     args = ap.parse_args()
     config = load_config()

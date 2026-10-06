@@ -49,7 +49,7 @@ def test_contract_is_consistent():
     c = contract.load()
     used = set()
     for name, step in c["steps"].items():
-        assert step["entry"] in ("main", "DOWNLOAD", "CONTEXT", "KB"), name
+        assert step["entry"] in ("main", "DOWNLOAD", "CONTEXT", "KB", "CABBAGE"), name
         assert step["level"] in ("organism", "modelled_organism", "model", "global"), name
         tables = step.get("tables") or []
         assert step["main"] is None or step["main"] in tables, name

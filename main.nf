@@ -10,6 +10,8 @@
  *                     permutation and the comparison with genotype-based tools
  *   -entry CONTEXT    login node (internet): NCBI context of the candidate unitigs
  *   -entry KB         the knowledge base and the hypothesis tests
+ *   -entry CABBAGE    external validation of the final models on CABBAGE isolates
+ *                     (secondary analysis, protocol §14 item 4; after the primary run)
  *
  * The steps write into the shared results tree; every task emits a receipt that
  * the tasks depending on it take as input.
@@ -25,6 +27,12 @@ include { MODELS } from './subworkflows/local/models'
 include { EVIDENCE } from './subworkflows/local/evidence'
 include { COMPARISON } from './subworkflows/local/comparison'
 include { DOWNLOAD_BVBRC } from './modules/local/download'
+include { CABBAGE_DOWNLOAD; CABBAGE_SELECT; CABBAGE_FETCH; CABBAGE_QC_PATHS; CABBAGE_CHECKM2;
+          CABBAGE_EXTERNAL_PREP; CABBAGE_EXTERNAL_RUN; CABBAGE_RGI } from './modules/local/cabbage'
+include { CABBAGE_LIGHT as CABBAGE_PREPARE; CABBAGE_LIGHT as CABBAGE_EXTERNAL_COLLECT;
+          CABBAGE_LIGHT as CABBAGE_RGI_COLLECT; CABBAGE_LIGHT as CABBAGE_COMPARE;
+          CABBAGE_HEAVY as CABBAGE_ASSIGN; CABBAGE_HEAVY as CABBAGE_CALL;
+          CABBAGE_HEAVY as CABBAGE_PREDICT } from './modules/local/cabbage'
 include { CONTEXT_QUERY; CONTEXT_BUILD } from './modules/local/context'
 include { BUILD_KB; HYPOTHESES } from './modules/local/kb'
 include { FINISH } from './subworkflows/local/finish'
@@ -107,6 +115,35 @@ workflow CONTEXT {
     CONTEXT_QUERY(orgs)
     CONTEXT_BUILD(CONTEXT_QUERY.out.done.map { org, r -> org })
     FINISH(CONTEXT_BUILD.out.done.map { o, r -> r }.collect(), 'CONTEXT')
+}
+
+workflow CABBAGE {
+    def orgs = Channel.fromList(organisms('CABBAGE'))
+    CABBAGE_DOWNLOAD()
+    CABBAGE_SELECT(CABBAGE_DOWNLOAD.out.done)
+    CABBAGE_FETCH(CABBAGE_SELECT.out.done)
+    CABBAGE_QC_PATHS(orgs.combine(CABBAGE_FETCH.out.done))
+    CABBAGE_CHECKM2(CABBAGE_QC_PATHS.out.paths)
+    CABBAGE_PREPARE(CABBAGE_CHECKM2.out.done.map { org, r -> [org, 'prepare', r] })
+    def prepared = CABBAGE_PREPARE.out.done                    // organism, receipt
+    CABBAGE_ASSIGN(prepared.map { org, r -> [org, 'assign', r] })
+    CABBAGE_CALL(prepared.map { org, r -> [org, 'call', r] })
+    CABBAGE_PREDICT(CABBAGE_ASSIGN.out.done.join(CABBAGE_CALL.out.done)
+                    .map { org, a, b -> [org, 'predict', [a, b]] })
+    def n = params.external_shards as int
+    CABBAGE_EXTERNAL_PREP(prepared)
+    CABBAGE_EXTERNAL_RUN(CABBAGE_EXTERNAL_PREP.out.script
+                         .flatMap { org, s -> (0..<n).collect { k -> [org, s, k, n] } })
+    CABBAGE_EXTERNAL_COLLECT(CABBAGE_EXTERNAL_RUN.out.done.groupTuple(size: n)
+                             .map { org, rs -> [org, 'external-collect', rs] })
+    def m = params.rgi_shards as int
+    CABBAGE_RGI(prepared.flatMap { org, r -> (0..<m).collect { k -> [org, r, k, m] } })
+    CABBAGE_RGI_COLLECT(CABBAGE_RGI.out.done.groupTuple(size: m)
+                        .map { org, rs -> [org, 'rgi-collect', rs] })
+    CABBAGE_COMPARE(CABBAGE_PREDICT.out.done.join(CABBAGE_EXTERNAL_COLLECT.out.done)
+                    .join(CABBAGE_RGI_COLLECT.out.done)
+                    .map { org, a, b, c -> [org, 'compare', [a, b, c]] })
+    FINISH(CABBAGE_COMPARE.out.done.map { o, r -> r }.collect(), 'CABBAGE')
 }
 
 workflow KB {

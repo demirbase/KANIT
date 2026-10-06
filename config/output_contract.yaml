@@ -657,6 +657,111 @@ tables:
       - {name: column, type: string, description: "Column it is computed from"}
       - {name: description, type: string, description: "What it counts or measures"}
 
+  # ---- 19 external validation on CABBAGE (secondary analysis, §14 item 4) -------
+  cabbage_isolates:
+    location: cabbage_dir
+    file: cabbage_isolates.csv
+    description: "Eligible external isolates: CABBAGE isolates with an EUCAST/CLSI R or S phenotype that BV-BRC does not hold."
+    primary_key: [biosample_id]
+    fields:
+      - {name: organism, type: string, required: true, description: "Organism id"}
+      - {name: biosample_id, type: string, required: true, description: "BioSample of the isolate"}
+      - {name: assembly_id, type: string, required: true, description: "GenBank assembly CABBAGE names"}
+      - {name: sra_accession, type: string, description: "SRA accessions of the isolate (semicolon-separated)"}
+      - {name: sources, type: string, description: "CABBAGE sources of its records (semicolon-separated)"}
+  cabbage_phenotypes:
+    location: cabbage_dir
+    file: cabbage_phenotypes.csv
+    description: "Resolved phenotype of every eligible isolate and antibiotic."
+    primary_key: [biosample_id, antibiotic]
+    fields:
+      - {name: organism, type: string, required: true, description: "Organism id"}
+      - {name: biosample_id, type: string, required: true, description: "BioSample of the isolate"}
+      - {name: antibiotic, type: string, required: true, description: "Registry name of the antibiotic"}
+      - {name: label, type: integer, required: true, enum: [0, 1], description: "1 resistant, 0 susceptible"}
+      - {name: n_records, type: integer, required: true, minimum: 1, description: "Records behind the label"}
+      - {name: how, type: string, required: true, enum: [single, majority], description: "How conflicting records were resolved"}
+  cabbage_pairs:
+    location: cabbage_dir
+    file: cabbage_pairs.csv
+    description: "Resistant and susceptible eligible isolates of every organism and antibiotic."
+    primary_key: [organism, antibiotic]
+    fields:
+      - {name: organism, type: string, required: true, description: "Organism id"}
+      - {name: antibiotic, type: string, required: true, description: "Registry name of the antibiotic"}
+      - {name: n_resistant, type: integer, required: true, minimum: 0, description: "Resistant isolates"}
+      - {name: n_susceptible, type: integer, required: true, minimum: 0, description: "Susceptible isolates"}
+  cabbage_download_report:
+    location: cabbage_dir
+    file: cabbage_download_report.csv
+    description: "Download, NCBI taxon check and genome report check of every eligible isolate's assembly."
+    primary_key: [biosample_id]
+    fields:
+      - {name: organism, type: string, required: true, description: "Organism id"}
+      - {name: biosample_id, type: string, required: true, description: "BioSample of the isolate"}
+      - {name: assembly_id, type: string, required: true, description: "GenBank assembly"}
+      - {name: tax_id, type: integer, description: "NCBI taxon of the assembly"}
+      - {name: organism_name, type: string, description: "NCBI organism name of the assembly"}
+      - {name: status, type: string, required: true, enum: [passed, failed, excluded], description: "passed, failed (download or check) or excluded (taxon)"}
+      - {name: problem, type: string, description: "Why it failed or was excluded"}
+      - {name: sequences, type: integer, description: "Sequences of the downloaded FASTA"}
+      - {name: length, type: integer, description: "Total length (bp)"}
+      - {name: bytes, type: integer, description: "File size"}
+      - {name: sha256, type: string, description: "SHA-256 of the FASTA"}
+  cabbage_qc:
+    location: cabbage_organism_dir
+    file: cabbage_qc.csv
+    description: "CheckM2 of the external assemblies (§2.3: completeness >= 95, contamination <= 5)."
+    primary_key: [biosample_id]
+    fields:
+      - {name: biosample_id, type: string, required: true, description: "BioSample of the isolate"}
+      - {name: completeness, type: number, required: true, minimum: 0, maximum: 100, description: "CheckM2 completeness (%)"}
+      - {name: contamination, type: number, required: true, minimum: 0, description: "CheckM2 contamination (%)"}
+      - {name: passes, type: boolean, required: true, description: "Passes the quality gate"}
+  cabbage_predictions:
+    location: cabbage_organism_dir
+    file: cabbage_predictions.csv
+    description: "The final models' predictions of the external isolates."
+    primary_key: [antibiotic, biosample_id]
+    fields:
+      - {name: organism, type: string, required: true, description: "Organism id"}
+      - {name: antibiotic, type: string, required: true, description: "Antibiotic of the model"}
+      - {name: biosample_id, type: string, required: true, description: "BioSample of the isolate"}
+      - {name: y, type: integer, required: true, enum: [0, 1], description: "Phenotype"}
+      - {name: p, type: number, required: true, minimum: 0, maximum: 1, description: "Predicted probability of resistance"}
+      - {name: lineage, type: string, required: true, description: "PopPUNK cluster from poppunk_assign"}
+      - {name: lineage_seen, type: boolean, required: true, description: "The cluster holds genomes of the model"}
+  cabbage_comparison:
+    location: cabbage_organism_dir
+    file: cabbage_comparison.csv
+    description: "The genotype-based predictors (§11) and the model on the assessed external isolates, with lineage-cluster bootstrap intervals."
+    primary_key: [model_id, tool]
+    fields:
+      - {name: model_id, type: string, required: true, description: "organism__antibiotic"}
+      - {name: tool, type: string, required: true, enum: [amrfinderplus, resfinder, rgi_all, rgi_without_near_universal, model], description: "Predictor"}
+      - {name: assessable, type: integer, required: true, enum: [0, 1], description: "The predictor covers the antibiotic"}
+      - {name: n, type: integer, description: "Isolates"}
+      - {name: n_resistant, type: integer, description: "Resistant isolates"}
+      - {name: tp, type: integer, description: "True positives"}
+      - {name: fp, type: integer, description: "False positives"}
+      - {name: tn, type: integer, description: "True negatives"}
+      - {name: fn, type: integer, description: "False negatives"}
+      - {name: balanced_accuracy, type: number, description: "Balanced accuracy"}
+      - {name: sensitivity, type: number, description: "Sensitivity"}
+      - {name: specificity, type: number, description: "Specificity"}
+      - {name: very_major_error_rate, type: number, description: "Predicted S among resistant"}
+      - {name: major_error_rate, type: number, description: "Predicted R among susceptible"}
+      - {name: balanced_accuracy_low, type: number, description: "Balanced accuracy: lower 95% bootstrap limit"}
+      - {name: balanced_accuracy_high, type: number, description: "Balanced accuracy: upper 95% bootstrap limit"}
+      - {name: sensitivity_low, type: number, description: "Sensitivity: lower 95% bootstrap limit"}
+      - {name: sensitivity_high, type: number, description: "Sensitivity: upper 95% bootstrap limit"}
+      - {name: specificity_low, type: number, description: "Specificity: lower 95% bootstrap limit"}
+      - {name: specificity_high, type: number, description: "Specificity: upper 95% bootstrap limit"}
+      - {name: very_major_error_rate_low, type: number, description: "Predicted S among resistant: lower 95% bootstrap limit"}
+      - {name: very_major_error_rate_high, type: number, description: "Predicted S among resistant: upper 95% bootstrap limit"}
+      - {name: major_error_rate_low, type: number, description: "Predicted R among susceptible: lower 95% bootstrap limit"}
+      - {name: major_error_rate_high, type: number, description: "Predicted R among susceptible: upper 95% bootstrap limit"}
+
 steps:
   snapshot:
     script: 00a_download_bvbrc.py
@@ -846,3 +951,42 @@ steps:
     tables: [h1_models, h2_models, h3_pairs, h6_models, h7_determinants, h7_unmapped_symbols]
     summary: {location: cross_model_dir, file: hypotheses/hypotheses.json}
     figure: Overlap heat map of the antibiotics of every organism
+  cabbage_select:
+    script: 19_cabbage.py
+    entry: CABBAGE
+    level: global
+    main: cabbage_phenotypes
+    tables: [cabbage_isolates, cabbage_phenotypes, cabbage_pairs]
+    summary: {location: cabbage_dir, file: cabbage_selection.json}
+    figure: null
+  cabbage_fetch:
+    script: 19_cabbage.py
+    entry: CABBAGE
+    level: global
+    main: cabbage_download_report
+    tables: [cabbage_download_report]
+    summary: {location: cabbage_dir, file: cabbage_fetch.json}
+    figure: null
+  cabbage_prepare:
+    script: 19_cabbage.py
+    entry: CABBAGE
+    level: organism
+    main: cabbage_qc
+    tables: [cabbage_qc]
+    summary: {location: cabbage_organism_dir, file: cabbage_prepare.json}
+    figure: null
+  cabbage_predict:
+    script: 19_cabbage.py
+    entry: CABBAGE
+    level: organism
+    main: cabbage_predictions
+    tables: [cabbage_predictions]
+    summary: {location: cabbage_organism_dir, file: cabbage_metrics.json}
+    figure: null
+  cabbage_compare:
+    script: 19_cabbage.py
+    entry: CABBAGE
+    level: organism
+    main: cabbage_comparison
+    tables: [cabbage_comparison]
+    figure: null

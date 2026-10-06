@@ -10,7 +10,7 @@ include { REPORTS; COMPLETENESS; RUN_OUTPUTS; BACKUP_PACK; BACKUP_UPLOAD; SACCT_
 workflow FINISH {
     take:
     receipts                        // the receipts of the entry workflow's last tasks, collected
-    entry                           // main, DOWNLOAD, CONTEXT or KB
+    entry                           // main, DOWNLOAD, CONTEXT, KB or CABBAGE
 
     main:
     REPORTS(receipts, entry)

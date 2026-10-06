@@ -78,6 +78,11 @@ def test_select_follows_every_rule():
     assert [ec[s] for s in cabbage.STEPS] == [10, 9, 8, 7, 7, 6, 4, 2]
     assert ec["cells_tied"] == 1 and ec["cells"] == 2
     assert counts["enterobacter_cloacae"]["assembly"] == 1 and counts["kpneumoniae"]["cells"] == 2
+    from lib import contract
+    tables = contract.load()["tables"]
+    for tid, frame in (("cabbage_isolates", isolates), ("cabbage_phenotypes", phenotypes),
+                       ("cabbage_pairs", cabbage.pair_counts(phenotypes))):
+        assert contract.validate_frame(frame.astype(str), tables[tid]) == [], tid
     t = cabbage.pair_counts(phenotypes).set_index(["organism", "antibiotic"])
     assert t.loc[("ecoli", "ciprofloxacin"), "n_resistant"] == 1
     assert t.loc[("ecoli", "ampicillin"), "n_susceptible"] == 1
@@ -179,6 +184,9 @@ def test_fetch_checks_taxon_and_assembly(tmp_path):
                     {562: [1, 561], 1313: [1, 1301]})
     api = nd.Datasets(fake, sleep=lambda s: None)
     r = m.fetch(config, workers=2, api=api).set_index("biosample_id")
+    from lib import contract
+    assert contract.validate_csv(tmp_path / "out" / "cabbage_download_report.csv",
+                                 contract.load()["tables"]["cabbage_download_report"]) == []
     assert r.loc["S1", "status"] == "passed" and r.loc["S1", "bytes"] == len(two)
     assert r.loc["S2", "status"] == "excluded" and "1313" in r.loc["S2", "problem"]
     assert r.loc["S3", "status"] == "failed" and "the record has 3" in r.loc["S3", "problem"]
@@ -347,3 +355,9 @@ def test_prepare_and_predict(trained, tmp_path):
     assert t.loc["rgi_all", "sensitivity"] == pytest.approx(6 / 12)
     assert t.loc["model", "balanced_accuracy"] == 1.0
     assert t.loc["amrfinderplus", "sensitivity_low"] <= 9 / 12 <= t.loc["amrfinderplus", "sensitivity_high"]
+    # the outputs follow the output contract
+    from lib import contract
+    tables = contract.load()["tables"]
+    for tid, f in (("cabbage_qc", "cabbage_qc.csv"), ("cabbage_predictions", "cabbage_predictions.csv"),
+                   ("cabbage_comparison", "cabbage_comparison.csv")):
+        assert contract.validate_csv(out / f, tables[tid]) == [], tid
