@@ -2,7 +2,7 @@
 // the evidence layers, the CARD layer, the grades and the label permutation test.
 
 include { RGI_LOAD; RGI_RUN; RGI_COLLECT; CPSS_PREFILTER; CPSS_CHUNK; CPSS_SELECT; PREVALENCE;
-          MDA; CARD_LAYER; PYSEER_PREP; PYSEER_LMM; PYSEER_POST; GRADING; LP_CHUNK; LP_METRICS;
+          MDA; CARD_LAYER; PYSEER_PREP; PYSEER_LMM; PYSEER_POST; GRADING; LP_CHUNKS; LP_METRICS;
           LP_ACROSS } from '../../modules/local/evidence'
 include { kanitConfig } from '../../modules/local/common'
 
@@ -12,6 +12,7 @@ workflow EVIDENCE {
     folds                           // meta, folds receipt
     units                           // meta, outer fold receipts
     finals                          // meta, final model receipt
+    packing                         // meta, permutation chunks per job (lib/packing.py)
 
     main:
     def cfg = kanitConfig()
@@ -42,9 +43,17 @@ workflow EVIDENCE {
     GRADING(CARD_LAYER.out.done.join(PREVALENCE.out.done).join(MDA.out.done)
                   .join(PYSEER_POST.out.done).map { m, a, b, c, d -> [m, [a, b, c, d]] })
 
-    LP_CHUNK(units.flatMap { m, us ->
-        (0..<nFolds).collectMany { k -> (0..<nLp).collect { c -> [m, k, c, us] } } })
-    LP_METRICS(LP_CHUNK.out.done.groupTuple(size: nFolds * nLp))
+    // the permutation chunks of a model (fold × chunk) in batches of the model's packing
+    lpBatches = units.join(packing).flatMap { m, us, k ->
+        def chunks = (0..<nFolds).collectMany { f -> (0..<nLp).collect { c -> [f, c] } }
+        def bs = chunks.collate(k as int)
+        bs.withIndex().collect { b, i -> [m, bs.size(), i, b, us] }
+    }
+    LP_CHUNKS(lpBatches)
+    LP_METRICS(LP_CHUNKS.out.done
+                   .map { m, n, r -> [groupKey(m, n), r] }
+                   .groupTuple()
+                   .map { k, rs -> [k.getGroupTarget(), rs] })
     LP_ACROSS(LP_METRICS.out.done.map { m, r -> r }.collect())
 
     emit:

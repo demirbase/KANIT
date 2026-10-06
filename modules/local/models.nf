@@ -1,7 +1,7 @@
 // One panel pair: its model matrix (03u) and the nested cross-validation with the
 // final model (04).
 
-include { py; receipt; stubReceipt; kanitConfig } from './common'
+include { py; receipt; stubReceipt; kanitConfig; parallel } from './common'
 
 process MODEL_MATRIX {
     tag "${meta.id}"
@@ -32,7 +32,7 @@ process CV_FOLDS {
     tuple val(meta), path(deps, stageAs: 'dep*.json')
 
     output:
-    tuple val(meta), path('units.txt'), path('receipt.json'), env(EVALUABLE), emit: units
+    tuple val(meta), path('units.txt'), path('receipt.json'), env(EVALUABLE), env(PACK), emit: units
 
     script:
     def args = "--organism ${meta.organism} --antibiotic ${meta.antibiotic}"
@@ -40,6 +40,7 @@ process CV_FOLDS {
     ${py('04_nested_cv.py')} folds ${args}
     ${py('04_nested_cv.py')} units ${args} > units.txt
     EVALUABLE=\$( [ -s units.txt ] && echo true || echo false )
+    PACK=\$(${py('04_nested_cv.py')} packing ${args})
     ${receipt(task, 'cv_folds', meta.id)}
     """
 
@@ -50,29 +51,33 @@ process CV_FOLDS {
     """
     printf '%s\\n' ${lines.collect { "'${it}'" }.join(' ')} > units.txt
     EVALUABLE=true
+    PACK=4
     ${stubReceipt(task, 'cv_folds', meta.id)}
     """
 }
 
-process CV_UNIT {
-    tag "${meta.id} ${arm} r${repeat} f${fold}"
+// Several outer folds of one model in one job (lib/packing.py), side by side, each with its
+// share of the cores. A unit that fails gives its exit status to the task, so that a unit
+// killed for its memory (137) makes the job run again with more.
+process CV_UNITS {
+    tag "${meta.id} batch ${batch}"
     label 'cv_unit'
 
     input:
-    tuple val(meta), val(n), val(arm), val(repeat), val(fold), path(deps, stageAs: 'dep*.json')
+    tuple val(meta), val(n), val(batch), val(units), path(deps, stageAs: 'dep*.json')
 
     output:
     tuple val(meta), val(n), path('receipt.json'), emit: done
 
     script:
     """
-    ${py('04_nested_cv.py')} unit --organism ${meta.organism} --antibiotic ${meta.antibiotic} \\
-        --arm ${arm} --repeat ${repeat} --fold ${fold} --threads ${task.cpus}
-    ${receipt(task, 'cv_unit', "${meta.id} ${arm} ${repeat} ${fold}")}
+    ${parallel(task, units, { u -> "${py('04_nested_cv.py')} unit --organism ${meta.organism} " +
+        "--antibiotic ${meta.antibiotic} --arm ${u[0]} --repeat ${u[1]} --fold ${u[2]}" })}
+    ${receipt(task, 'cv_units', "${meta.id} batch ${batch}")}
     """
 
     stub:
-    stubReceipt(task, 'cv_unit', "${meta.id} ${arm} ${repeat} ${fold}")
+    stubReceipt(task, 'cv_units', "${meta.id} batch ${batch}")
 }
 
 process CV_FINAL {

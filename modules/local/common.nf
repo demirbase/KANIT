@@ -53,3 +53,19 @@ Map deepMerge(Map base, Map over) {
     }
     out
 }
+
+// The commands of a batch side by side, each with its share of the task's cores
+// (--threads), each writing to its own log. The task fails with the highest exit status
+// of its commands; their logs' last lines go to its error output.
+def parallel(task, List items, Closure command) {
+    def lines = items.withIndex().collect { item, i ->
+        "${command(item)} --threads \$T > part_${i}.log 2>&1 &\npids+=(\$!)"
+    }
+    """\
+T=\$(( ${task.cpus} / ${items.size()} )); [ \$T -ge 1 ] || T=1
+pids=()
+${lines.join('\n')}
+rc=0
+for p in "\${pids[@]}"; do c=0; wait \$p || c=\$?; [ \$c -gt \$rc ] && rc=\$c; done
+if [ \$rc -ne 0 ]; then tail -n 20 part_*.log >&2; exit \$rc; fi"""
+}

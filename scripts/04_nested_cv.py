@@ -5,6 +5,8 @@ Subcommands, so that a workflow can run every outer fold as its own task:
 
   folds    outer folds of both arms (lib.folds): folds.csv, seeds.csv,
            fold_composition.csv, cv_design.json
+  units    one "arm repeat fold" line per evaluable outer fold
+  packing  how many outer folds of the model share a SLURM job (lib/packing.py)
   unit     search, tree count, fit and prediction of one outer fold
            (--arm --repeat --fold): units/<arm>_r<repeat>_f<fold>/
   final    the final model on every genome: lineage-grouped inner splits, seed 0
@@ -35,7 +37,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from lib import folds, oof_metrics, train  # noqa: E402
+from lib import folds, oof_metrics, packing, train  # noqa: E402
 from lib.config import get_target, load_config, resolve_path  # noqa: E402
 from lib.matrix_store import ModelMatrix  # noqa: E402
 from lib.run_metadata import peak_rss_gb  # noqa: E402
@@ -137,6 +139,7 @@ def run_unit(mm, out_dir, arm, repeat, fold, hpo, threads):
     _save(result, out_dir / "units" / folds.unit_name(arm, repeat, fold),
           {"repeat": repeat, "fold": fold, "n_test": int(len(te)), "finished_at": _now(),
            "seconds": round(time.time() - t0, 1), "peak_rss_gb": round(peak_rss_gb(), 2),
+           "threads": int(threads),
            "tables": {"oof.csv": oof}})
 
 
@@ -199,7 +202,8 @@ def main():
     config = load_config()
     default_org, default_ab = get_target(config=config)
     ap = argparse.ArgumentParser(description="Nested cross-validation of one panel pair.")
-    ap.add_argument("command", choices=["folds", "units", "unit", "final", "metrics", "all"])
+    ap.add_argument("command", choices=["folds", "units", "packing", "unit", "final",
+                                        "metrics", "all"])
     ap.add_argument("--organism", default=default_org)
     ap.add_argument("--antibiotic", default=default_ab)
     ap.add_argument("--arm", choices=folds.ARMS)
@@ -213,6 +217,9 @@ def main():
                                   antibiotic=args.antibiotic, config=config))
     out_dir = resolve_path("cv_dir", organism=args.organism, antibiotic=args.antibiotic,
                            config=config)
+    if args.command == "packing":          # units of this model per SLURM job (lib/packing.py)
+        print(packing.per_job(mm.n_genomes, mm.n_patterns, config["packing"]))
+        return
     if args.command == "units":            # one "arm repeat fold" line per evaluable unit
         seeds = pd.read_csv(out_dir / "seeds.csv")
         for s in seeds.itertuples():

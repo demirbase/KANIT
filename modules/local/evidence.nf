@@ -2,7 +2,7 @@
 // and the candidates (13), prevalence (10), MDA (12), the CARD layer (09), pyseer
 // (14), the grades (14b) and the label permutation test (12b).
 
-include { py; receipt; stubReceipt } from './common'
+include { py; receipt; stubReceipt; parallel } from './common'
 
 def pair(meta) {
     "--organism ${meta.organism} --antibiotic ${meta.antibiotic}"
@@ -269,25 +269,26 @@ process GRADING {
     stubReceipt(task, 'grading', meta.id)
 }
 
-process LP_CHUNK {
-    tag "${meta.id} f${fold} c${chunk}"
+// Several permutation chunks of one model in one job, side by side (lib/packing.py)
+process LP_CHUNKS {
+    tag "${meta.id} batch ${batch}"
     label 'permutation'
 
     input:
-    tuple val(meta), val(fold), val(chunk), path(deps, stageAs: 'dep*.json')
+    tuple val(meta), val(n), val(batch), val(chunks), path(deps, stageAs: 'dep*.json')
 
     output:
-    tuple val(meta), path('receipt.json'), emit: done
+    tuple val(meta), val(n), path('receipt.json'), emit: done
 
     script:
     """
-    ${py('12b_label_permutation.py')} run ${pair(meta)} --fold ${fold} --chunk ${chunk} \\
-        --threads ${task.cpus}
-    ${receipt(task, 'label_permutation_chunk', "${meta.id} ${fold} ${chunk}")}
+    ${parallel(task, chunks, { c -> "${py('12b_label_permutation.py')} run ${pair(meta)} " +
+        "--fold ${c[0]} --chunk ${c[1]}" })}
+    ${receipt(task, 'label_permutation_chunks', "${meta.id} batch ${batch}")}
     """
 
     stub:
-    stubReceipt(task, 'label_permutation_chunk', "${meta.id} ${fold} ${chunk}")
+    stubReceipt(task, 'label_permutation_chunks', "${meta.id} batch ${batch}")
 }
 
 process LP_METRICS {
