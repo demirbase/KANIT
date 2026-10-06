@@ -168,13 +168,16 @@ def test_mda_layer_finds_the_signal_and_its_cluster(cv):
     main, clus = mda.mda_layer(mm, design, cands)
     by = main.set_index("pattern_id")
     sig = by.loc[pid["SIGNAL"]]
-    assert sig["mda"] > 0.1 and sig["p"] == pytest.approx(1 / (R + 1)) and sig["passes"]
+    # SIGNAL and its near copy share the importance (a fold model may split on either):
+    # permuting SIGNAL alone shows part of it, permuting the cluster all of it
+    assert sig["mda"] > 0.05 and sig["p"] == pytest.approx(1 / (R + 1)) and sig["passes"]
     for u in unused[:1]:                                   # never split on: no effect
         assert by.loc[u, "n_fold_models_using"] == 0
         assert by.loc[u, "mda"] == 0 and by.loc[u, "p"] == 1 and not by.loc[u, "passes"]
     c = clus.set_index("pattern_id")
     assert c.loc[pid["SIGNAL"], "cluster"] == c.loc[pid["NEAR"], "cluster"]
     assert c.loc[pid["SIGNAL"], "cluster_size"] == 2 and c.loc[pid["SIGNAL"], "passes"]
+    assert c.loc[pid["SIGNAL"], "mda"] > 0.1
     again, _ = mda.mda_layer(mm, design, cands)
     pd.testing.assert_frame_equal(main, again)             # the draws are seeded
     none, n_used = mda.permuted_auc(design, [mm.n_patterns + 1])
