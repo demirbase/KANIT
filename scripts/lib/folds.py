@@ -1,9 +1,10 @@
 """Outer folds of the nested cross-validation.
 
 Two arms, identical except for the grouping: the lineage-aware arm keeps every
-lineage on one side of each split (StratifiedGroupKFold on the lineages), the
-lineage-blind arm does not (StratifiedKFold). In each arm, repeat r uses the
-first seed of 1000·r + j (j = 0, 1, …) for which every test fold holds at least
+lineage on one side of each split (a stratified assignment of whole lineages in a
+random order, ``group_split``), the lineage-blind arm does not (StratifiedKFold). In
+each arm, repeat r uses the first seed of 1000·r + j (j = 0, 1, …) for which every
+test fold holds at least
 ``min_minority`` genomes of the model's minority class, trying at most
 ``max_attempts`` seeds. The rule reads only labels and lineages, never results.
 """
@@ -39,23 +40,55 @@ class RepeatSplit:
 
 def split(y, groups, arm: str, seed: int, n_folds: int) -> np.ndarray:
     """Test fold of every genome for one seed."""
-    from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
+    from sklearn.model_selection import StratifiedKFold
 
     y = np.asarray(y)
-    x = np.zeros(len(y))
     if arm == LINEAGE_AWARE:
-        gen = StratifiedGroupKFold(n_splits=n_folds, shuffle=True,
-                                   random_state=seed).split(x, y, np.asarray(groups))
-    elif arm == LINEAGE_BLIND:
-        gen = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed).split(x, y)
-    else:
+        return group_split(y, groups, seed, n_folds)
+    if arm != LINEAGE_BLIND:
         raise ValueError(f"unknown arm {arm!r}")
+    gen = StratifiedKFold(n_splits=n_folds, shuffle=True,
+                          random_state=seed).split(np.zeros(len(y)), y)
     fold_of = np.full(len(y), -1, dtype=np.int64)
     for k, (_, test) in enumerate(gen):
         fold_of[test] = k
     if (fold_of < 0).any():
         raise RuntimeError("a genome was assigned to no test fold")
     return fold_of
+
+
+def group_split(y, groups, seed: int, n_folds: int) -> np.ndarray:
+    """Lineage-aware test folds (protocol §14 item 5). Each lineage goes whole to the fold
+    that keeps the class proportions of the folds most even, the criterion of scikit-learn's
+    StratifiedGroupKFold (ties: the fold with fewer genomes). The lineages are visited in a
+    random order drawn with the seed, those larger than a fold's share first, so that they
+    do not land in a fold that is already full. StratifiedGroupKFold visits them in a fixed
+    order and its shuffle only breaks ties: in the pilot every seed gave nearly the same
+    folds (A. baumannii, 2026-10-06)."""
+    y, groups = np.asarray(y), np.asarray(groups)
+    lineages, g = np.unique(groups, return_inverse=True)
+    if len(lineages) < n_folds:
+        raise ValueError(f"{len(lineages)} lineages, fewer than {n_folds} folds")
+    classes, c = np.unique(y, return_inverse=True)
+    counts = np.zeros((len(lineages), len(classes)))
+    np.add.at(counts, (g, c), 1)
+    totals = counts.sum(axis=0)
+    order = np.random.default_rng(seed).permutation(len(lineages))
+    large = counts[order].sum(axis=1) > len(y) / n_folds
+    per_fold = np.zeros((n_folds, counts.shape[1]))
+    fold_of_lineage = np.empty(len(lineages), dtype=np.int64)
+    for i in np.concatenate([order[large], order[~large]]):
+        best, best_eval, best_n = 0, np.inf, np.inf
+        for k in range(n_folds):
+            per_fold[k] += counts[i]
+            evenness = float(np.mean(np.std(per_fold / totals, axis=0)))
+            per_fold[k] -= counts[i]
+            n_k = float(per_fold[k].sum())
+            if evenness < best_eval or (np.isclose(evenness, best_eval) and n_k < best_n):
+                best, best_eval, best_n = k, evenness, n_k
+        per_fold[best] += counts[i]
+        fold_of_lineage[i] = best
+    return fold_of_lineage[g]
 
 
 def minority_label(y) -> int:

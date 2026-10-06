@@ -35,6 +35,41 @@ def test_both_arms_partition_and_the_aware_arm_keeps_lineages_whole(data):
                 assert no_group_leakage(fold_of != k, fold_of == k, groups)
 
 
+def _dominated():
+    """One lineage holds 40% of the genomes, as in the pilot (A. baumannii)."""
+    rng = np.random.default_rng(1)
+    sizes = np.array([389, 60, 45, 40, 30, 25, 20, 15, 12, 10] + [2] * 20 + [1] * 300)
+    groups = np.repeat(np.arange(len(sizes)), sizes)
+    p_r = np.r_[0.65, rng.uniform(0.05, 0.9, len(sizes) - 1)]
+    return (rng.random(len(groups)) < p_r[groups]).astype(int), groups
+
+
+def test_the_repeats_of_the_lineage_aware_arm_differ():
+    """The seed changes the folds of the lineages besides the largest, not only the order
+    of ties (with scikit-learn's StratifiedGroupKFold the repeats had nearly the same
+    folds)."""
+    from sklearn.metrics import adjusted_rand_score
+
+    y, groups = _dominated()
+    rest = groups != 0
+    f1, f2 = (folds.split(y, groups, folds.LINEAGE_AWARE, s, 5) for s in (1000, 2000))
+    assert (folds.split(y, groups, folds.LINEAGE_AWARE, 1000, 5) == f1).all()   # reproducible
+    assert adjusted_rand_score(f1[rest], f2[rest]) < 0.2
+    for f in (f1, f2):
+        for k in range(5):
+            assert no_group_leakage(f != k, f == k, groups)
+        assert (f == f[groups == 0][0]).sum() == (groups == 0).sum()   # the largest alone
+
+
+def test_the_inner_validation_fold_is_about_a_fifth():
+    from lib import train
+
+    y, groups = _dominated()
+    _, va = train.inner_split(y, groups, folds.LINEAGE_AWARE, seed=0)
+    assert not (groups[va] == 0).any()                 # not the largest lineage's fold
+    assert 0.1 < len(va) / len(y) < 0.3
+
+
 def test_seed_sequence_and_the_class_balance_rule(data):
     y, groups = data
     ok = folds.assign_repeat(y, groups, folds.LINEAGE_AWARE, 3, n_folds=5,

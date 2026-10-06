@@ -37,6 +37,7 @@ process CV_FOLDS {
     script:
     def args = "--organism ${meta.organism} --antibiotic ${meta.antibiotic}"
     """
+    # lineage-aware folds and inner validation fold of protocol §14 item 5
     ${py('04_nested_cv.py')} folds ${args}
     ${py('04_nested_cv.py')} units ${args} > units.txt
     EVALUABLE=\$( [ -s units.txt ] && echo true || echo false )

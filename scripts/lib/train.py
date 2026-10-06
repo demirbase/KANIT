@@ -82,15 +82,20 @@ def search_subsample(y, groups, max_genomes: int, seed: int) -> np.ndarray:
 
 
 def inner_split(y, groups, arm: str, seed: int, n_folds: int = 5) -> tuple[np.ndarray, np.ndarray]:
-    """(train, validation) positions: the first fold of an ``n_folds`` split of the
-    arm's type whose validation and training sides both hold both classes."""
+    """(train, validation) positions: of the folds of an ``n_folds`` split of the arm's
+    type whose validation and training sides both hold both classes, the one closest in
+    size to one fifth of the genomes (ties: the first). A lineage larger than a fold's
+    share fills a fold of its own, which is no fifth (protocol §14 item 5: the first fold,
+    used before, was the largest lineage's)."""
     y = np.asarray(y)
     fold_of = folds.split(y, groups, arm, seed, n_folds)
-    for k in range(n_folds):
-        val = fold_of == k
-        if len(set(y[val].tolist())) == 2 and len(set(y[~val].tolist())) == 2:
-            return np.flatnonzero(~val), np.flatnonzero(val)
-    raise ValueError("no inner validation fold holds both classes")
+    usable = [k for k in range(n_folds) if len(set(y[fold_of == k].tolist())) == 2
+              and len(set(y[fold_of != k].tolist())) == 2]
+    if not usable:
+        raise ValueError("no inner validation fold holds both classes")
+    k = min(usable, key=lambda k: (abs(int((fold_of == k).sum()) - len(y) / n_folds), k))
+    val = fold_of == k
+    return np.flatnonzero(~val), np.flatnonzero(val)
 
 
 class _Rows(xgb.DataIter):
