@@ -17,7 +17,9 @@ unit's fingerprint is the SHA-256 of its files' paths, sizes and modification ti
           rows added to the ledger and the staging directory emptied
 
 The intermediate of unitig-caller (unitig_store/call/, its Rtab of tens of GB) is left
-out: the store built from it is backed up and the call can be repeated.
+out: the store built from it is backed up and the call can be repeated. Symbolic links are
+archived as links (the genome QC links every assembly into one folder; the assemblies are
+backed up where they lie), and a link counts with its own size and time.
 """
 from __future__ import annotations
 
@@ -63,12 +65,12 @@ class Unit:
     def fingerprint(self) -> str:
         h = hashlib.sha256()
         for f, name in zip(self.files, self.names(), strict=True):
-            st = f.stat()
+            st = f.lstat()
             h.update(f"{name}\t{st.st_size}\t{st.st_mtime_ns}\n".encode())
         return h.hexdigest()
 
     def bytes(self) -> int:
-        return sum(f.stat().st_size for f in self.files)
+        return sum(f.lstat().st_size for f in self.files)
 
 
 def _excluded(rel: str) -> bool:
@@ -153,7 +155,7 @@ def write_archive(unit: Unit, out: Path, *, threads: int) -> None:
         tmp.unlink(missing_ok=True)
         raise RuntimeError(f"{unit.path}: tar exited {rc_tar}, compression {rc_comp}")
     with tarfile.open(tmp, "r:gz") as t:
-        members = sorted(m.name for m in t.getmembers() if m.isfile())
+        members = sorted(m.name for m in t.getmembers() if m.isfile() or m.issym())
     if members != sorted(names):
         tmp.unlink(missing_ok=True)
         raise RuntimeError(f"{unit.path}: the archive holds {len(members)} files, "

@@ -79,6 +79,28 @@ def test_units_and_pack(tmp_path):
     assert [r["unit"] for r in again] == ["results/ecoli/ampicillin"]
 
 
+def test_links_are_archived_as_links(tmp_path):
+    """The genome QC links every assembly into one folder: the archive holds the links,
+    and the assemblies are backed up where they lie."""
+    m = _script()
+    genome = tmp_path / "data/raw/ecoli/genomes/562.1.fna"
+    genome.parent.mkdir(parents=True)
+    genome.write_text(">c\nACGT\n")
+    qc = tmp_path / "results/ecoli/global_exploration/genome_qc"
+    (qc / "inputs").mkdir(parents=True)
+    (qc / "inputs/562.1.fna").symlink_to(genome.resolve())
+    (qc / "report.csv").write_text("r\n")
+    rows = m.pack(tmp_path / "stage", tmp_path / "ledger.tsv", current_run=None, threads=1,
+                  project=tmp_path)
+    row = next(r for r in rows if r["unit"] == "results/ecoli/global_exploration")
+    with tarfile.open(tmp_path / "stage" / row["archive"], "r:gz") as t:
+        kinds = {x.name: x.issym() for x in t.getmembers() if x.isfile() or x.issym()}
+    assert kinds == {"results/ecoli/global_exploration/genome_qc/inputs/562.1.fna": True,
+                     "results/ecoli/global_exploration/genome_qc/report.csv": False}
+    assert row["n_files"] == 2 and row["bytes"] == 2 + len(str(genome.resolve()))
+    assert "data/raw/ecoli/genomes" in {r["unit"] for r in rows}
+
+
 def _upload(tmp_path, env_extra=None):
     fake = tmp_path / "rclone"
     fake.write_text(FAKE_RCLONE)
