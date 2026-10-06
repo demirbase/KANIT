@@ -2,8 +2,10 @@
 job. Execution only: the units, their seeds and settings are unchanged, and every CV unit
 records the number of threads it ran with.
 
-TRUBA's barbun partition gives a job at least 20 cores, and a unit gains little from more than
-one thread (pilot, A. baumannii, 2026-10-06: 242% CPU with 20 threads, 85-138% with two).
+TRUBA's barbun partition gives a job at least 20 cores, and a unit keeps few of them busy
+(pilot, A. baumannii, 2026-10-06: 242% CPU with 20 threads; 85-138% with two, in a median 1.2
+to 1.6 times the time). Packed, a unit used about a quarter of the core hours, in jobs that
+held one to six new units.
 Several units therefore run side by side in one job, each with its share of the cores, as many
 as the job's memory holds: a unit's peak memory grows with its training matrix
 (genomes × patterns; E. coli probe 2026-10-02: 4.70 M patterns × 5,681 genomes, 76 GiB), and
