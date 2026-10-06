@@ -104,3 +104,12 @@ def test_internet_tasks_run_on_the_login_node(tmp_path):
     for f in ("download.nf", "context.nf"):
         text = (PROJECT_ROOT / "modules" / "local" / f).read_text()
         assert text.count("label 'internet'") == {"download.nf": 1, "context.nf": 1}[f]
+
+
+def test_python_output_is_unbuffered_on_truba(tmp_path):
+    """The logs of a running job show its progress (the units of a packed job wrote nothing
+    until they ended). Set in the env scope, which leaves the tasks' cache keys unchanged."""
+    r = subprocess.run([NEXTFLOW, "config", "-flat", "-profile", "truba", str(PROJECT_ROOT)],
+                       cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "env.PYTHONUNBUFFERED = '1'" in r.stdout
