@@ -32,7 +32,7 @@ process CV_FOLDS {
     tuple val(meta), path(deps, stageAs: 'dep*.json')
 
     output:
-    tuple val(meta), path('units.txt'), path('receipt.json'), env(EVALUABLE), env(PACK), emit: units
+    tuple val(meta), path('units.txt'), path('receipt.json'), env(EVALUABLE), emit: units
 
     script:
     def args = "--organism ${meta.organism} --antibiotic ${meta.antibiotic}"
@@ -40,7 +40,6 @@ process CV_FOLDS {
     ${py('04_nested_cv.py')} folds ${args}
     ${py('04_nested_cv.py')} units ${args} > units.txt
     EVALUABLE=\$( [ -s units.txt ] && echo true || echo false )
-    PACK=\$(${py('04_nested_cv.py')} packing ${args})
     ${receipt(task, 'cv_folds', meta.id)}
     """
 
@@ -51,8 +50,32 @@ process CV_FOLDS {
     """
     printf '%s\\n' ${lines.collect { "'${it}'" }.join(' ')} > units.txt
     EVALUABLE=true
-    PACK=4
     ${stubReceipt(task, 'cv_folds', meta.id)}
+    """
+}
+
+// How many outer folds or permutation chunks of the model share a job (lib/packing.py)
+process CV_PACKING {
+    tag "${meta.id}"
+    label 'light'
+
+    input:
+    tuple val(meta), path(deps, stageAs: 'dep*.json')
+
+    output:
+    tuple val(meta), env(PACK), emit: packing
+    path 'receipt.json', emit: receipt
+
+    script:
+    """
+    PACK=\$(${py('04_nested_cv.py')} packing --organism ${meta.organism} --antibiotic ${meta.antibiotic})
+    ${receipt(task, 'cv_packing', meta.id)}
+    """
+
+    stub:
+    """
+    PACK=4
+    ${stubReceipt(task, 'cv_packing', meta.id)}
     """
 }
 
@@ -72,7 +95,8 @@ process CV_UNITS {
     script:
     """
     ${parallel(task, units, { u -> "${py('04_nested_cv.py')} unit --organism ${meta.organism} " +
-        "--antibiotic ${meta.antibiotic} --arm ${u[0]} --repeat ${u[1]} --fold ${u[2]}" })}
+        "--antibiotic ${meta.antibiotic} --arm ${u[0]} --repeat ${u[1]} --fold ${u[2]}" +
+        (params.reuse_units ? ' --skip-done' : '') })}
     ${receipt(task, 'cv_units', "${meta.id} batch ${batch}")}
     """
 

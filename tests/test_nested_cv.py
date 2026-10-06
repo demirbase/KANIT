@@ -102,4 +102,5 @@ def test_runner_end_to_end(model, load_script):
     assert "lineage_blind_minus_lineage_aware" in m["bootstrap"]
     rec = json.loads((out / "units" / folds.unit_name(*units[0]) / "record.json").read_text())
     assert rec["n_trees"] >= 1 and rec["n_trials_complete"] + rec["n_trials_pruned"] == 3
+    assert rec["threads"] == 1                                # a packed unit's share is kept
     assert (out / "final" / "model.ubj").exists()

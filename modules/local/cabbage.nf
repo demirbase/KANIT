@@ -69,15 +69,18 @@ process CABBAGE_QC_PATHS {
 
     output:
     tuple val(org), path('paths.sh'), emit: paths
+    path 'receipt.json', emit: receipt
 
     script:
     """
     ${py('19_cabbage.py')} qc-paths --organism ${org} > paths.sh
+    ${receipt(task, 'cabbage_qc_paths', org)}
     """
 
     stub:
     """
     echo 'GENOMES_DIR=stub' > paths.sh
+    ${stubReceipt(task, 'cabbage_qc_paths', org)}
     """
 }
 

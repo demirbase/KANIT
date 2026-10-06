@@ -33,6 +33,11 @@
                     "type": "string",
                     "format": "file-path",
                     "description": "YAML merged over config.yaml for every step (for example tests/data/e2e_overlay.yaml)."
+                },
+                "reuse_units": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Keep the outer folds that an earlier launch of this run finished (resuming after a change of the workflow only; the analysis code must be unchanged)."
                 }
             }
         },

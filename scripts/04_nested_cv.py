@@ -210,6 +210,9 @@ def main():
     ap.add_argument("--repeat", type=int)
     ap.add_argument("--fold", type=int)
     ap.add_argument("--threads", type=int, default=int(config["preprocessing"]["threads"]))
+    ap.add_argument("--skip-done", action="store_true",
+                    help="unit: keep a finished unit of this model (its record.json) and do "
+                         "not run it again; only for resuming one run whose code is unchanged")
     args = ap.parse_args()
 
     cv, hpo = config["cv"], config["hpo"]
@@ -234,7 +237,11 @@ def main():
     if args.command == "unit":
         if args.arm is None or args.repeat is None or args.fold is None:
             sys.exit("ERROR: `unit` needs --arm, --repeat and --fold.")
-        run_unit(mm, out_dir, args.arm, args.repeat, args.fold, hpo, args.threads)
+        unit = out_dir / "units" / folds.unit_name(args.arm, args.repeat, args.fold)
+        if args.skip_done and (unit / "record.json").exists():
+            print(f"  ✓ {unit.name} finished before; kept (--skip-done)")
+        else:
+            run_unit(mm, out_dir, args.arm, args.repeat, args.fold, hpo, args.threads)
     if args.command == "all":
         seeds = pd.read_csv(out_dir / "seeds.csv")
         for s in seeds.itertuples():
