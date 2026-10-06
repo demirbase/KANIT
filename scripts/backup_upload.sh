@@ -5,7 +5,11 @@
 #   backup_upload.sh STAGE REMOTE RUN LEDGER
 #
 # One archive per rclone call: a short process is not killed for running long, and a
-# failure costs one archive. Then three checks against REMOTE/RUN:
+# failure costs one archive. An upload that fails or stalls is stopped and tried again, at
+# most BACKUP_ATTEMPTS times (3); rclone skips a file that already arrived. An attempt may
+# take BACKUP_MIN_SECONDS (600) plus 2 s per MB, what 0.5 MB/s needs: two uploads of the
+# pilot stalled without an error on TRUBA's login node (2026-10-06), which uploaded at
+# 1-10 MB/s. rclone reports its progress every 2 min. Then three checks against REMOTE/RUN:
 #   1. the MD5 of every archive and of the manifest (rclone check, scoped to them);
 #   2. no name twice (Google Drive allows two files with one name, and a retried upload
 #      can make them);
@@ -21,9 +25,9 @@ RCLONE="${RCLONE:-rclone}"
 MANIFEST="$STAGE/backup_manifest.tsv"
 [[ -f "$MANIFEST" ]] || { echo "ERROR: no $MANIFEST (run backup.py pack first)" >&2; exit 2; }
 
-ARCHIVES=()
-while IFS=$'\t' read -r _ _ _ _ _ archive _; do
-    ARCHIVES+=("$archive")
+ARCHIVES=(); SIZES=()
+while IFS=$'\t' read -r _ _ _ _ _ archive size _; do
+    ARCHIVES+=("$archive"); SIZES+=("$size")
 done < <(tail -n +2 "$MANIFEST")
 if [[ ${#ARCHIVES[@]} -eq 0 ]]; then
     echo "BACKUP UPLOAD — nothing changed since the last verified backup"
@@ -33,10 +37,31 @@ fi
 DEST="$REMOTE/$RUN"
 OPTS=(--transfers 1 --checkers 2 --buffer-size 0 --use-mmap --drive-chunk-size 32M
       --drive-stop-on-upload-limit --retries 5 --low-level-retries 20
-      --stats 2m --stats-one-line)
+      --stats 2m --stats-one-line --stats-log-level NOTICE)
+ATTEMPTS=${BACKUP_ATTEMPTS:-3}
+MIN_SECONDS=${BACKUP_MIN_SECONDS:-600}
+
+upload() {                                   # a file of STAGE, its bytes
+    local limit=$(( MIN_SECONDS + $2 / 500000 )) rc=1 i
+    for (( i = 1; i <= ATTEMPTS; i++ )); do
+        if command -v timeout > /dev/null; then
+            timeout --kill-after=60 "$limit" "$RCLONE" copy "$STAGE/$1" "$DEST/" "${OPTS[@]}"
+        else
+            "$RCLONE" copy "$STAGE/$1" "$DEST/" "${OPTS[@]}"
+        fi
+        rc=$?
+        if [[ $rc -eq 0 || $rc -eq 7 ]]; then return $rc; fi
+        echo "  attempt $i of $ATTEMPTS for $1 ended with exit $rc" >&2
+    done
+    return $rc
+}
+
 failed=()
-for a in "${ARCHIVES[@]}" backup_manifest.tsv; do
-    "$RCLONE" copy "$STAGE/$a" "$DEST/" "${OPTS[@]}"; rc=$?
+NAMES=("${ARCHIVES[@]}" backup_manifest.tsv)
+BYTES=("${SIZES[@]}" 0)
+for i in "${!NAMES[@]}"; do
+    a=${NAMES[$i]}
+    upload "$a" "${BYTES[$i]}"; rc=$?
     case $rc in
         0) echo "  up $a" ;;
         7) echo "ERROR: the daily upload cap was reached at $a; run the stage again tomorrow" >&2

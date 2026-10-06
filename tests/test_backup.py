@@ -3,6 +3,7 @@
 import csv
 import importlib.util
 import os
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -17,6 +18,10 @@ FAKE_RCLONE = r"""#!/usr/bin/env bash
 cmd=$1; shift
 case $cmd in
   copy)  src=$1; dst=$2; mkdir -p "$dst"; n=$(basename "$src")
+         if [ "${FAKE_FAIL_ONCE:-}" = "$n" ] && [ ! -e "$dst/.failed_$n" ]; then
+             touch "$dst/.failed_$n"; exit 1; fi
+         if [ "${FAKE_HANG_ONCE:-}" = "$n" ] && [ ! -e "$dst/.hung_$n" ]; then
+             touch "$dst/.hung_$n"; exec sleep 30; fi
          if [ "${FAKE_CORRUPT:-}" = "$n" ]; then echo corrupted > "$dst/$n"; else cp "$src" "$dst/"; fi ;;
   check) src=$1; dst=$2; shift 2; inc=""
          while [ $# -gt 0 ]; do [ "$1" = --include-from ] && inc=$2; shift; done
@@ -133,3 +138,30 @@ def test_upload_is_verified_before_the_ledger(tmp_path):
                    project=tmp_path)
     assert again == []
     assert "nothing changed" in _upload(tmp_path).stdout
+
+
+def test_a_failed_upload_is_tried_again(tmp_path):
+    m = _script()
+    _tree(tmp_path)
+    rows = m.pack(tmp_path / "stage", tmp_path / "ledger.tsv", current_run=None, threads=1,
+                  project=tmp_path)
+    first, second = rows[0]["archive"], rows[1]["archive"]
+    r = _upload(tmp_path, {"FAKE_FAIL_ONCE": first, "BACKUP_ATTEMPTS": "1"})   # no attempt left
+    assert r.returncode == 1 and f"FAILED {first}" in r.stderr
+    assert not (tmp_path / "ledger.tsv").exists()
+    r = _upload(tmp_path, {"FAKE_FAIL_ONCE": second})                          # the second attempt
+    assert r.returncode == 0, r.stderr
+    assert f"attempt 1 of 3 for {second} ended with exit 1" in r.stderr
+    assert (tmp_path / "ledger.tsv").exists()
+
+
+@pytest.mark.skipif(not shutil.which("timeout"), reason="needs GNU timeout")
+def test_a_stalled_upload_is_stopped(tmp_path):
+    m = _script()
+    _tree(tmp_path)
+    rows = m.pack(tmp_path / "stage", tmp_path / "ledger.tsv", current_run=None, threads=1,
+                  project=tmp_path)
+    archive = rows[0]["archive"]
+    r = _upload(tmp_path, {"FAKE_HANG_ONCE": archive, "BACKUP_MIN_SECONDS": "1"})
+    assert r.returncode == 0, r.stderr
+    assert f"attempt 1 of 3 for {archive} ended with exit 124" in r.stderr
