@@ -34,7 +34,7 @@ def test_default_entry_reaches_every_step(tmp_path):
     n = t["process"].str.split(":").str[-1].value_counts().to_dict()
     assert (t["status"] == "COMPLETED").all()
     # 50 outer folds and 50 permutation chunks per model, 4 per job in the stub (lib/packing.py)
-    assert n["CV_UNITS"] == 3 * 13 and n["LP_CHUNKS"] == 3 * 13 and n["CPSS_CHUNK"] == 3 * 10
+    assert n["CV_UNITS"] == 3 * 13 and n["LP_CHUNKS"] == 3 * 13 and n["CPSS_CHUNK"] == 3 * 1
     for p in ("PANEL", "GRADING", "LP_ACROSS", "EXTERNAL_COMPARE", "CARD_LAYER", "PYSEER_POST"):
         assert n.get(p), p
     assert n["RUN_OUTPUTS"] == n["SACCT_DUMP"] == n["RUN_RESOURCES"] == 1

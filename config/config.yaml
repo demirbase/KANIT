@@ -300,7 +300,7 @@ cpss:                       # 13_cpss.py, lib/cpss.py (protocol §8.4)
   q: 50                     # patterns a fit selects (highest total gain)
   pi_threshold: 0.6         # stable at this selection frequency or above
   seed: 0                   # pair b is split with the seed (seed, b)
-  chunk: 10                 # pairs per task
+  chunk: 100                # pairs per task: every model's 200 fits in one job (pilot: seconds)
 candidates:                 # protocol §7 (written by 13_cpss.py select)
   top_gain: 50              # the final model's patterns with the highest total gain
 pyseer:                     # 14_pyseer.py, lib/pyseer_lmm.py (protocol §8.5)
