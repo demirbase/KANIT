@@ -2,7 +2,7 @@
 // and the candidates (13), prevalence (10), MDA (12), the CARD layer (09), pyseer
 // (14), the grades (14b) and the label permutation test (12b).
 
-include { py; receipt; stubReceipt; parallel } from './common'
+include { py; receipt; stubReceipt; parallel; kanitConfig } from './common'
 
 def pair(meta) {
     "--organism ${meta.organism} --antibiotic ${meta.antibiotic}"
@@ -96,7 +96,8 @@ process CPSS_CHUNK {
 
     script:
     """
-    # a chunk is kept only when written for the same final model (lib.cpss.chunk_key)
+    # a chunk of ${kanitConfig().cpss.chunk} pairs is kept only when written for the same final
+    # model (lib.cpss.chunk_key)
     ${py('13_cpss.py')} run ${pair(meta)} --chunk ${chunk} --threads ${task.cpus}
     ${receipt(task, 'cpss_chunk', "${meta.id} ${chunk}")}
     """
@@ -283,7 +284,8 @@ process LP_CHUNKS {
 
     script:
     """
-    # a chunk is kept only when written for the same folds and models (chunk_key)
+    # chunks of ${kanitConfig().label_permutation.chunk} permutations, kept only when written for
+    # the same folds and models (chunk_key)
     ${parallel(task, chunks, { c -> "${py('12b_label_permutation.py')} run ${pair(meta)} " +
         "--fold ${c[0]} --chunk ${c[1]}" })}
     ${receipt(task, 'label_permutation_chunks', "${meta.id} batch ${batch}")}
