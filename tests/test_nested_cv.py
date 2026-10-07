@@ -80,6 +80,24 @@ def test_inner_split_matches_the_arm(model):
     assert set(y[va].tolist()) == {0, 1} and set(y[tr].tolist()) == {0, 1}
 
 
+def test_a_unit_is_kept_only_for_the_same_inputs(model, load_script, tmp_path):
+    """--skip-done keeps a unit only when its folds, labels and settings are unchanged."""
+    mm, tmp = model
+    r = load_script("04_nested_cv.py")
+    out = tmp_path / "out"
+    r.run_folds(mm, out, CV)
+    arm, repeat = folds.LINEAGE_AWARE, 1
+    assert not r.unit_is_current(mm, out, arm, repeat, 0, HPO)          # not trained yet
+    r.run_unit(mm, out, arm, repeat, 0, HPO, threads=1)
+    assert r.unit_is_current(mm, out, arm, repeat, 0, HPO)
+    assert not r.unit_is_current(mm, out, arm, repeat, 0, {**HPO, "n_trials": 4})
+    ft = pd.read_csv(out / "folds.csv", dtype={"genome_id": str})       # other folds
+    m = (ft["arm"] == arm) & (ft["repeat"] == repeat)
+    ft.loc[m, "fold"] = (ft.loc[m, "fold"] + 1) % 3
+    ft.to_csv(out / "folds.csv", index=False)
+    assert not r.unit_is_current(mm, out, arm, repeat, 0, HPO)
+
+
 def test_runner_end_to_end(model, load_script):
     mm, tmp = model
     r = load_script("04_nested_cv.py")

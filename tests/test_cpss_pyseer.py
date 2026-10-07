@@ -124,6 +124,32 @@ def test_cpss_end_to_end(model, tmp_path):
     assert s["mb_bound"] == pytest.approx(25 / (0.2 * 30)) and s["n_fits"] == 12
 
 
+def test_a_cpss_chunk_of_another_final_model_is_redone(model, tmp_path):
+    """A chunk file written for another final model is neither kept nor read."""
+    mm, pid, tmp = model
+    cv = tmp_path / "cv"
+    shutil.copytree(tmp / "cv", cv)
+    rec_file = cv / "final" / "record.json"
+    rec = json.loads(rec_file.read_text())
+    rec["n_trees"] = 5
+    rec_file.write_text(json.dumps(rec))
+    s13 = _script("13_cpss.py")
+    out = tmp_path / "cpss"
+    s13.prefilter(mm, out, CPSS)
+    s13.run(mm, cv, out, CPSS, threads=1)
+    f = cpss.chunk_file(out, 0)
+    key, before = str(np.load(f)["key"]), f.stat().st_mtime_ns
+    s13.run(mm, cv, out, CPSS, threads=1)
+    assert f.stat().st_mtime_ns == before                    # the same final model: kept
+    rec["n_trees"] = 6                                        # a new final model
+    rec_file.write_text(json.dumps(rec))
+    with pytest.raises(ValueError, match="written for another final model"):
+        s13.select(mm, cv, out, CPSS, top_gain=5, candidates_file=tmp_path / "c.csv",
+                   layers_dir=tmp_path / "layers")
+    s13.run(mm, cv, out, CPSS, threads=1)
+    assert str(np.load(f)["key"]) != key
+
+
 # ---- pyseer ----------------------------------------------------------------
 def test_rtab_kinship_and_samples(model, tmp_path):
     mm, _, _ = model

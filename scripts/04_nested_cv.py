@@ -24,6 +24,7 @@ Usage:
         --arm lineage_aware --repeat 1 --fold 0
 """
 import argparse
+import hashlib
 import json
 import shutil
 import sys
@@ -127,11 +128,38 @@ def _design_evaluable(out_dir) -> bool:
     return bool(json.loads((out_dir / "cv_design.json").read_text())["evaluable"])
 
 
-def run_unit(mm, out_dir, arm, repeat, fold, hpo, threads):
-    _design(out_dir)
+def _unit_inputs(mm, out_dir, arm, repeat, fold):
+    """Genomes, labels, lineages, training and test rows and seed of one outer fold."""
     ids, y, groups = _data(mm)
     fold_of, seed = _split(out_dir, arm, repeat, ids)
     tr, te = np.flatnonzero(fold_of != fold), np.flatnonzero(fold_of == fold)
+    return ids, y, groups, tr, te, seed
+
+
+def unit_key(arm, repeat, fold, seed, hpo, tr, te, y) -> str:
+    """Fingerprint of everything an outer fold's model depends on: its folds, labels, seed
+    and search settings. --skip-done keeps a unit only with the same key, so that a unit
+    trained on other folds is never kept (pilot, 2026-10-06)."""
+    h = hashlib.sha256(json.dumps({"arm": arm, "repeat": int(repeat), "fold": int(fold),
+                                   "seed": int(seed), "hpo": hpo}, sort_keys=True).encode())
+    for a in (tr, te, y):
+        h.update(np.ascontiguousarray(np.asarray(a), dtype=np.int64).tobytes())
+    return h.hexdigest()
+
+
+def unit_is_current(mm, out_dir, arm, repeat, fold, hpo) -> bool:
+    """Whether the unit's record was written for its present folds, labels and settings."""
+    rec = out_dir / "units" / folds.unit_name(arm, repeat, fold) / "record.json"
+    if not rec.exists():
+        return False
+    _, y, _, tr, te, seed = _unit_inputs(mm, out_dir, arm, repeat, fold)
+    return (json.loads(rec.read_text()).get("inputs_key")
+            == unit_key(arm, repeat, fold, seed, hpo, tr, te, y))
+
+
+def run_unit(mm, out_dir, arm, repeat, fold, hpo, threads):
+    _design(out_dir)
+    ids, y, groups, tr, te, seed = _unit_inputs(mm, out_dir, arm, repeat, fold)
     t0 = time.time()
     result = train.train(mm, tr, y, groups, arm, seed, hpo, threads)
     p = train.predict(result["booster"], mm, te)
@@ -140,6 +168,7 @@ def run_unit(mm, out_dir, arm, repeat, fold, hpo, threads):
           {"repeat": repeat, "fold": fold, "n_test": int(len(te)), "finished_at": _now(),
            "seconds": round(time.time() - t0, 1), "peak_rss_gb": round(peak_rss_gb(), 2),
            "threads": int(threads),
+           "inputs_key": unit_key(arm, repeat, fold, seed, hpo, tr, te, y),
            "tables": {"oof.csv": oof}})
 
 
@@ -238,8 +267,8 @@ def main():
         if args.arm is None or args.repeat is None or args.fold is None:
             sys.exit("ERROR: `unit` needs --arm, --repeat and --fold.")
         unit = out_dir / "units" / folds.unit_name(args.arm, args.repeat, args.fold)
-        if args.skip_done and (unit / "record.json").exists():
-            print(f"  ✓ {unit.name} finished before; kept (--skip-done)")
+        if args.skip_done and unit_is_current(mm, out_dir, args.arm, args.repeat, args.fold, hpo):
+            print(f"  ✓ {unit.name} finished before with the same inputs; kept (--skip-done)")
         else:
             run_unit(mm, out_dir, args.arm, args.repeat, args.fold, hpo, args.threads)
     if args.command == "all":

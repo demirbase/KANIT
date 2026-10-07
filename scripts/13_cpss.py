@@ -20,6 +20,7 @@ status 3, as in 04. The rule is in lib/cpss.py. Outputs: paths_organism.cpss_dir
 candidates.
 """
 import argparse
+import functools
 import json
 import sys
 import time
@@ -59,24 +60,38 @@ def _prefilter_table(out_dir: Path) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def _fit_params(rec: dict, mm, n_prefilter: int) -> dict:
+    """The final model's hyperparameters, colsample_bytree rescaled to the prefilter."""
+    return {**rec["params"], "colsample_bytree": cpss.rescaled_colsample(
+        rec["params"]["colsample_bytree"], mm.n_patterns, n_prefilter)}
+
+
+def _key(rec: dict, mm, pre: pd.DataFrame, cfg):
+    """pairs -> the key of a chunk's inputs (lib.cpss.chunk_key)."""
+    return functools.partial(cpss.chunk_key, params=_fit_params(rec, mm, len(pre)),
+                             n_trees=int(rec["n_trees"]), q=cfg["q"], seed=cfg["seed"],
+                             pattern_ids=pre["pattern_id"].to_numpy(), y=mm.labels.astype(int))
+
+
 def run(mm, cv_dir: Path, out_dir: Path, cfg, *, chunk=None, threads=1):
     rec, _ = _final(cv_dir)
     pre = _prefilter_table(out_dir)
     parts = cpss.chunks(cfg["n_pairs"], cfg["chunk"])
     if chunk is not None and not 0 <= chunk < len(parts):
         sys.exit(f"ERROR: --chunk must lie in 0 .. {len(parts) - 1}.")
+    key = _key(rec, mm, pre, cfg)
     todo = [c for c in (range(len(parts)) if chunk is None else [chunk])
-            if not cpss.chunk_file(out_dir, c).exists()]
+            if not cpss.chunk_is_current(cpss.chunk_file(out_dir, c), key(parts[c]))]
     if not todo:
         return
     x = mm.columns(pre["pattern_id"].to_numpy())
-    params = {**rec["params"], "colsample_bytree": cpss.rescaled_colsample(
-        rec["params"]["colsample_bytree"], mm.n_patterns, len(pre))}
+    params = _fit_params(rec, mm, len(pre))
     y = mm.labels.astype(int)
     for c in todo:
         t0 = time.time()
         cpss.run_chunk(x, y, parts[c], params=params, n_trees=int(rec["n_trees"]), q=cfg["q"],
-                       seed=cfg["seed"], threads=threads, path=cpss.chunk_file(out_dir, c))
+                       seed=cfg["seed"], threads=threads, path=cpss.chunk_file(out_dir, c),
+                       key=key(parts[c]))
         print(f"  ✓ chunk {c} ({len(parts[c])} pairs, {time.time() - t0:.0f} s)")
 
 
@@ -84,7 +99,8 @@ def select(mm, cv_dir: Path, out_dir: Path, cfg, *, top_gain: int, candidates_fi
            layers_dir: Path) -> dict:
     rec, model = _final(cv_dir)
     pre = _prefilter_table(out_dir)
-    pi = cpss.selection_frequency(out_dir, len(pre), n_pairs=cfg["n_pairs"], chunk=cfg["chunk"])
+    pi = cpss.selection_frequency(out_dir, len(pre), n_pairs=cfg["n_pairs"], chunk=cfg["chunk"],
+                                  key=_key(rec, mm, pre, cfg))
     table = pre[["pattern_id", "chi2"]].assign(
         n_selected=np.rint(pi * 2 * cfg["n_pairs"]).astype(int), pi=pi,
         stable=cpss.stable(pi, cfg["pi_threshold"]))

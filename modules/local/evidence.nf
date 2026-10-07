@@ -96,6 +96,7 @@ process CPSS_CHUNK {
 
     script:
     """
+    # a chunk is kept only when written for the same final model (lib.cpss.chunk_key)
     ${py('13_cpss.py')} run ${pair(meta)} --chunk ${chunk} --threads ${task.cpus}
     ${receipt(task, 'cpss_chunk', "${meta.id} ${chunk}")}
     """
@@ -282,6 +283,7 @@ process LP_CHUNKS {
 
     script:
     """
+    # a chunk is kept only when written for the same folds and models (chunk_key)
     ${parallel(task, chunks, { c -> "${py('12b_label_permutation.py')} run ${pair(meta)} " +
         "--fold ${c[0]} --chunk ${c[1]}" })}
     ${receipt(task, 'label_permutation_chunks', "${meta.id} batch ${batch}")}

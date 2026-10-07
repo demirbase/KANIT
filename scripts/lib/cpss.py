@@ -21,7 +21,10 @@ it uses, if fewer) and the stable patterns.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
@@ -96,9 +99,30 @@ def chunk_file(out_dir, chunk: int) -> Path:
     return Path(out_dir) / "pairs" / f"chunk{chunk:03d}.npz"
 
 
+def chunk_key(pairs, *, params: dict, n_trees: int, q: int, seed: int, pattern_ids, y) -> str:
+    """Fingerprint of everything a chunk's selections depend on: the final model's
+    hyperparameters and number of trees, the prefilter, the labels and the pairs. A chunk
+    file is used only with its own key, so that a file written for another final model is
+    never mixed in (pilot, 2026-10-06)."""
+    h = hashlib.sha256(json.dumps({"params": params, "n_trees": int(n_trees), "q": int(q),
+                                   "seed": int(seed)}, sort_keys=True).encode())
+    for a in (pattern_ids, y, pairs):
+        h.update(np.ascontiguousarray(np.asarray(a), dtype=np.int64).tobytes())
+    return h.hexdigest()
+
+
+def chunk_is_current(path, key: str) -> bool:
+    """Whether ``path`` holds a chunk written for the inputs of ``key``."""
+    if not Path(path).exists():
+        return False
+    with np.load(path) as z:
+        return "key" in z.files and str(z["key"]) == key
+
+
 def run_chunk(x, y, pairs: np.ndarray, *, params: dict, n_trees: int, q: int, seed: int,
-              threads: int, path: Path) -> None:
-    """Selections of both fits of every pair in ``pairs`` (pairs × 2 × q, -1 padded)."""
+              threads: int, path: Path, key: str) -> None:
+    """Selections of both fits of every pair in ``pairs`` (pairs × 2 × q, -1 padded),
+    written with the key of their inputs."""
     sel = np.full((pairs.size, 2, q), -1, dtype=np.int64)
     for i, b in enumerate(pairs.tolist()):
         for h, rows in enumerate(half_samples(y, seed, b)):
@@ -106,12 +130,14 @@ def run_chunk(x, y, pairs: np.ndarray, *, params: dict, n_trees: int, q: int, se
             sel[i, h, :s.size] = s
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.stem + ".tmp.npz")
-    np.savez(tmp, pairs=pairs, selected=sel)
+    np.savez(tmp, pairs=pairs, selected=sel, key=np.array(key))
     os.replace(tmp, path)
 
 
-def selection_frequency(out_dir, n_prefilter: int, *, n_pairs: int, chunk: int) -> np.ndarray:
-    """π of every prefilter position; every chunk must exist."""
+def selection_frequency(out_dir, n_prefilter: int, *, n_pairs: int, chunk: int,
+                        key: Callable[[np.ndarray], str]) -> np.ndarray:
+    """π of every prefilter position; every chunk must exist, written for the inputs that
+    ``key`` (pairs -> key) describes."""
     counts = np.zeros(n_prefilter, dtype=np.int64)
     missing = []
     for c, pairs in enumerate(chunks(n_pairs, chunk)):
@@ -120,8 +146,9 @@ def selection_frequency(out_dir, n_prefilter: int, *, n_pairs: int, chunk: int) 
             missing.append(path.name)
             continue
         z = np.load(path)
-        if not np.array_equal(z["pairs"], pairs):
-            raise ValueError(f"{path}: written for other pairs")
+        if "key" not in z.files or str(z["key"]) != key(pairs):
+            raise ValueError(f"{path}: written for another final model, prefilter, labels "
+                             "or pairs")
         s = z["selected"]
         counts += np.bincount(s[s >= 0], minlength=n_prefilter)
     if missing:

@@ -49,8 +49,10 @@ def run(mm, cv_dir, out_dir, cfg, *, fold=None, chunk=None, threads=1):
     if chunk is not None and not 0 <= chunk < len(parts):
         sys.exit(f"ERROR: --chunk must lie in 0 .. {len(parts) - 1}.")
     wanted = range(len(parts)) if chunk is None else [chunk]
+    labels = mm.labels.astype(int)
     for f in fold_list:
-        todo = [c for c in wanted if not lp.chunk_file(out_dir, f.fold, c).exists()]
+        todo = [c for c in wanted if not lp.chunk_is_current(
+            lp.chunk_file(out_dir, f.fold, c), lp.chunk_key(f, labels, parts[c], cfg["seed"]))]
         if not todo:
             continue
         refit = lp.Refitter(mm, f, threads=threads)

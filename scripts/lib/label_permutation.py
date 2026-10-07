@@ -17,6 +17,7 @@ built once; only its labels and weights change.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from dataclasses import dataclass
@@ -112,13 +113,36 @@ def chunk_file(out_dir, fold: int, chunk: int) -> Path:
     return Path(out_dir) / "null" / f"fold{fold}_chunk{chunk:03d}.npz"
 
 
+def chunk_key(fold: Fold, labels, perms, seed: int) -> str:
+    """Fingerprint of everything a chunk's null predictions depend on: the fold's genomes,
+    the model 04 chose for it, the labels and the permutations. A chunk file is used only
+    with its own key, so that a file of another run (other folds or models) is never mixed
+    in (pilot, 2026-10-06)."""
+    h = hashlib.sha256(json.dumps({"params": fold.params, "n_trees": fold.n_trees,
+                                   "seed": fold.seed, "permutation_seed": int(seed)},
+                                  sort_keys=True).encode())
+    for a in (fold.train_rows, fold.test_rows, labels, perms):
+        h.update(np.ascontiguousarray(np.asarray(a), dtype=np.int64).tobytes())
+    return h.hexdigest()
+
+
+def chunk_is_current(path, key: str) -> bool:
+    """Whether ``path`` holds a chunk written for the inputs of ``key``."""
+    if not Path(path).exists():
+        return False
+    with np.load(path) as z:
+        return "key" in z.files and str(z["key"]) == key
+
+
 def run_chunk(refitter: Refitter, perms: np.ndarray, *, seed: int, path: Path) -> None:
-    """Null predictions of one fold for the permutations ``perms``, written atomically."""
+    """Null predictions of one fold for the permutations ``perms``, written atomically
+    with the key of their inputs."""
     labels = refitter.mm.labels.astype(int)
     p = np.stack([refitter.predict(permuted_labels(labels, seed, int(b))) for b in perms])
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.stem + ".tmp.npz")
-    np.savez(tmp, perms=perms, test_rows=refitter.fold.test_rows, p=p)
+    np.savez(tmp, perms=perms, test_rows=refitter.fold.test_rows, p=p,
+             key=np.array(chunk_key(refitter.fold, labels, perms, seed)))
     os.replace(tmp, path)
 
 
@@ -126,6 +150,7 @@ def null_auc(mm, fold_list: list[Fold], out_dir, *, n_permutations: int, chunk: 
              seed: int) -> np.ndarray:
     """Pooled out-of-fold AUC of every permutation; every chunk of every fold must exist."""
     pred = np.full((n_permutations, mm.n_genomes), np.nan)
+    labels = mm.labels.astype(int)
     missing = []
     for f in fold_list:
         for c, perms in enumerate(chunks(n_permutations, chunk)):
@@ -134,9 +159,9 @@ def null_auc(mm, fold_list: list[Fold], out_dir, *, n_permutations: int, chunk: 
                 missing.append(path.name)
                 continue
             z = np.load(path)
-            if not (np.array_equal(z["perms"], perms)
-                    and np.array_equal(z["test_rows"], f.test_rows)):
-                raise ValueError(f"{path}: written for other permutations or folds")
+            if "key" not in z.files or str(z["key"]) != chunk_key(f, labels, perms, seed):
+                raise ValueError(f"{path}: written for other folds, models, labels or "
+                                 "permutations")
             pred[np.ix_(perms, f.test_rows)] = z["p"]
     if missing:
         raise FileNotFoundError(f"{len(missing)} null chunk(s) missing, e.g. {missing[:3]}")

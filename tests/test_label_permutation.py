@@ -3,6 +3,7 @@
 small synthetic model with real outer-fold models of 04."""
 import importlib.util
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -98,6 +99,29 @@ def test_run_and_metrics(cv, tmp_path):
     assert len(null) == 12 and abs(null.mean() - 0.5) < 0.15
     assert s["auc_observed"] > 0.8 and s["p"] == pytest.approx(1 / 13) and s["z"] > 3
     assert json.loads((out / "label_permutation.json").read_text())["n_permutations"] == 12
+
+
+def test_a_chunk_written_for_other_inputs_is_redone(cv, tmp_path):
+    """A chunk file of another run (other folds or models) is neither kept nor read."""
+    mm, tmp = cv
+    cv_dir = tmp_path / "cv"
+    shutil.copytree(tmp / "cv", cv_dir)
+    s12b = _script("12b_label_permutation.py")
+    out = tmp_path / "lp"
+    s12b.run(mm, cv_dir, out, CFG, fold=0, chunk=0, threads=1)
+    f = out / "null" / "fold0_chunk000.npz"
+    key = str(np.load(f)["key"])
+    before = f.stat().st_mtime_ns
+    s12b.run(mm, cv_dir, out, CFG, fold=0, chunk=0, threads=1)
+    assert f.stat().st_mtime_ns == before                   # the same inputs: kept
+    unit = cv_dir / "units" / folds.unit_name(folds.LINEAGE_AWARE, 1, 0) / "record.json"
+    rec = json.loads(unit.read_text())
+    rec["n_trees"] += 1                                      # another model for the fold
+    unit.write_text(json.dumps(rec))
+    with pytest.raises(ValueError, match="written for other"):
+        s12b.metrics(mm, cv_dir, out, CFG)
+    s12b.run(mm, cv_dir, out, CFG, fold=0, chunk=0, threads=1)
+    assert str(np.load(f)["key"]) != key                     # redone for the new model
 
 
 def test_across_models_flags_the_non_significant():
