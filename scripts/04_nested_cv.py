@@ -174,6 +174,27 @@ def run_unit(mm, out_dir, arm, repeat, fold, hpo, threads):
            "tables": {"oof.csv": oof}})
 
 
+def final_key(hpo, y, groups, matrix: str) -> str:
+    """Fingerprint of everything the final model depends on: the matrix (its checksum), the
+    labels, the lineages and the search settings. --skip-done keeps it only with the same
+    key, as a unit."""
+    h = hashlib.sha256(json.dumps({"hpo": hpo, "matrix": matrix}, sort_keys=True).encode())
+    h.update(np.ascontiguousarray(np.asarray(y), dtype=np.int64).tobytes())
+    h.update("\n".join(map(str, groups)).encode())
+    return h.hexdigest()
+
+
+def final_is_current(mm, out_dir, hpo) -> bool:
+    """Whether the final model's record was written for the present matrix, labels and
+    settings."""
+    rec = out_dir / "final" / "record.json"
+    if not rec.exists():
+        return False
+    _, y, groups = _data(mm)
+    return json.loads(rec.read_text()).get("inputs_key") == final_key(hpo, y, groups,
+                                                                       mm.fingerprint)
+
+
 def run_final(mm, out_dir, hpo, threads):
     _design(out_dir)
     _, y, groups = _data(mm)
@@ -181,7 +202,8 @@ def run_final(mm, out_dir, hpo, threads):
     result = train.train(mm, np.arange(len(y)), y, groups, folds.LINEAGE_AWARE, 0, hpo, threads)
     _save(result, out_dir / "final",
           {"finished_at": _now(), "seconds": round(time.time() - t0, 1),
-           "peak_rss_gb": round(peak_rss_gb(), 2)})
+           "peak_rss_gb": round(peak_rss_gb(), 2),
+           "inputs_key": final_key(hpo, y, groups, mm.fingerprint)})
 
 
 def run_metrics(mm, out_dir, cv):
@@ -242,8 +264,9 @@ def main():
     ap.add_argument("--fold", type=int)
     ap.add_argument("--threads", type=int, default=int(config["preprocessing"]["threads"]))
     ap.add_argument("--skip-done", action="store_true",
-                    help="unit: keep a finished unit of this model (its record.json) and do "
-                         "not run it again; only for resuming one run whose code is unchanged")
+                    help="unit, final: keep a finished unit or final model of this model (its "
+                         "record.json) written for the same inputs and do not run it again; "
+                         "only for resuming one run whose code is unchanged")
     args = ap.parse_args()
 
     cv, hpo = config["cv"], config["hpo"]
@@ -280,7 +303,9 @@ def main():
                 for k in range(cv["n_folds"]):
                     run_unit(mm, out_dir, s.arm, int(s.repeat), k, hpo, args.threads)
                     print(f"  ✓ {folds.unit_name(s.arm, int(s.repeat), k)}")
-    if args.command in ("final", "all"):
+    if args.command == "final" and args.skip_done and final_is_current(mm, out_dir, hpo):
+        print("  ✓ final model finished before with the same inputs; kept (--skip-done)")
+    elif args.command in ("final", "all"):
         run_final(mm, out_dir, hpo, args.threads)
         print("  ✓ final model")
     if args.command in ("metrics", "all"):

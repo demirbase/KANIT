@@ -118,7 +118,7 @@ process CV_FINAL {
     script:
     """
     ${py('04_nested_cv.py')} final --organism ${meta.organism} --antibiotic ${meta.antibiotic} \\
-        --threads ${task.cpus}
+        --threads ${task.cpus}${params.reuse_units ? ' --skip-done' : ''}
     ${receipt(task, 'cv_final', meta.id)}
     """
 

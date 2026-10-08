@@ -80,6 +80,24 @@ def test_inner_split_matches_the_arm(model):
     assert set(y[va].tolist()) == {0, 1} and set(y[tr].tolist()) == {0, 1}
 
 
+def test_a_final_model_is_kept_only_for_the_same_inputs(model, load_script, tmp_path):
+    """--skip-done keeps the final model only for the same matrix, labels and settings."""
+    mm, tmp = model
+    r = load_script("04_nested_cv.py")
+    out = tmp_path / "out"
+    r.run_folds(mm, out, CV)
+    assert not r.final_is_current(mm, out, HPO)
+    r.run_final(mm, out, HPO, threads=1)
+    assert r.final_is_current(mm, out, HPO)
+    assert not r.final_is_current(mm, out, {**HPO, "n_trials": 4})
+    saved = mm.summary["x_sha256"]
+    mm.summary["x_sha256"] = "another matrix"
+    try:
+        assert not r.final_is_current(mm, out, HPO)
+    finally:
+        mm.summary["x_sha256"] = saved
+
+
 def test_a_unit_is_kept_only_for_the_same_inputs(model, load_script, tmp_path):
     """--skip-done keeps a unit only when its matrix, folds, labels and settings are
     unchanged."""
