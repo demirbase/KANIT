@@ -136,12 +136,14 @@ def _unit_inputs(mm, out_dir, arm, repeat, fold):
     return ids, y, groups, tr, te, seed
 
 
-def unit_key(arm, repeat, fold, seed, hpo, tr, te, y) -> str:
-    """Fingerprint of everything an outer fold's model depends on: its folds, labels, seed
-    and search settings. --skip-done keeps a unit only with the same key, so that a unit
-    trained on other folds is never kept (pilot, 2026-10-06)."""
+def unit_key(arm, repeat, fold, seed, hpo, tr, te, y, matrix: str) -> str:
+    """Fingerprint of everything an outer fold's model depends on: the matrix (its
+    checksum), its folds, labels, seed and search settings. --skip-done keeps a unit only
+    with the same key, so that a unit trained on other folds or another matrix is never
+    kept (pilot, 2026-10-06)."""
     h = hashlib.sha256(json.dumps({"arm": arm, "repeat": int(repeat), "fold": int(fold),
-                                   "seed": int(seed), "hpo": hpo}, sort_keys=True).encode())
+                                   "seed": int(seed), "hpo": hpo, "matrix": matrix},
+                                  sort_keys=True).encode())
     for a in (tr, te, y):
         h.update(np.ascontiguousarray(np.asarray(a), dtype=np.int64).tobytes())
     return h.hexdigest()
@@ -154,7 +156,7 @@ def unit_is_current(mm, out_dir, arm, repeat, fold, hpo) -> bool:
         return False
     _, y, _, tr, te, seed = _unit_inputs(mm, out_dir, arm, repeat, fold)
     return (json.loads(rec.read_text()).get("inputs_key")
-            == unit_key(arm, repeat, fold, seed, hpo, tr, te, y))
+            == unit_key(arm, repeat, fold, seed, hpo, tr, te, y, mm.fingerprint))
 
 
 def run_unit(mm, out_dir, arm, repeat, fold, hpo, threads):
@@ -168,7 +170,7 @@ def run_unit(mm, out_dir, arm, repeat, fold, hpo, threads):
           {"repeat": repeat, "fold": fold, "n_test": int(len(te)), "finished_at": _now(),
            "seconds": round(time.time() - t0, 1), "peak_rss_gb": round(peak_rss_gb(), 2),
            "threads": int(threads),
-           "inputs_key": unit_key(arm, repeat, fold, seed, hpo, tr, te, y),
+           "inputs_key": unit_key(arm, repeat, fold, seed, hpo, tr, te, y, mm.fingerprint),
            "tables": {"oof.csv": oof}})
 
 

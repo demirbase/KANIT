@@ -114,6 +114,13 @@ def test_a_chunk_written_for_other_inputs_is_redone(cv, tmp_path):
     before = f.stat().st_mtime_ns
     s12b.run(mm, cv_dir, out, CFG, fold=0, chunk=0, threads=1)
     assert f.stat().st_mtime_ns == before                   # the same inputs: kept
+    saved = mm.summary["x_sha256"]
+    mm.summary["x_sha256"] = "another matrix"                # the matrix was rebuilt
+    try:
+        with pytest.raises(ValueError, match="written for other"):
+            s12b.metrics(mm, cv_dir, out, CFG)
+    finally:
+        mm.summary["x_sha256"] = saved
     unit = cv_dir / "units" / folds.unit_name(folds.LINEAGE_AWARE, 1, 0) / "record.json"
     rec = json.loads(unit.read_text())
     rec["n_trees"] += 1                                      # another model for the fold

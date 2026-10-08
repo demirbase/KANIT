@@ -70,7 +70,8 @@ def _key(rec: dict, mm, pre: pd.DataFrame, cfg):
     """pairs -> the key of a chunk's inputs (lib.cpss.chunk_key)."""
     return functools.partial(cpss.chunk_key, params=_fit_params(rec, mm, len(pre)),
                              n_trees=int(rec["n_trees"]), q=cfg["q"], seed=cfg["seed"],
-                             pattern_ids=pre["pattern_id"].to_numpy(), y=mm.labels.astype(int))
+                             pattern_ids=pre["pattern_id"].to_numpy(), y=mm.labels.astype(int),
+                             matrix=mm.fingerprint)
 
 
 def run(mm, cv_dir: Path, out_dir: Path, cfg, *, chunk=None, threads=1):

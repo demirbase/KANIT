@@ -141,6 +141,14 @@ def test_a_cpss_chunk_of_another_final_model_is_redone(model, tmp_path):
     key, before = str(np.load(f)["key"]), f.stat().st_mtime_ns
     s13.run(mm, cv, out, CPSS, threads=1)
     assert f.stat().st_mtime_ns == before                    # the same final model: kept
+    saved = mm.summary["x_sha256"]
+    mm.summary["x_sha256"] = "another matrix"                 # the matrix was rebuilt
+    try:
+        with pytest.raises(ValueError, match="written for another final model"):
+            s13.select(mm, cv, out, CPSS, top_gain=5, candidates_file=tmp_path / "c.csv",
+                       layers_dir=tmp_path / "layers")
+    finally:
+        mm.summary["x_sha256"] = saved
     rec["n_trees"] = 6                                        # a new final model
     rec_file.write_text(json.dumps(rec))
     with pytest.raises(ValueError, match="written for another final model"):

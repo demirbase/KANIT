@@ -113,14 +113,14 @@ def chunk_file(out_dir, fold: int, chunk: int) -> Path:
     return Path(out_dir) / "null" / f"fold{fold}_chunk{chunk:03d}.npz"
 
 
-def chunk_key(fold: Fold, labels, perms, seed: int) -> str:
-    """Fingerprint of everything a chunk's null predictions depend on: the fold's genomes,
-    the model 04 chose for it, the labels and the permutations. A chunk file is used only
-    with its own key, so that a file of another run (other folds or models) is never mixed
-    in (pilot, 2026-10-06)."""
+def chunk_key(fold: Fold, labels, perms, seed: int, matrix: str) -> str:
+    """Fingerprint of everything a chunk's null predictions depend on: the matrix (its
+    checksum), the fold's genomes, the model 04 chose for it, the labels and the
+    permutations. A chunk file is used only with its own key, so that a file of another run
+    (other folds, models or matrix) is never mixed in (pilot, 2026-10-06)."""
     h = hashlib.sha256(json.dumps({"params": fold.params, "n_trees": fold.n_trees,
-                                   "seed": fold.seed, "permutation_seed": int(seed)},
-                                  sort_keys=True).encode())
+                                   "seed": fold.seed, "permutation_seed": int(seed),
+                                   "matrix": matrix}, sort_keys=True).encode())
     for a in (fold.train_rows, fold.test_rows, labels, perms):
         h.update(np.ascontiguousarray(np.asarray(a), dtype=np.int64).tobytes())
     return h.hexdigest()
@@ -141,8 +141,8 @@ def run_chunk(refitter: Refitter, perms: np.ndarray, *, seed: int, path: Path) -
     p = np.stack([refitter.predict(permuted_labels(labels, seed, int(b))) for b in perms])
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.stem + ".tmp.npz")
-    np.savez(tmp, perms=perms, test_rows=refitter.fold.test_rows, p=p,
-             key=np.array(chunk_key(refitter.fold, labels, perms, seed)))
+    key = chunk_key(refitter.fold, labels, perms, seed, refitter.mm.fingerprint)
+    np.savez(tmp, perms=perms, test_rows=refitter.fold.test_rows, p=p, key=np.array(key))
     os.replace(tmp, path)
 
 
@@ -159,9 +159,10 @@ def null_auc(mm, fold_list: list[Fold], out_dir, *, n_permutations: int, chunk: 
                 missing.append(path.name)
                 continue
             z = np.load(path)
-            if "key" not in z.files or str(z["key"]) != chunk_key(f, labels, perms, seed):
-                raise ValueError(f"{path}: written for other folds, models, labels or "
-                                 "permutations")
+            if "key" not in z.files or str(z["key"]) != chunk_key(f, labels, perms, seed,
+                                                                  mm.fingerprint):
+                raise ValueError(f"{path}: written for other folds, models, labels, "
+                                 "permutations or matrix")
             pred[np.ix_(perms, f.test_rows)] = z["p"]
     if missing:
         raise FileNotFoundError(f"{len(missing)} null chunk(s) missing, e.g. {missing[:3]}")

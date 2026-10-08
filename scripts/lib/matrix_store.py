@@ -270,6 +270,12 @@ class ModelMatrix:
         return len(self.genomes)
 
     @property
+    def fingerprint(self) -> str:
+        """Checksum of X (genomes × patterns) recorded when the matrix was built: a unit or
+        chunk trained on another matrix of the model is never kept."""
+        return str(self.summary["x_sha256"])
+
+    @property
     def labels(self) -> np.ndarray:
         return self.genomes["label"].to_numpy(dtype=np.int8)
 

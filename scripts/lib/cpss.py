@@ -99,13 +99,15 @@ def chunk_file(out_dir, chunk: int) -> Path:
     return Path(out_dir) / "pairs" / f"chunk{chunk:03d}.npz"
 
 
-def chunk_key(pairs, *, params: dict, n_trees: int, q: int, seed: int, pattern_ids, y) -> str:
-    """Fingerprint of everything a chunk's selections depend on: the final model's
-    hyperparameters and number of trees, the prefilter, the labels and the pairs. A chunk
-    file is used only with its own key, so that a file written for another final model is
-    never mixed in (pilot, 2026-10-06)."""
+def chunk_key(pairs, *, params: dict, n_trees: int, q: int, seed: int, pattern_ids, y,
+              matrix: str) -> str:
+    """Fingerprint of everything a chunk's selections depend on: the matrix (its checksum),
+    the final model's hyperparameters and number of trees, the prefilter, the labels and
+    the pairs. A chunk file is used only with its own key, so that a file written for
+    another final model or matrix is never mixed in (pilot, 2026-10-06)."""
     h = hashlib.sha256(json.dumps({"params": params, "n_trees": int(n_trees), "q": int(q),
-                                   "seed": int(seed)}, sort_keys=True).encode())
+                                   "seed": int(seed), "matrix": matrix},
+                                  sort_keys=True).encode())
     for a in (pattern_ids, y, pairs):
         h.update(np.ascontiguousarray(np.asarray(a), dtype=np.int64).tobytes())
     return h.hexdigest()
@@ -147,8 +149,8 @@ def selection_frequency(out_dir, n_prefilter: int, *, n_pairs: int, chunk: int,
             continue
         z = np.load(path)
         if "key" not in z.files or str(z["key"]) != key(pairs):
-            raise ValueError(f"{path}: written for another final model, prefilter, labels "
-                             "or pairs")
+            raise ValueError(f"{path}: written for another final model, prefilter, labels, "
+                             "pairs or matrix")
         s = z["selected"]
         counts += np.bincount(s[s >= 0], minlength=n_prefilter)
     if missing:

@@ -52,7 +52,8 @@ def run(mm, cv_dir, out_dir, cfg, *, fold=None, chunk=None, threads=1):
     labels = mm.labels.astype(int)
     for f in fold_list:
         todo = [c for c in wanted if not lp.chunk_is_current(
-            lp.chunk_file(out_dir, f.fold, c), lp.chunk_key(f, labels, parts[c], cfg["seed"]))]
+            lp.chunk_file(out_dir, f.fold, c),
+            lp.chunk_key(f, labels, parts[c], cfg["seed"], mm.fingerprint))]
         if not todo:
             continue
         refit = lp.Refitter(mm, f, threads=threads)

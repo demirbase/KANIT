@@ -81,7 +81,8 @@ def test_inner_split_matches_the_arm(model):
 
 
 def test_a_unit_is_kept_only_for_the_same_inputs(model, load_script, tmp_path):
-    """--skip-done keeps a unit only when its folds, labels and settings are unchanged."""
+    """--skip-done keeps a unit only when its matrix, folds, labels and settings are
+    unchanged."""
     mm, tmp = model
     r = load_script("04_nested_cv.py")
     out = tmp_path / "out"
@@ -90,6 +91,12 @@ def test_a_unit_is_kept_only_for_the_same_inputs(model, load_script, tmp_path):
     assert not r.unit_is_current(mm, out, arm, repeat, 0, HPO)          # not trained yet
     r.run_unit(mm, out, arm, repeat, 0, HPO, threads=1)
     assert r.unit_is_current(mm, out, arm, repeat, 0, HPO)
+    saved = mm.summary["x_sha256"]
+    mm.summary["x_sha256"] = "another matrix"                           # the matrix was rebuilt
+    try:
+        assert not r.unit_is_current(mm, out, arm, repeat, 0, HPO)
+    finally:
+        mm.summary["x_sha256"] = saved
     assert not r.unit_is_current(mm, out, arm, repeat, 0, {**HPO, "n_trials": 4})
     ft = pd.read_csv(out / "folds.csv", dtype={"genome_id": str})       # other folds
     m = (ft["arm"] == arm) & (ft["repeat"] == repeat)
