@@ -54,7 +54,8 @@ def test_majority_rule_and_conservative_hit_state():
     assert cl.combine_genomes([b]).state == cl.B1                  # 1 of 1
     assert cl.combine_genomes([b, b]).state == cl.B1               # 2 of 2
     one_of_two = cl.combine_genomes([b, none])                     # 1 of 2: not b
-    assert one_of_two.state == cl.HIT_NO_B
+    assert one_of_two.state == cl.HIT_NO_B and one_of_two.reasons == {cl.B_MINORITY}
+    assert cl.combine_genomes([b, nob, none]).reasons == {cl.CO_CARRIED, cl.B_MINORITY}
     assert cl.combine_genomes([b, b, none]).state == cl.B1         # 2 of 3
     u = cl.combine_genomes([nob, none, none])                      # any hit is a hit
     assert u.state == cl.HIT_NO_B and u.reasons == {cl.CO_CARRIED}

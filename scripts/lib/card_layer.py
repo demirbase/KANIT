@@ -16,7 +16,9 @@ and it is
 ``b`` holds for the unitig when it holds in more than half of its located
 genomes. A unitig with a hit but without ``b`` keeps the reasons of its hits:
 ``co_carried_known_gene`` (drug class does not match), ``near_universal_gene``,
-``allele_not_in_unitig``. Any hit in any located genome counts as a CARD hit, so
+``allele_not_in_unitig``, and ``b_in_minority_of_located_genomes`` when ``b`` holds
+in some located genomes but not in more than half (protocol §14 item 7). Any hit in
+any located genome counts as a CARD hit, so
 a unitig is never called novel next to a known gene. A pattern takes the best
 state of its member unitigs.
 """
@@ -32,6 +34,7 @@ import pandas as pd
 B1, HIT_NO_B, NO_HIT = "b", "card_hit_without_b", "no_card_hit"
 CO_CARRIED, NEAR_UNIVERSAL, ALLELE_NOT_IN = ("co_carried_known_gene", "near_universal_gene",
                                              "allele_not_in_unitig")
+B_MINORITY = "b_in_minority_of_located_genomes"
 VARIANT_NOT_COUNTED = "variant_not_counted"     # homolog_only sensitivity analysis
 MODES = ("allele_aware", "homolog_only")
 
@@ -125,6 +128,8 @@ def combine_genomes(per_genome: list[Evidence]) -> UnitigState:
         u.state, u.reasons = B1, set()
     elif any(hit for _, hit, _, _ in per_genome):
         u.state = HIT_NO_B
+        if u.n_b:                   # b in some located genomes, not in more than half
+            u.reasons.add(B_MINORITY)
     return u
 
 
