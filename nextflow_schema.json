@@ -37,7 +37,7 @@
                 "reuse_units": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Keep the outer folds that an earlier launch of this run finished (resuming after a change of the workflow only; the analysis code must be unchanged)."
+                    "description": "Keep the outer folds and final models that an earlier launch of this run finished for the same inputs (resuming one run, e.g. after its head job stopped; the analysis code must be unchanged)."
                 }
             }
         },
@@ -91,6 +91,21 @@
                         "debug"
                     ],
                     "description": "SLURM partition of every task."
+                },
+                "queue_large": {
+                    "type": "string",
+                    "enum": [
+                        "barbun",
+                        "hamsi",
+                        "orfoz",
+                        "debug"
+                    ],
+                    "description": "SLURM partition of the heavy steps (store, matrix, outer folds, permutations, CPSS, MDA) of large_organisms; the same as queue when not given."
+                },
+                "large_organisms": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Comma-separated organisms whose heavy steps go to queue_large (e.g. ecoli,kpneumoniae)."
                 },
                 "queue_light": {
                     "type": "string",

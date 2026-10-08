@@ -84,6 +84,39 @@ def test_a_run_with_more_organisms_keeps_the_earlier_ones_cached(tmp_path):
     assert (~eco & (t["step"] == "STORE") & (t["status"] == "COMPLETED")).sum() == 1
 
 
+def test_large_organisms_run_their_heavy_steps_on_their_partition(tmp_path):
+    """-profile truba: --queue_large takes the heavy steps of --large_organisms (memory,
+    cores and time of that partition), --queue_light the short steps, --queue the rest."""
+    (tmp_path / "main.nf").write_text(
+        "process UNITS { label 'cv_unit'; input: tuple val(meta), val(n); output: stdout\n"
+        "  script: 'echo u' }\n"
+        "process STORE { label 'store'; input: tuple val(org), val(abs); output: stdout\n"
+        "  script: 'echo s' }\n"
+        "process LIGHT { label 'light'; input: val(meta); output: stdout; script: 'echo l' }\n"
+        "workflow {\n"
+        "  ms = Channel.of([id: 'ecoli__a', organism: 'ecoli'], [id: 'saureus__b', organism: 'saureus'])\n"
+        "  UNITS(ms.map { [it, 1] }); LIGHT(ms)\n"
+        "  STORE(Channel.of(['ecoli', ['a']], ['saureus', ['b']]))\n}\n")
+    (tmp_path / "local.config").write_text(
+        "process.executor = 'local'\nprocess.container = null\napptainer.enabled = false\n"
+        "workDir = 'work'\nexecutor { cpus = 512; memory = '4 TB' }\n"
+        "trace { enabled = true; overwrite = true; file = 'trace.txt'; "
+        "fields = 'name,tag,queue,cpus,memory' }\n")
+    r = subprocess.run([NEXTFLOW, "-q", "run", "main.nf", "-c",
+                        str(PROJECT_ROOT / "conf" / "truba.config"), "-c", "local.config",
+                        "--queue", "hamsi", "--queue_light", "debug", "--queue_large", "barbun",
+                        "--large_organisms", "ecoli,kpneumoniae"],
+                       cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    t = pd.read_csv(tmp_path / "trace.txt", sep="\t")
+    t["step"] = t["name"].str.split(" ").str[0]
+    got = {(s, int(i)): (q, c) for s, i, q, c in zip(
+        t["step"], t["name"].str.extract(r"\((\d+)\)")[0], t["queue"], t["cpus"], strict=True)}
+    assert got[("UNITS", 1)] == ("barbun", 20) and got[("UNITS", 2)] == ("hamsi", 56)
+    assert got[("STORE", 1)] == ("barbun", 40) and got[("STORE", 2)] == ("hamsi", 56)
+    assert {q for (s, _), (q, _) in got.items() if s == "LIGHT"} == {"debug"}
+
+
 def test_parameters_are_checked(tmp_path):
     r, _ = _run(tmp_path)
     assert r.returncode != 0 and "organisms" in (r.stdout + r.stderr)

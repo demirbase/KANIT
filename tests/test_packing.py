@@ -48,8 +48,8 @@ def test_job_memory_holds_the_budget():
         r"(\w+)\s*:\s*\[cpus: (\d+), min_cpus: (\d+), mb_per_cpu: (\d+)", text)}
     budget_gb = load_config()["packing"]["budget_gb"]
     for label in ("cv_unit", "permutation"):
-        gib = int(re.search(rf"withLabel: {label} \{{\s*memory = \{{ memoryFor\((\d+),",
-                            text).group(1))
+        gib = int(re.search(rf"withLabel: {label} \{{\s*(?:queue .*\n\s*)?"
+                            rf"memory = \{{ memoryFor\((\d+),", text).group(1))
         for name in ("barbun", "hamsi", "orfoz"):
             cpus, _, mb_per_cpu = parts[name]
             mb = min(gib * 1024, math.floor(cpus * mb_per_cpu * 0.95))
