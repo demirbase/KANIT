@@ -7,7 +7,7 @@ process EXTERNAL_PREP {
     label 'light'
 
     input:
-    tuple val(org), path(deps, stageAs: 'dep*.json')
+    tuple val(org), val(antibiotics), path(deps, stageAs: 'dep*.json')
 
     output:
     tuple val(org), path('run_external.sh'), emit: script

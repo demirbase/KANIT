@@ -5,14 +5,14 @@ include { EXTERNAL_PREP; EXTERNAL_RUN; EXTERNAL_COLLECT; EXTERNAL_COMPARE } from
 
 workflow COMPARISON {
     take:
-    organisms                       // organism ids with panel pairs
-    panel                           // the panel decisions
+    prepared                        // organism with panel pairs, their antibiotics, QC and
+                                    // lineage receipts
     rgi                             // organism, RGI receipt
     metrics                         // meta, metrics receipt
 
     main:
     def n = params.external_shards as int
-    EXTERNAL_PREP(organisms.combine(panel))
+    EXTERNAL_PREP(prepared)
     EXTERNAL_RUN(EXTERNAL_PREP.out.script.flatMap { org, s -> (0..<n).collect { k -> [org, s, k, n] } })
     EXTERNAL_COLLECT(EXTERNAL_RUN.out.done.groupTuple(size: n))
     perOrganism = metrics.map { m, r -> [m.organism, r] }.groupTuple()

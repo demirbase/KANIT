@@ -1,5 +1,7 @@
 // Every organism: quality control and lineages, then the panel of all organisms and,
 // after it, the unitig store of each organism with panel pairs. Emits the panel pairs.
+// An organism's tasks after the panel take its pairs, not the panel's receipt, so that a
+// run with more organisms leaves the earlier ones cached.
 
 include { QC_PREP; CHECKM2; QUAST; QC_POST; LINEAGE; PANEL; STORE } from '../../modules/local/genomes'
 include { meta } from '../../modules/local/common'
@@ -21,13 +23,17 @@ workflow GENOMES {
         .splitCsv(header: true)
         .filter { row -> row.decision == 'included' && row.organism in wanted }
         .map { row -> meta(row.organism, row.antibiotic) }
-    // the store holds the genomes of the organism's panel pairs (03u reads the panel):
-    // it waits for the panel and is built only for the organisms that have pairs
-    withPairs = pairs.map { it.organism }.unique().map { [it] }
-    STORE(ready.join(withPairs).combine(PANEL.out.receipt).map { org, rs, p -> [org, rs + [p]] })
+    // every organism with pairs: the antibiotics of its pairs and its QC and lineage
+    // receipts. The store (03u) and the genotype-based tools (16) read the panel through
+    // them, not through the panel's receipt: the panel is rerun whenever the organisms of a
+    // run change, while the pairs of an organism stay the same, so its tasks stay cached
+    prepared = pairs.map { [it.organism, it.antibiotic] }.groupTuple()
+        .map { org, abs -> [org, abs.sort(false)] }
+        .join(ready)
+    STORE(prepared)
 
     emit:
-    pairs  = pairs                  // meta of every panel pair
-    stores = STORE.out.done         // organism, receipt
-    panel  = PANEL.out.decisions    // the panel decisions
+    pairs    = pairs                // meta of every panel pair
+    stores   = STORE.out.done       // organism, receipt
+    prepared = prepared             // organism, its pairs' antibiotics, QC and lineage receipts
 }

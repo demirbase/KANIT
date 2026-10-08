@@ -143,7 +143,7 @@ process STORE {
     label 'store'
 
     input:
-    tuple val(org), path(deps, stageAs: 'dep*.json')
+    tuple val(org), val(antibiotics), path(deps, stageAs: 'dep*.json')
 
     output:
     tuple val(org), path('receipt.json'), emit: done

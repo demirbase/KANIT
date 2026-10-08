@@ -64,6 +64,26 @@ def test_default_entry_reaches_every_step(tmp_path):
     assert sum(k.endswith(" association") for k in keys) == n["GRADING"]
 
 
+def test_a_run_with_more_organisms_keeps_the_earlier_ones_cached(tmp_path):
+    """The full run in two waves: the panel is rerun when the organisms of a run change,
+    but an organism's store and genotype-based tools take its pairs, not the panel's
+    receipt, so that adding organisms reruns nothing of the earlier ones."""
+    panel = str(PROJECT_ROOT / "tests" / "data" / "stub_panel_decisions.csv")
+    r, _ = _run(tmp_path, "--organisms", "ecoli", "--stub_panel", panel)
+    assert r.returncode == 0, r.stdout + r.stderr
+    r, trace = _run(tmp_path, "--organisms", "ecoli,kpneumoniae", "--stub_panel", panel,
+                    "-resume")
+    assert r.returncode == 0, r.stdout + r.stderr
+    t = pd.read_csv(trace, sep="\t")
+    t["step"] = t["process"].str.split(":").str[-1]
+    eco = t["tag"].astype(str).str.startswith("ecoli")
+    assert "PANEL" in set(t.loc[t["status"] == "COMPLETED", "step"])     # the new organism
+    assert {"STORE", "EXTERNAL_PREP", "MODEL_MATRIX", "CV_UNITS", "GRADING",
+            "GRADING_ASSOCIATION"} <= set(t.loc[eco & (t["status"] == "CACHED"), "step"])
+    assert not (eco & (t["status"] == "COMPLETED")).any(), t.loc[eco, ["step", "status"]]
+    assert (~eco & (t["step"] == "STORE") & (t["status"] == "COMPLETED")).sum() == 1
+
+
 def test_parameters_are_checked(tmp_path):
     r, _ = _run(tmp_path)
     assert r.returncode != 0 and "organisms" in (r.stdout + r.stderr)
