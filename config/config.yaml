@@ -316,7 +316,7 @@ context:                    # 18_ncbi_context.py, lib/ncbi_context.py (protocol 
   batch_size: 100           # unitigs per BLAST submission
 
 packing:                    # lib/packing.py: CV units / permutation chunks of one model per SLURM job
-  max_per_job: 20           # a unit keeps about one core busy, whatever its threads (pilot, A. baumannii)
+  max_per_job: 56           # a hamsi node; a unit keeps about one core busy, whatever its threads (pilot)
   budget_gb: 170            # memory the units of a job share (labels cv_unit, permutation: 180 GiB)
   base_gb: 4.0              # a unit's memory besides its training matrix (pilot: 2.6-3.9 GB)
   bytes_per_cell: 3.2       # training matrix, per genome × pattern (E. coli probe: 3.06)

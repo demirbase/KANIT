@@ -21,9 +21,11 @@ def test_units_per_job():
     # the E. coli probe (5,681 genomes, 4.70 M patterns): two units fill a job
     assert packing.unit_memory_gb(5681, 4_700_000, cfg) > 60
     assert packing.per_job(5681, 4_700_000, cfg) == 2
-    # small models: as many as the cores allow
-    assert packing.per_job(1384, 500_000, cfg) == cfg["max_per_job"]
-    assert packing.per_job(1204, 1_118_452, cfg) == cfg["max_per_job"]   # pilot, imipenem
+    # small models: as many as the memory holds (a fixed 4 GB each keeps them under a
+    # hamsi node's 56)
+    assert packing.per_job(1384, 500_000, cfg) == 29
+    assert packing.per_job(1204, 1_118_452, cfg) == 22                   # pilot, imipenem
+    assert packing.per_job(100, 1_000, {**cfg, "max_per_job": 20}) == 20   # the cap
     # the estimate covers the peaks measured in the pilot (A. baumannii, 2026-10-06; genomes,
     # patterns, GB per unit)
     for n, p, peak in [(968, 894_710, 5.8), (760, 759_393, 5.4), (435, 614_743, 3.7),
@@ -38,14 +40,19 @@ def test_units_per_job():
 
 
 def test_job_memory_holds_the_budget():
-    """The units of a job fit in the memory of the labels that run them, and that memory
-    needs no more cores than a barbun job gets anyway (conf/truba.config)."""
+    """The units of a job fit in the memory of the labels that run them on every partition
+    that runs them (capped there, as in memoryFor, at 95% of a node), and on barbun that
+    memory needs no more cores than a barbun job gets anyway (conf/truba.config)."""
     text = (ROOT / "conf" / "truba.config").read_text()
-    cpus, min_cpus, mb_per_cpu = (int(x) for x in re.search(
-        r"barbun\s*:\s*\[cpus: (\d+), min_cpus: (\d+), mb_per_cpu: (\d+)", text).groups())
+    parts = {name: [int(x) for x in rest] for name, *rest in re.findall(
+        r"(\w+)\s*:\s*\[cpus: (\d+), min_cpus: (\d+), mb_per_cpu: (\d+)", text)}
     budget_gb = load_config()["packing"]["budget_gb"]
     for label in ("cv_unit", "permutation"):
         gib = int(re.search(rf"withLabel: {label} \{{\s*memory = \{{ memoryFor\((\d+),",
                             text).group(1))
-        assert budget_gb * 1e9 <= gib * 2**30, label
+        for name in ("barbun", "hamsi", "orfoz"):
+            cpus, _, mb_per_cpu = parts[name]
+            mb = min(gib * 1024, math.floor(cpus * mb_per_cpu * 0.95))
+            assert budget_gb * 1e9 <= mb * 2**20, (label, name)
+        cpus, min_cpus, mb_per_cpu = parts["barbun"]
         assert math.ceil(gib * 1024 / mb_per_cpu) <= min_cpus <= cpus, label

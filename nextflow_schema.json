@@ -92,6 +92,16 @@
                     ],
                     "description": "SLURM partition of every task."
                 },
+                "queue_light": {
+                    "type": "string",
+                    "enum": [
+                        "barbun",
+                        "hamsi",
+                        "orfoz",
+                        "debug"
+                    ],
+                    "description": "SLURM partition of the short steps (label light); the same as queue when not given."
+                },
                 "exclude_nodes": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9,\\[\\]-]*$",
