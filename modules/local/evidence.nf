@@ -178,6 +178,7 @@ process CARD_LAYER {
 
     script:
     """
+    # reasons of protocol §14 item 7
     ${py('09_card_layer.py')} ${pair(meta)}
     ${receipt(task, 'card_layer', meta.id)}
     """
