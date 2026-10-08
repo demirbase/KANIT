@@ -112,7 +112,7 @@ paths_organism:
 # knowledge base records it in its release row.
 protocol:
   version: "1.0"
-  sha256: "b116c2281eeec54f5f64ee030e402cc206a616ad9f4765ece753157b978905fb"
+  sha256: "9696b8c3fbc6f502bbfbe9e8dbd78b22e0b5b04650754f63807b695c0967109c"
 
 # The frozen environment (plan F6.2): the four Apptainer images that passed the unit and
 # end-to-end tests (F5.4, run 20261005T151352; archived with their lock files in
