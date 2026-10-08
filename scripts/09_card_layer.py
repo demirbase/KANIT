@@ -5,7 +5,8 @@ Every member unitig of every candidate pattern is located in up to three
 carrier genomes of the model and compared with their RGI hits (08); the result
 is one state per unitig and per pattern, in two modes: ``allele_aware`` (the
 grading rule) and ``homolog_only`` (its sensitivity analysis). The rule is in
-lib/card_layer.py.
+lib/card_layer.py. With --set association, the same for the patterns nominated by
+association (§14 item 6; lib/pattern_sets.py).
 
 Inputs: candidates_file (column pattern_id), the model matrix, the unitig store,
 02d's QC table, the organism's rgi_hits.csv, CARD's rRNA references.
@@ -23,7 +24,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from lib import card_layer, panel, registry  # noqa: E402
+from lib import card_layer, panel, pattern_sets, registry  # noqa: E402
 from lib.config import get_target, load_config, resolve_path  # noqa: E402
 from lib.matrix_store import ModelMatrix, Store  # noqa: E402
 
@@ -34,15 +35,18 @@ def main():
     ap = argparse.ArgumentParser(description="CARD layer of one panel pair's candidates.")
     ap.add_argument("--organism", default=default_org)
     ap.add_argument("--antibiotic", default=default_ab)
+    ap.add_argument("--set", choices=pattern_sets.SETS, default=pattern_sets.CANDIDATES,
+                    help="the patterns (lib/pattern_sets.py)")
     ap.add_argument("--candidates", type=Path, default=None,
-                    help="CSV with a pattern_id column (default: paths_organism.candidates_file)")
+                    help="CSV with a pattern_id column (default: the file of --set)")
     args = ap.parse_args()
     org, ab, card = args.organism, args.antibiotic, config["card"]
 
     def path(key, **kw):
         return resolve_path(key, organism=org, config=config, **kw)
 
-    cand_file = args.candidates or path("candidates_file", antibiotic=ab)
+    ps = pattern_sets.paths(args.set, lambda key: path(key, antibiotic=ab))
+    cand_file = args.candidates or ps["patterns"]
     patterns = pd.read_csv(cand_file)["pattern_id"].astype(int).tolist()
     targets = registry.card_drug_classes(ab)
     if not targets:
@@ -65,12 +69,13 @@ def main():
         max_located=card["max_located_genomes"], min_overlap=card["min_overlap"],
         ref_dna=ref_dna)
 
-    out = path("card_layer_dir", antibiotic=ab)
+    out = ps["card_layer_dir"]
     out.mkdir(parents=True, exist_ok=True)
     unitigs.to_csv(out / "card_unitigs.csv", index=False)
     pats.to_csv(out / "card_patterns.csv", index=False)
     (out / "card_summary.json").write_text(json.dumps(
-        {**summary, "organism": org, "antibiotic": ab, "candidates_file": str(cand_file)},
+        {**summary, "organism": org, "antibiotic": ab, "set": args.set,
+         "candidates_file": str(cand_file)},
         indent=2) + "\n")
     print(f"CARD layer — {org} / {ab}: {summary['n_patterns']} patterns, "
           f"{summary['n_unitigs']} unitigs; {summary.get('patterns_by_state', {})}")

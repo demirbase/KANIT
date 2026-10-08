@@ -308,6 +308,13 @@ def unitig_state(seq: str, located: list[str], contigs_of, hits_of, targets: set
     return {mode: combine_genomes(per[mode]) for mode in MODES}
 
 
+# the columns of card_unitigs.csv and card_patterns.csv (also when there is no pattern)
+UNITIG_COLUMNS = ("pattern_id", "unitig_index", "sequence", "length", "located_genomes",
+                  *(f"{m}_{x}" for m in MODES for x in ("state", "reasons", "aros", "n_b")))
+PATTERN_COLUMNS = ("pattern_id", "n_members",
+                   *(f"{m}_{x}" for m in MODES for x in ("state", "reasons", "aros")))
+
+
 def annotate(patterns, mm, store, qc_table: pd.DataFrame, hits: pd.DataFrame, contigs_of,
              targets: set[str], *, near_universal_share: float = 0.95, max_located: int = 3,
              min_overlap: float = 0.5, ref_dna: dict | None = None):
@@ -346,7 +353,8 @@ def annotate(patterns, mm, store, qc_table: pd.DataFrame, hits: pd.DataFrame, co
                                        if state == HIT_NO_B else "")
             prow[f"{mode}_aros"] = ";".join(sorted({a for x in ss for a in x.aros}))
         prows.append(prow)
-    unitigs, pats = pd.DataFrame(urows), pd.DataFrame(prows)
+    unitigs = pd.DataFrame(urows, columns=list(UNITIG_COLUMNS))
+    pats = pd.DataFrame(prows, columns=list(PATTERN_COLUMNS))
     summary = {"n_patterns": len(pats), "n_unitigs": len(unitigs), "targets": sorted(targets),
                "near_universal_aros": sorted(near),
                "patterns_by_state": {mode: pats[f"{mode}_state"].value_counts().to_dict()

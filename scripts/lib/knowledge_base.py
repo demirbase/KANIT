@@ -5,6 +5,11 @@ nothing new. Measurements (the evidence layers), inferences (the grades) and
 context (NCBI) live in separate tables; no table links context to a grade. It is
 built once from the steps' outputs inside one transaction (build_kb.py), checked
 by ``validate`` and read-only afterwards.
+
+Two routes lead a pattern to a grade (``candidate.route``): ``model``, the candidates
+(protocol §7), whose grades are the primary results, and ``association``, the patterns
+nominated by association (§14 item 6), graded with their own layers; they enter no
+hypothesis test and are reported apart.
 """
 from __future__ import annotations
 
@@ -176,28 +181,30 @@ CREATE TABLE pattern (                  -- presence pattern of a model (§4)
     pattern_id  INTEGER NOT NULL,           -- valid within the model only
     n_members   INTEGER NOT NULL,
     n_present   INTEGER NOT NULL,
-    carriers    BLOB,                       -- candidates: packed bits in model_genome.row_index order
+    carriers    BLOB,                       -- graded patterns: packed bits in model_genome.row_index order
     PRIMARY KEY (model_id, pattern_id)
 );
-CREATE TABLE pattern_member (           -- unitigs of the candidate patterns
+CREATE TABLE pattern_member (           -- unitigs of the graded patterns
     model_id    TEXT NOT NULL,
     pattern_id  INTEGER NOT NULL,
     unitig_id   TEXT NOT NULL REFERENCES unitig,
     PRIMARY KEY (model_id, pattern_id, unitig_id),
     FOREIGN KEY (model_id, pattern_id) REFERENCES pattern
 );
-CREATE TABLE candidate (                -- §7
+CREATE TABLE candidate (                -- graded patterns: §7 (model), §14 item 6 (association)
     model_id    TEXT NOT NULL,
     pattern_id  INTEGER NOT NULL,
-    source      TEXT NOT NULL CHECK (source IN ('gain', 'cpss', 'both')),
+    route       TEXT NOT NULL CHECK (route IN ('model', 'association')),
+    source      TEXT NOT NULL CHECK (source IN ('gain', 'cpss', 'both', 'pyseer')),
     gain_rank   INTEGER,
     total_gain  REAL,
     PRIMARY KEY (model_id, pattern_id),
-    FOREIGN KEY (model_id, pattern_id) REFERENCES pattern
+    FOREIGN KEY (model_id, pattern_id) REFERENCES pattern,
+    CHECK ((route = 'association') = (source = 'pyseer'))
 );
 
 -- Evidence layers (measurements) ---------------------------------------------
-CREATE TABLE prevalence_result (        -- §8.2, candidates
+CREATE TABLE prevalence_result (        -- §8.2, graded patterns
     model_id             TEXT NOT NULL,
     pattern_id           INTEGER NOT NULL,
     present_resistant    INTEGER NOT NULL,
@@ -212,7 +219,7 @@ CREATE TABLE prevalence_result (        -- §8.2, candidates
     PRIMARY KEY (model_id, pattern_id),
     FOREIGN KEY (model_id, pattern_id) REFERENCES candidate
 );
-CREATE TABLE mda_result (               -- §8.3, candidates
+CREATE TABLE mda_result (               -- §8.3, graded patterns
     model_id                TEXT NOT NULL,
     pattern_id              INTEGER NOT NULL,
     n_fold_models_using     INTEGER NOT NULL,
@@ -226,7 +233,7 @@ CREATE TABLE mda_result (               -- §8.3, candidates
     PRIMARY KEY (model_id, pattern_id),
     FOREIGN KEY (model_id, pattern_id) REFERENCES candidate
 );
-CREATE TABLE mda_cluster (              -- §8.3 sensitivity analysis, candidates
+CREATE TABLE mda_cluster (              -- §8.3 sensitivity analysis, graded patterns
     model_id          TEXT NOT NULL,
     pattern_id        INTEGER NOT NULL,
     cluster           INTEGER NOT NULL,
@@ -239,7 +246,7 @@ CREATE TABLE mda_cluster (              -- §8.3 sensitivity analysis, candidate
     PRIMARY KEY (model_id, pattern_id),
     FOREIGN KEY (model_id, pattern_id) REFERENCES candidate
 );
-CREATE TABLE cpss_result (              -- §8.4, prefilter and candidates
+CREATE TABLE cpss_result (              -- §8.4, prefilter and graded patterns
     model_id      TEXT NOT NULL,
     pattern_id    INTEGER NOT NULL,
     in_prefilter  INTEGER NOT NULL CHECK (in_prefilter IN (0, 1)),
@@ -262,13 +269,13 @@ CREATE TABLE pyseer_result (            -- §8.5, every tested pattern
     PRIMARY KEY (model_id, pattern_id),
     FOREIGN KEY (model_id, pattern_id) REFERENCES pattern
 );
-CREATE TABLE card_hit (                 -- §8.1: RGI hits overlapping a candidate unitig
+CREATE TABLE card_hit (                 -- §8.1: RGI hits overlapping a graded unitig
     model_id       TEXT NOT NULL REFERENCES model,
     unitig_id      TEXT NOT NULL REFERENCES unitig,
     aro_accession  TEXT NOT NULL REFERENCES aro,
     PRIMARY KEY (model_id, unitig_id, aro_accession)
 );
-CREATE TABLE card_annotation (          -- §8.1: CARD state of every candidate unitig
+CREATE TABLE card_annotation (          -- §8.1: CARD state of every graded unitig
     model_id         TEXT NOT NULL REFERENCES model,
     unitig_id        TEXT NOT NULL REFERENCES unitig,
     mode             TEXT NOT NULL CHECK (mode IN ('allele_aware', 'homolog_only')),
@@ -347,8 +354,8 @@ CREATE TABLE external_comparison (
 
 -- Views -----------------------------------------------------------------------------
 CREATE VIEW v_biomarker AS
-SELECT c.model_id, m.organism_id, m.antibiotic_id, c.pattern_id, p.n_members, p.n_present,
-       c.source AS candidate_source, c.gain_rank,
+SELECT c.model_id, m.organism_id, m.antibiotic_id, c.pattern_id, c.route, p.n_members,
+       p.n_present, c.source AS candidate_source, c.gain_rank,
        gp.rule AS grading_rule, gp.grade,
        ga.grade AS grade_allele_aware, gh.grade AS grade_homolog_only,
        ga.card_state AS card_state_allele_aware, ga.card_reasons AS card_reasons_allele_aware,
@@ -373,10 +380,11 @@ SELECT c.model_id, m.organism_id, m.antibiotic_id, c.pattern_id, p.n_members, p.
   JOIN pyseer_result py ON py.model_id = c.model_id AND py.pattern_id = c.pattern_id;
 
 CREATE VIEW v_unitig AS
-SELECT u.unitig_id, u.sequence, u.length, pm.model_id, pm.pattern_id, g.grade,
+SELECT u.unitig_id, u.sequence, u.length, pm.model_id, pm.pattern_id, c.route, g.grade,
        ca.state AS card_state_allele_aware, ca.reasons AS card_reasons_allele_aware
   FROM pattern_member pm
   JOIN unitig u ON u.unitig_id = pm.unitig_id
+  JOIN candidate c ON c.model_id = pm.model_id AND c.pattern_id = pm.pattern_id
   JOIN grade g ON g.model_id = pm.model_id AND g.pattern_id = pm.pattern_id AND g.primary_rule = 1
   JOIN card_annotation ca ON ca.model_id = pm.model_id AND ca.unitig_id = pm.unitig_id
                          AND ca.mode = 'allele_aware';
@@ -387,11 +395,16 @@ SELECT m.model_id, m.organism_id, m.antibiotic_id, m.n_genomes, m.n_resistant, m
        aw.value AS roc_auc_lineage_aware, aw.ci_low AS roc_auc_lineage_aware_low,
        aw.ci_high AS roc_auc_lineage_aware_high, bl.value AS roc_auc_lineage_blind,
        lp.z AS label_permutation_z, lp.q AS label_permutation_q, lp.flag,
-       (SELECT count(*) FROM candidate c WHERE c.model_id = m.model_id) AS n_candidates,
-       (SELECT count(*) FROM grade g WHERE g.model_id = m.model_id AND g.primary_rule = 1
-                                       AND g.grade = 'confirmed') AS n_confirmed,
-       (SELECT count(*) FROM grade g WHERE g.model_id = m.model_id AND g.primary_rule = 1
-                                       AND g.grade = 'strong_novel') AS n_strong_novel
+       (SELECT count(*) FROM candidate c WHERE c.model_id = m.model_id
+                                           AND c.route = 'model') AS n_candidates,
+       (SELECT count(*) FROM grade g JOIN candidate c USING (model_id, pattern_id)
+         WHERE g.model_id = m.model_id AND g.primary_rule = 1 AND c.route = 'model'
+           AND g.grade = 'confirmed') AS n_confirmed,
+       (SELECT count(*) FROM grade g JOIN candidate c USING (model_id, pattern_id)
+         WHERE g.model_id = m.model_id AND g.primary_rule = 1 AND c.route = 'model'
+           AND g.grade = 'strong_novel') AS n_strong_novel,
+       (SELECT count(*) FROM candidate c WHERE c.model_id = m.model_id
+                                           AND c.route = 'association') AS n_association
   FROM model m
   LEFT JOIN model_metric aw ON aw.model_id = m.model_id AND aw.arm = 'lineage_aware'
                            AND aw.metric = 'roc_auc'
@@ -408,7 +421,7 @@ SELECT n.*, c.best_title AS context_best_title, c.gene AS context_gene,
                  WHERE pm.model_id = b.model_id AND pm.pattern_id = b.pattern_id
                  ORDER BY u.length DESC, u.unitig_id LIMIT 1) AS longest_unitig_id
           FROM v_biomarker b
-         WHERE b.grade = 'strong_novel') n
+         WHERE b.grade = 'strong_novel' AND b.route = 'model') n
   LEFT JOIN unitig_context c ON c.unitig_id = n.longest_unitig_id
                             AND c.organism_id = n.organism_id;
 """
@@ -445,6 +458,7 @@ PARAMETERS = (
     ("label_permutation.n_permutations", ("label_permutation", "n_permutations"), "§8.6"),
     ("label_permutation.alpha", ("label_permutation", "alpha"), "§8.6"),
     ("grading.rule", ("grading", "rule"), "§9"),
+    ("association.max_patterns", ("association", "max_patterns"), "§14 item 6"),
 )
 
 
@@ -502,6 +516,11 @@ def validate(conn: sqlite3.Connection) -> dict:
     ).fetchone()[0]
     if bad:
         problems.append(f"{bad} candidate(s) without exactly one primary grade")
+    bad = conn.execute(
+        "SELECT count(*) FROM candidate c JOIN pyseer_result p USING (model_id, pattern_id) "
+        "WHERE c.route = 'association' AND p.passes != 1").fetchone()[0]
+    if bad:
+        problems.append(f"{bad} pattern(s) nominated by association that do not pass pyseer")
     bad = conn.execute("SELECT count(*) FROM organism o WHERE NOT EXISTS (SELECT 1 FROM "
                        "data_snapshot d WHERE d.organism_id = o.organism_id)").fetchone()[0]
     if bad:
@@ -535,4 +554,6 @@ def validate(conn: sqlite3.Connection) -> dict:
     counts = {t: conn.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
               for (t,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' "
                                        "ORDER BY name")}
-    return {"tables": counts, "grades_rechecked": n_checked}
+    routes = dict(conn.execute("SELECT route, count(*) FROM candidate GROUP BY route").fetchall())
+    return {"tables": counts, "grades_rechecked": n_checked,
+            "patterns_by_route": {r: int(routes.get(r, 0)) for r in ("model", "association")}}

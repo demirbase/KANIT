@@ -337,7 +337,7 @@ tables:
     file: cpss.csv
     description: "The CPSS evidence layer of every candidate."
     primary_key: [pattern_id]
-    fields:
+    fields: &cpss_layer_fields
       - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
       - {name: chi2, type: number, description: "χ² (empty outside the prefilter)"}
       - {name: pi, type: number, description: "Selection frequency (0 outside the prefilter)"}
@@ -350,7 +350,7 @@ tables:
     file: prevalence.csv
     description: "Carriage of every candidate among resistant and susceptible genomes (§8.2)."
     primary_key: [pattern_id]
-    fields:
+    fields: &prevalence_layer_fields
       - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
       - {name: n_resistant, type: integer, description: "Resistant genomes"}
       - {name: n_susceptible, type: integer, description: "Susceptible genomes"}
@@ -361,7 +361,7 @@ tables:
       - {name: delta, type: number, description: "prev_resistant − prev_susceptible"}
       - {name: direction, type: string, description: "Sign of delta"}
       - {name: fisher_p, type: number, description: "Two-sided Fisher p value"}
-      - {name: q, type: number, description: "BH q value over the candidates"}
+      - {name: q, type: number, description: "BH q value over the patterns of the set (the candidates or the association set)"}
       - {name: passes, type: boolean, required: true, description: "The layer fires"}
 
   # ---- 12 MDA --------------------------------------------------------------------
@@ -370,7 +370,7 @@ tables:
     file: mda.csv
     description: "Permutation importance (mean decrease in AUC) of every candidate (§8.3)."
     primary_key: [pattern_id]
-    fields:
+    fields: &mda_layer_fields
       - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
       - {name: n_fold_models_using, type: integer, description: "Outer-fold models that use the pattern"}
       - {name: auc_observed, type: number, description: "AUC with the pattern intact"}
@@ -384,7 +384,7 @@ tables:
     location: layers_dir
     file: mda_clusters.csv
     description: "MDA of the correlated candidate clusters (|r| ≥ 0.9), permuted together."
-    fields:
+    fields: &mda_clusters_fields
       - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
       - {name: cluster, type: integer, description: "Cluster"}
       - {name: cluster_size, type: integer, description: "Patterns in the cluster"}
@@ -419,7 +419,7 @@ tables:
     file: pyseer.csv
     description: "The pyseer evidence layer of every candidate."
     primary_key: [pattern_id]
-    fields:
+    fields: &pyseer_layer_fields
       - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
       - {name: af, type: number, description: "Allele frequency"}
       - {name: beta, type: number, description: "Effect size"}
@@ -441,7 +441,7 @@ tables:
     location: card_layer_dir
     file: card_unitigs.csv
     description: "CARD state of every candidate unitig in both modes (§8.1)."
-    fields:
+    fields: &card_unitigs_fields
       - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
       - {name: unitig_index, type: integer, required: true, description: "Unitig index in the store"}
       - {name: sequence, type: string, required: true, description: "Unitig sequence"}
@@ -460,7 +460,7 @@ tables:
     file: card_patterns.csv
     description: "CARD state of every candidate pattern in both modes."
     primary_key: [pattern_id]
-    fields:
+    fields: &card_patterns_fields
       - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
       - {name: n_members, type: integer, description: "Unitigs of the pattern"}
       - {name: allele_aware_state, type: string, description: "CARD state, allele-aware mode"}
@@ -476,7 +476,7 @@ tables:
     file: grades_patterns.csv
     description: "Evidence grade of every candidate pattern in both modes (§9)."
     primary_key: [pattern_id]
-    fields:
+    fields: &grades_patterns_fields
       - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
       - {name: n_members, type: integer, description: "Unitigs of the pattern"}
       - {name: prevalence, type: boolean, description: "Prevalence layer fires"}
@@ -497,12 +497,78 @@ tables:
     file: grades_unitigs.csv
     description: "The grades carried to every candidate unitig."
     extra: {type: string, description: "CARD state and grade columns of both modes"}
-    fields:
+    fields: &grades_unitigs_fields
       - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
       - {name: unitig_index, type: integer, required: true, description: "Unitig index in the store"}
       - {name: sequence, type: string, required: true, description: "Unitig sequence"}
       - {name: length, type: integer, description: "Length (bp)"}
       - {name: grade, type: string, required: true, enum: [confirmed, strong_novel, candidate, weak, none], description: "Grade of the primary mode"}
+
+  # ---- 14c patterns nominated by association (§14 item 6) ---------------------------------
+  # The candidates' tables (shared fields) for the patterns that pass pyseer but are not
+  # candidates; 14c writes the set and its pyseer and CPSS layers, 09, 10, 12 and 14b the
+  # rest with --set association.
+  association_patterns:
+    location: association_dir
+    file: association.csv
+    description: "The patterns nominated by association: pyseer-significant patterns that are not candidates, at most association.max_patterns with the smallest p values (§14 item 6)."
+    primary_key: [pattern_id]
+    fields:
+      - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
+      - {name: rank, type: integer, required: true, minimum: 1, description: "Rank by pyseer p value"}
+      - {name: lrt_pvalue, type: number, required: true, description: "pyseer likelihood ratio test p value"}
+  association_cpss_layer:
+    location: association_dir
+    file: layers/cpss.csv
+    description: "The CPSS evidence layer of the association set (a stable pattern is a candidate, so none passes)."
+    primary_key: [pattern_id]
+    fields: *cpss_layer_fields
+  association_pyseer_layer:
+    location: association_dir
+    file: layers/pyseer.csv
+    description: "The pyseer evidence layer of the association set (every pattern passes by the way it is chosen)."
+    primary_key: [pattern_id]
+    fields: *pyseer_layer_fields
+  association_prevalence_layer:
+    location: association_dir
+    file: layers/prevalence.csv
+    description: "Prevalence layer of the association set, adjusted over the set (§8.2)."
+    primary_key: [pattern_id]
+    fields: *prevalence_layer_fields
+  association_mda_layer:
+    location: association_dir
+    file: layers/mda.csv
+    description: "MDA layer of the association set, adjusted over the set (§8.3)."
+    primary_key: [pattern_id]
+    fields: *mda_layer_fields
+  association_mda_clusters:
+    location: association_dir
+    file: layers/mda_clusters.csv
+    description: "MDA of the correlated clusters of the association set (|r| ≥ 0.9), permuted together."
+    fields: *mda_clusters_fields
+  association_card_unitigs:
+    location: association_dir
+    file: card_layer/card_unitigs.csv
+    description: "CARD state of every unitig of the association set in both modes (§8.1)."
+    fields: *card_unitigs_fields
+  association_card_patterns:
+    location: association_dir
+    file: card_layer/card_patterns.csv
+    description: "CARD state of every pattern of the association set in both modes."
+    primary_key: [pattern_id]
+    fields: *card_patterns_fields
+  association_grades_patterns:
+    location: association_dir
+    file: grades/grades_patterns.csv
+    description: "Evidence grade of every pattern of the association set in both modes (§9); not comparable with the candidates' grades."
+    primary_key: [pattern_id]
+    fields: *grades_patterns_fields
+  association_grades_unitigs:
+    location: association_dir
+    file: grades/grades_unitigs.csv
+    description: "The grades carried to every unitig of the association set."
+    extra: {type: string, description: "CARD state and grade columns of both modes"}
+    fields: *grades_unitigs_fields
 
   # ---- 16 comparison with genotype-based prediction -----------------------------------
   external_comparison:
@@ -903,6 +969,23 @@ steps:
     tables: [grades_patterns, grades_unitigs]
     summary: {location: grades_dir, file: grades_summary.json}
     figure: Evidence funnel of the model
+  association:
+    script: 14c_association.py        # 09, 10, 12 and 14b write the rest (--set association)
+    entry: main
+    level: model
+    evaluable_only: true
+    main: association_patterns
+    tables: [association_patterns, association_cpss_layer, association_pyseer_layer,
+             association_prevalence_layer, association_mda_layer, association_mda_clusters,
+             association_card_unitigs, association_card_patterns, association_grades_patterns,
+             association_grades_unitigs]
+    summary: {location: association_dir, file: association_summary.json}
+    files:
+      - {location: association_dir, file: layers/prevalence_summary.json, kind: json}
+      - {location: association_dir, file: layers/mda_summary.json, kind: json}
+      - {location: association_dir, file: card_layer/card_summary.json, kind: json}
+      - {location: association_dir, file: grades/grades_summary.json, kind: json}
+    figure: Grades of the patterns nominated by association
   external:
     script: 16_external.py
     entry: main

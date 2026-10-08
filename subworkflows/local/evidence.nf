@@ -1,9 +1,13 @@
 // Every evaluable pair: RGI on its organism, stability selection and the candidates,
-// the evidence layers, the CARD layer, the grades and the label permutation test.
+// the evidence layers, the CARD layer, the grades, the same for the patterns nominated by
+// association (protocol §14 item 6) and the label permutation test.
 
 include { RGI_LOAD; RGI_RUN; RGI_COLLECT; CPSS_PREFILTER; CPSS_CHUNK; CPSS_SELECT; PREVALENCE;
           MDA; CARD_LAYER; PYSEER_PREP; PYSEER_LMM; PYSEER_POST; GRADING; LP_CHUNKS; LP_METRICS;
-          LP_ACROSS } from '../../modules/local/evidence'
+          LP_ACROSS; ASSOCIATION_SET } from '../../modules/local/evidence'
+include { PREVALENCE as PREVALENCE_ASSOCIATION; MDA as MDA_ASSOCIATION;
+          CARD_LAYER as CARD_LAYER_ASSOCIATION; GRADING as GRADING_ASSOCIATION
+          } from '../../modules/local/evidence'
 include { kanitConfig } from '../../modules/local/common'
 
 workflow EVIDENCE {
@@ -43,6 +47,21 @@ workflow EVIDENCE {
     GRADING(CARD_LAYER.out.done.join(PREVALENCE.out.done).join(MDA.out.done)
                   .join(PYSEER_POST.out.done).map { m, a, b, c, d -> [m, [a, b, c, d]] })
 
+    // the patterns nominated by association: pyseer's significant patterns that are not
+    // candidates; every layer and the grades again, with meta.set (their own directory)
+    ASSOCIATION_SET(PYSEER_POST.out.done)
+    def tagged = { m -> m + [set: 'association'] }
+    association = ASSOCIATION_SET.out.done.map { m, r -> [tagged(m), r] }
+    PREVALENCE_ASSOCIATION(association)
+    MDA_ASSOCIATION(ASSOCIATION_SET.out.done.join(units)
+                        .map { m, a, us -> [tagged(m), [a] + us] })
+    CARD_LAYER_ASSOCIATION(ASSOCIATION_SET.out.done.map { m, a -> [m.organism, m, a] }
+                               .combine(RGI_COLLECT.out.done, by: 0)
+                               .map { org, m, a, g -> [tagged(m), [a, g]] })
+    GRADING_ASSOCIATION(CARD_LAYER_ASSOCIATION.out.done.join(PREVALENCE_ASSOCIATION.out.done)
+                            .join(MDA_ASSOCIATION.out.done).join(association)
+                            .map { m, a, b, c, d -> [m, [a, b, c, d]] })
+
     // the permutation chunks of a model (fold × chunk) in batches of the model's packing
     lpBatches = units.join(packing).flatMap { m, us, k ->
         def chunks = (0..<nFolds).collectMany { f -> (0..<nLp).collect { c -> [f, c] } }
@@ -57,7 +76,8 @@ workflow EVIDENCE {
     LP_ACROSS(LP_METRICS.out.done.map { m, r -> r }.collect())
 
     emit:
-    grading = GRADING.out.done      // meta, grades receipt
-    rgi     = RGI_COLLECT.out.done  // organism, RGI receipt
-    lp      = LP_ACROSS.out.done    // the across-models table's receipt
+    grading     = GRADING.out.done              // meta, grades receipt
+    association = GRADING_ASSOCIATION.out.done  // meta with set, the association grades' receipt
+    rgi         = RGI_COLLECT.out.done          // organism, RGI receipt
+    lp          = LP_ACROSS.out.done            // the across-models table's receipt
 }

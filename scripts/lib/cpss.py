@@ -165,6 +165,16 @@ def stable(pi, pi_threshold: float) -> np.ndarray:
     return np.asarray(pi) >= pi_threshold - _TOL
 
 
+def layer(pattern_ids, cpss_table: pd.DataFrame, pi_threshold: float) -> pd.DataFrame:
+    """The CPSS layer of the given patterns: χ² and π from the CPSS table (π = 0 outside
+    the prefilter) and whether π reaches the threshold."""
+    out = pd.DataFrame({"pattern_id": np.asarray(list(pattern_ids), dtype=np.int64)}).merge(
+        cpss_table[["pattern_id", "chi2", "pi"]], on="pattern_id", how="left")
+    out = out.assign(in_prefilter=out["pi"].notna(), pi=out["pi"].fillna(0.0))
+    out["passes"] = stable(out["pi"], pi_threshold)
+    return out
+
+
 def candidates(final_booster: xgb.Booster, cpss_table: pd.DataFrame, q_gain: int) -> pd.DataFrame:
     """§7: the final model's top total-gain patterns and the stable patterns."""
     gain = cast(dict[str, float], final_booster.get_score(importance_type="total_gain"))

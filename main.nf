@@ -100,7 +100,8 @@ workflow {
              MODELS.out.finals, MODELS.out.packing)
     COMPARISON(modelled, GENOMES.out.panel, EVIDENCE.out.rgi, MODELS.out.metrics)
     FINISH(EVIDENCE.out.grading.map { m, r -> r }
-               .mix(EVIDENCE.out.lp, COMPARISON.out.compare.map { o, r -> r })
+               .mix(EVIDENCE.out.association.map { m, r -> r }, EVIDENCE.out.lp,
+                    COMPARISON.out.compare.map { o, r -> r })
                .collect().ifEmpty([]), 'main')
 }
 

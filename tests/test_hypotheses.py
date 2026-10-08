@@ -18,13 +18,16 @@ from lib import knowledge_base as kb  # noqa: E402
 pytestmark = pytest.mark.unit
 
 GYRA = "Escherichia coli gyrA conferring resistance to fluoroquinolones"
-# model -> [(pattern, stable, card state, grade, AROs)]
+# model -> [(pattern, stable, card state, grade, AROs[, route])]; the ampicillin model's
+# pattern 9, nominated by association (protocol §14 item 6), enters no hypothesis test:
+# its qnr hit would link ampicillin to ciprofloxacin in H3
 PATTERNS = {
     "ecoli__ciprofloxacin": [(1, True, "b", "confirmed", ["1"]), (2, True, "no_card_hit",
                                                                   "strong_novel", []),
                              (3, False, "card_hit_without_b", "candidate", ["2"])],
     "ecoli__levofloxacin": [(1, True, "b", "confirmed", ["1"])],
-    "ecoli__ampicillin": [(1, False, "b", "candidate", ["3"])],
+    "ecoli__ampicillin": [(1, False, "b", "candidate", ["3"]),
+                          (9, False, "card_hit_without_b", "candidate", ["2"], "association")],
 }
 AROS = [("ARO:1", GYRA, "variant", "fluoroquinolone resistant gyrA"),
         ("ARO:2", "QnrS1", "homolog", "quinolone resistance protein (qnr)"),
@@ -60,7 +63,7 @@ def _kb(path: Path) -> sqlite3.Connection:
                                                 "row_index": range(10),
                                                 "resistant": [1] * 5 + [0] * 5,
                                                 "lineage_cluster": "1"}))
-        for pid, stable, state, grade, aros in pats:
+        for pid, stable, state, grade, aros, *route in pats:
             uid, seq = kb.unitig_id(_seq(f"{mid}:{pid}"))
             ins(conn, "pattern", pd.DataFrame([{"model_id": mid, "pattern_id": pid,
                                                 "n_members": 1, "n_present": 5}]))
@@ -69,8 +72,10 @@ def _kb(path: Path) -> sqlite3.Connection:
                                                    "length": len(seq)}]))
             ins(conn, "pattern_member", pd.DataFrame([{"model_id": mid, "pattern_id": pid,
                                                        "unitig_id": uid}]))
-            ins(conn, "candidate", pd.DataFrame([{"model_id": mid, "pattern_id": pid,
-                                                  "source": "both"}]))
+            assoc = route == ["association"]
+            ins(conn, "candidate", pd.DataFrame([{
+                "model_id": mid, "pattern_id": pid, "route": "association" if assoc else "model",
+                "source": "pyseer" if assoc else "both"}]))
             ins(conn, "cpss_result", pd.DataFrame([{"model_id": mid, "pattern_id": pid,
                                                     "in_prefilter": 1, "n_selected": 1,
                                                     "pi": 0.9 if stable else 0.1,
@@ -105,7 +110,7 @@ def test_h1_h2(conn):
     assert dict(zip(t1["model_id"], t1["n_stable"], strict=True)) == {
         "ecoli__ampicillin": 0, "ecoli__ciprofloxacin": 2, "ecoli__levofloxacin": 1}
     assert not s1["supported"] and s1["n_with_stable"] == 2
-    assert t1["mb_bound"].iloc[0] == pytest.approx(2500 / (0.2 * 1))
+    assert t1["mb_bound"].iloc[0] == pytest.approx(2500 / (0.2 * 2))   # ampicillin: 2 in the prefilter
     t2, s2 = hy.h2(conn)
     shares = dict(zip(t2["model_id"], t2["share_b_allele_aware"], strict=True))
     assert shares["ecoli__ciprofloxacin"] == 0.5 and shares["ecoli__levofloxacin"] == 1.0
@@ -167,6 +172,7 @@ def test_h7(conn):
     assert qnr["recovered"] and qnr["best_grade"] == "candidate"
     amp = t[t["model_id"] == "ecoli__ampicillin"].set_index("determinant")
     assert amp.loc["FAM:TEM beta-lactamase", "prev_susceptible"] == 0.0     # 'plus' scope dropped
+    assert set(hy.model_patterns(conn, "ecoli__ampicillin")["pattern_id"]) == {1}
     s10 = s["0.1"]
     # expected and recovered: gyrA (cip, levo), qnr (cip), TEM (amp) -> 2 of 4 confirmed
     assert s10["n_recovered"] == 4 and s10["share_confirmed"] == 0.5 and s10["supported_primary"]

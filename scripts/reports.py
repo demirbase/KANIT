@@ -6,7 +6,8 @@
 At the end of every entry it draws the QC figure of every step whose tables exist
 (lib/figures.py; Appendix C), writes for every panel model a self-contained HTML
 report (data, cross-validation, label permutation, evidence layers, grades, the best
-candidates, the comparison with genotype-based tools and the model's figures), and
+candidates, apart from them the patterns nominated by association (protocol §14 item 6),
+the comparison with genotype-based tools and the model's figures), and
 rewrites tez_sayilari.csv: every number the thesis and the article quote, with the
 table and column it comes from. A figure whose table is missing is skipped and named
 in reports_summary.json (completeness.py reports the missing table).
@@ -194,6 +195,18 @@ def model_report(t: Tables, org: str, ab: str, figs: list[tuple[str, Path]], out
                 .sort_values(["_o", "n_layers"], ascending=[True, False]).head(25)
                 [["pattern_id", "n_members", "layers_passed", "allele_aware_card_state",
                   "allele_aware_grade", "homolog_only_grade"]])
+    assoc = t.get("association_grades_patterns", org, ab)
+    ranks = t.get("association_patterns", org, ab)
+    assoc_counts = assoc_best = None
+    if assoc is not None and ranks is not None:
+        assoc_counts = pd.DataFrame({m: assoc[f"{m}_grade"].value_counts().reindex(
+            F.GRADES, fill_value=0) for m in ("allele_aware", "homolog_only")}).reset_index(
+            names="grade")
+        assoc_best = (assoc.merge(ranks, on="pattern_id", how="left")
+                      .assign(_o=lambda d: d["grade"].map(GRADE_ORDER))
+                      .sort_values(["_o", "rank"]).head(25)
+                      [["pattern_id", "rank", "lrt_pvalue", "n_members", "layers_passed",
+                        "allele_aware_card_state", "allele_aware_grade", "homolog_only_grade"]])
     comp = t.get("external_comparison", org)
     ext = comp[comp["model_id"] == f"{org}__{ab}"] if comp is not None else None
     parts = [f"<h1>{html.escape(org)} / {html.escape(ab)}</h1>",
@@ -205,6 +218,11 @@ def model_report(t: Tables, org: str, ab: str, figs: list[tuple[str, Path]], out
              "<h2>Evidence layers that fire</h2>", _table(layers),
              "<h2>Grades</h2>", _table(counts),
              "<h2>Best candidates</h2>", _table(best),
+             "<h2>Patterns nominated by association (secondary analysis)</h2>",
+             "<p class='meta'>pyseer-significant patterns that are not candidates (protocol "
+             "§14 item 6). They pass the pyseer layer by the way they are chosen, so their "
+             "grades are not comparable with those of the candidates.</p>",
+             _table(assoc_counts), _table(assoc_best),
              "<h2>Genotype-based prediction</h2>", _table(ext), "<h2>Figures</h2>"]
     for name, path in figs:
         b64 = base64.b64encode(path.read_bytes()).decode()
@@ -277,6 +295,14 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                 for g in F.GRADES:
                     put(f"{mid}.n_{g}.{mode}", int(vc.get(g, 0)), "grades_patterns",
                         f"{mode}_grade", f"Patterns graded {g}, {mode.replace('_', '-')} mode")
+        assoc = t.get("association_grades_patterns", org, ab)
+        if assoc is not None:
+            put(f"{mid}.association.n_patterns", len(assoc), "association_grades_patterns",
+                "pattern_id", "Patterns nominated by association (secondary analysis)")
+            vc = assoc["grade"].value_counts()
+            for g in F.GRADES:
+                put(f"{mid}.association.n_{g}", int(vc.get(g, 0)), "association_grades_patterns",
+                    "grade", f"Patterns nominated by association graded {g}, primary mode")
     lp = t.get("label_permutation_models")
     if lp is not None and "q" in lp:
         put("label_permutation.n_significant", int((lp["q"] < float(

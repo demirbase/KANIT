@@ -68,6 +68,9 @@ paths_organism:
   # Statistical layers (<layer>.csv: pattern_id, passes) and the grades (14b_grading.py).
   layers_dir:           "results/{organism}/{antibiotic}/layers"
   grades_dir:           "results/{organism}/{antibiotic}/grades"
+  # The patterns nominated by association (14c; protocol §14 item 6): association.csv and,
+  # as for the candidates, card_layer/, layers/ and grades/ (lib/pattern_sets.py).
+  association_dir:      "results/{organism}/{antibiotic}/association"
   # Stability selection (13) and pyseer (14) of one pair.
   cpss_dir:             "results/{organism}/{antibiotic}/cpss"
   pyseer_dir:           "results/{organism}/{antibiotic}/pyseer"
@@ -307,6 +310,8 @@ pyseer:                     # 14_pyseer.py, lib/pyseer_lmm.py (protocol §8.5)
   kinship_every: 100        # every 100th unitig of the model builds the kinship matrix
   alpha: 0.05               # Bonferroni: alpha / number of patterns tested
   background_max: 5000      # λ diagnostic: at most this many unitigs between the kinship sample
+association:                # 14c_association.py, lib/pattern_sets.py (protocol §14 item 6)
+  max_patterns: 50          # the pyseer-significant non-candidates with the smallest p values
 
 context:                    # 18_ncbi_context.py, lib/ncbi_context.py (protocol §12; not evidence)
   word_size: 11

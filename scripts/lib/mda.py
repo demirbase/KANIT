@@ -185,6 +185,12 @@ def permuted_auc(design: Design, group) -> tuple[np.ndarray, int]:
     return total / len(design.by_repeat), n_used
 
 
+# the columns of the layer (one row per pattern) and of its sensitivity analysis
+MAIN_COLUMNS = ("pattern_id", "n_fold_models_using", "auc_observed", "auc_permuted", "mda",
+                "n_permuted_ge_observed", "p", "q", "passes")
+CLUSTER_COLUMNS = ("pattern_id", "cluster", "cluster_size", "cluster_patterns", *MAIN_COLUMNS[1:])
+
+
 def evaluate_groups(design: Design, groups, *, alpha: float = 0.05) -> pd.DataFrame:
     """One row per group: observed and mean permuted AUC, MDA, p, q and passes."""
     obs, n = design.observed, design.n_permutations
@@ -195,7 +201,7 @@ def evaluate_groups(design: Design, groups, *, alpha: float = 0.05) -> pd.DataFr
         rows.append({"n_fold_models_using": n_used, "auc_observed": obs,
                      "auc_permuted": float(perm.mean()), "mda": float((obs - perm).mean()),
                      "n_permuted_ge_observed": n_ge, "p": (1 + n_ge) / (n + 1)})
-    out = pd.DataFrame(rows)
+    out = pd.DataFrame(rows, columns=list(MAIN_COLUMNS[1:-2]))
     out["q"] = false_discovery_control(out["p"], method="bh") if len(out) else []
     out["passes"] = out["q"] < alpha
     return out
@@ -214,11 +220,19 @@ def correlation_clusters(mm, patterns, r_min: float) -> list[np.ndarray]:
     return [patterns[label == c] for c in range(label.max() + 1)]
 
 
+def empty_layer() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(main, clusters) of no patterns (an empty association set), without the fold
+    models."""
+    return pd.DataFrame(columns=list(MAIN_COLUMNS)), pd.DataFrame(columns=list(CLUSTER_COLUMNS))
+
+
 def mda_layer(mm, design: Design, patterns, *, alpha: float = 0.05,
               r_min: float = 0.9) -> tuple[pd.DataFrame, pd.DataFrame]:
     """(main, clusters): every candidate permuted alone, and the sensitivity
     analysis, in which each member of a cluster takes the cluster's result."""
     patterns = np.asarray(sorted(set(int(p) for p in patterns)), dtype=np.int64)
+    if not patterns.size:
+        return empty_layer()
     main = evaluate_groups(design, [[p] for p in patterns], alpha=alpha)
     main.insert(0, "pattern_id", patterns)
     clusters = correlation_clusters(mm, patterns, r_min)

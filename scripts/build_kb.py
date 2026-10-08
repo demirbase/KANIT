@@ -2,7 +2,7 @@
 """Build the knowledge base from the steps' outputs (docs/V1_BILGI_TABANI.md).
 
 Reads the registry, the panel decisions and, for every organism and included
-pair, the outputs of the steps (00, 02c, 02d, 03u, 04, 08–14b, 12b); loads them
+pair, the outputs of the steps (00, 02c, 02d, 03u, 04, 08–14c, 12b); loads them
 into a new SQLite file inside one transaction and checks it
 (lib.knowledge_base.validate). Nothing is computed but identifiers, carrier bit
 strings and the release record. The file is replaced only after the new one has
@@ -26,7 +26,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 from lib import knowledge_base as kb  # noqa: E402
-from lib import panel, registry  # noqa: E402
+from lib import panel, pattern_sets, registry  # noqa: E402
 from lib.card_layer import MODES  # noqa: E402
 from lib.config import CONFIG_FILE, load_config, resolve_path  # noqa: E402
 from lib.matrix_store import ModelMatrix, sha256_file  # noqa: E402
@@ -66,6 +66,37 @@ class Sources:
 
 def _bool(series) -> pd.Series:
     return series.astype(str).str.strip().str.lower().isin(["true", "1"]).astype(int)
+
+
+def _concat(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    """The rows of every frame; an empty frame (an empty association set) adds nothing."""
+    full = [f for f in frames if len(f)]
+    return pd.concat(full or frames[:1], ignore_index=True)
+
+
+def _graded_set(name: str, path, src: Sources, mid: str) -> dict:
+    """One set of graded patterns (lib/pattern_sets.py): its candidate rows with the route,
+    and its layers, CARD layer and grades, each holding exactly the set's patterns."""
+    ps = pattern_sets.paths(name, path)
+    pats = src.csv(ps["patterns"])
+    ids = pats["pattern_id"].astype(int)
+    out = {"prevalence": src.csv(ps["layers_dir"] / "prevalence.csv"),
+           "mda": src.csv(ps["layers_dir"] / "mda.csv"),
+           "mda clusters": src.csv(ps["layers_dir"] / "mda_clusters.csv"),
+           "grades": src.csv(ps["grades_dir"] / "grades_patterns.csv", keep_default_na=False),
+           "card_u": src.csv(ps["card_layer_dir"] / "card_unitigs.csv", keep_default_na=False)}
+    for table in ("prevalence", "mda", "mda clusters", "grades"):
+        if set(out[table]["pattern_id"].astype(int)) != set(ids.tolist()):
+            raise ValueError(f"{mid}: the {table} table does not hold exactly the "
+                             f"{pattern_sets.LABEL[name]} patterns")
+    if name == pattern_sets.CANDIDATES:
+        cand = pd.DataFrame({"model_id": mid, "pattern_id": ids, "route": "model",
+                             "source": pats["source"], "gain_rank": pats["gain_rank"],
+                             "total_gain": pats["total_gain"]})
+    else:
+        cand = pd.DataFrame({"model_id": mid, "pattern_id": ids, "route": "association",
+                             "source": "pyseer", "gain_rank": None, "total_gain": None})
+    return {"ids": ids.to_numpy(dtype=np.int64), "candidate": cand, **out}
 
 
 # ---- reference data ---------------------------------------------------------------
@@ -185,12 +216,6 @@ def model_tables(org: str, ab: str, config: dict, src: Sources) -> dict[str, pd.
                                                 "n_permutations", "p")},
         "q": float(row["q"].iloc[0]), "flag": row["flag"].iloc[0]}])
 
-    cand = src.csv(path("candidates_file"))
-    cids = cand["pattern_id"].astype(int).to_numpy()
-    layers = path("layers_dir")
-    prev = src.csv(layers / "prevalence.csv")
-    mda = src.csv(layers / "mda.csv")
-    clus = src.csv(layers / "mda_clusters.csv")
     cpss = src.csv(path("cpss_dir") / "cpss.csv")
     tested = src.csv(path("pyseer_dir") / "pyseer_tested.csv", keep_default_na=False,
                      na_values=[""])
@@ -200,26 +225,30 @@ def model_tables(org: str, ab: str, config: dict, src: Sources) -> dict[str, pd.
     out["tool_versions"] = pd.DataFrame(
         [{"tool": "pyseer", "version": pyseer["pyseer_version"]}]
         + [{"tool": t, "version": v} for t, v in final.get("versions", {}).items()])
-    card_u = src.csv(path("card_layer_dir") / "card_unitigs.csv", keep_default_na=False)
-    grades = src.csv(path("grades_dir") / "grades_patterns.csv", keep_default_na=False)
-    for name, d in (("prevalence", prev), ("mda", mda), ("mda clusters", clus),
-                    ("grades", grades)):
-        if set(d["pattern_id"].astype(int)) != set(cids.tolist()):
-            raise ValueError(f"{mid}: the {name} table does not hold exactly the candidates")
+    # the graded patterns: the candidates (route model) and the patterns nominated by
+    # association (route association, protocol §14 item 6), each with its own layers
+    sets = {name: _graded_set(name, path, src, mid) for name in pattern_sets.SETS}
+    cids, aids = sets[pattern_sets.CANDIDATES]["ids"], sets[pattern_sets.ASSOCIATION]["ids"]
+    if set(cids.tolist()) & set(aids.tolist()):
+        raise ValueError(f"{mid}: a pattern is both a candidate and nominated by association")
+    if not set(aids.tolist()) <= set(tested["pattern_id"].astype(int)):
+        raise ValueError(f"{mid}: a pattern nominated by association was not tested by pyseer")
+    gids = np.concatenate([cids, aids])
+    prev, mda, clus, card_u, grades = (
+        _concat([s[k] for s in sets.values()])
+        for k in ("prevalence", "mda", "mda clusters", "card_u", "grades"))
 
-    # patterns: candidates (with carriers and members) and every tested pattern
+    # patterns: the graded ones (with carriers and members) and every tested pattern
     pats = src.csv(mm.dir / "patterns.csv").set_index("pattern_id")
     tested_ids = set(cpss["pattern_id"].astype(int)) | set(tested["pattern_id"].astype(int))
-    all_ids = np.array(sorted(tested_ids | set(cids.tolist())), dtype=np.int64)
-    carriers = mm.columns(cids)
-    blob = {int(p): np.packbits(carriers[:, i]).tobytes() for i, p in enumerate(cids)}
+    all_ids = np.array(sorted(tested_ids | set(gids.tolist())), dtype=np.int64)
+    carriers = mm.columns(gids)
+    blob = {int(p): np.packbits(carriers[:, i]).tobytes() for i, p in enumerate(gids)}
     out["pattern"] = pd.DataFrame({
         "model_id": mid, "pattern_id": all_ids, "n_members": pats.loc[all_ids, "n_members"].to_numpy(),
         "n_present": pats.loc[all_ids, "n_present"].to_numpy(),
         "carriers": [blob.get(int(p)) for p in all_ids]})
-    out["candidate"] = pd.DataFrame({
-        "model_id": mid, "pattern_id": cids, "source": cand["source"],
-        "gain_rank": cand["gain_rank"], "total_gain": cand["total_gain"]})
+    out["candidate"] = _concat([s["candidate"] for s in sets.values()])
 
     out["prevalence_result"] = prev.assign(model_id=mid)[[
         "model_id", "pattern_id", "present_resistant", "present_susceptible", "prev_resistant",
@@ -232,7 +261,7 @@ def model_tables(org: str, ab: str, config: dict, src: Sources) -> dict[str, pd.
         "model_id", "pattern_id", "cluster", "cluster_size", "cluster_patterns", "mda", "p",
         "q"]].assign(passes=_bool(clus["passes"]).to_numpy())
 
-    extra = sorted(set(cids.tolist()) - set(cpss["pattern_id"].astype(int)))
+    extra = sorted(set(gids.tolist()) - set(cpss["pattern_id"].astype(int)))
     out["cpss_result"] = pd.concat([
         pd.DataFrame({"model_id": mid, "pattern_id": cpss["pattern_id"], "in_prefilter": 1,
                       "chi2": cpss["chi2"], "n_selected": cpss["n_selected"], "pi": cpss["pi"],
@@ -244,7 +273,7 @@ def model_tables(org: str, ab: str, config: dict, src: Sources) -> dict[str, pd.
         "beta": tested["beta"], "beta_se": tested["beta-std-err"], "lrt_p": tested["lrt-pvalue"],
         "notes": tested["notes"].fillna("").astype(str), "passes": _bool(tested["significant"])})
 
-    # unitigs, members and CARD annotations of the candidates
+    # unitigs, members and CARD annotations of the graded patterns
     ids = [kb.unitig_id(s) for s in card_u["sequence"]]
     card_u = card_u.assign(unitig_id=[i for i, _ in ids], canonical=[c for _, c in ids])
     out["unitig"] = pd.DataFrame({"unitig_id": card_u["unitig_id"], "sequence": card_u["canonical"],
@@ -425,8 +454,10 @@ def main():
     r = build(config, out, kb_version=args.kb_version,
               allow_missing_context=args.allow_missing_context)
     t = r["tables"]
-    print(f"KANIT {args.kb_version} -> {out}: {t['model']} models, {t['candidate']} candidates, "
-          f"{t['unitig']} unitigs; {r['grades_rechecked']} grades rechecked")
+    routes = r["patterns_by_route"]
+    print(f"KANIT {args.kb_version} -> {out}: {t['model']} models, {routes['model']} candidates "
+          f"and {routes['association']} patterns nominated by association, {t['unitig']} "
+          f"unitigs; {r['grades_rechecked']} grades rechecked")
 
 
 if __name__ == "__main__":

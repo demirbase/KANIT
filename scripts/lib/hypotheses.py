@@ -1,7 +1,9 @@
 """Hypotheses of the protocol (§10): H1, H2, H3, H7 and the explanatory H6.
 
-Every test reads the knowledge base (build_kb.py); H7 and H6 also read the
-AMRFinderPlus calls of the genomes, the reference that is curated independently
+Every test reads the knowledge base (build_kb.py), only the candidates (route
+``model``): the patterns nominated by association (§14 item 6) enter no hypothesis
+test. H7 and H6 also read the AMRFinderPlus calls of the genomes, the reference that is
+curated independently
 of CARD (step 16 writes them: one row per call with genome_id, element_symbol,
 type, subtype, scope, class, subclass, and the list of analysed genomes). The
 criteria are the protocol's.
@@ -58,7 +60,9 @@ def h2(conn) -> tuple[pd.DataFrame, dict]:
     """Share of the stable patterns of every model with b = 1; median >= 0.40."""
     d = pd.read_sql_query(
         "SELECT c.model_id, g.rule, g.card_state FROM cpss_result c JOIN grade g "
-        "ON g.model_id = c.model_id AND g.pattern_id = c.pattern_id WHERE c.passes = 1", conn)
+        "ON g.model_id = c.model_id AND g.pattern_id = c.pattern_id "
+        "JOIN candidate k ON k.model_id = c.model_id AND k.pattern_id = c.pattern_id "
+        "WHERE c.passes = 1 AND k.route = 'model'", conn)
     rows = []
     for mid in _models(conn)["model_id"]:
         row = {"model_id": mid}
@@ -84,8 +88,9 @@ def families(conn) -> dict[str, set[str]]:
     out: dict[str, set[str]] = defaultdict(set)
     for mid, fam in conn.execute(
             "SELECT DISTINCT pm.model_id, a.gene_family FROM pattern_member pm "
+            "JOIN candidate c ON c.model_id = pm.model_id AND c.pattern_id = pm.pattern_id "
             "JOIN card_hit h ON h.model_id = pm.model_id AND h.unitig_id = pm.unitig_id "
-            "JOIN aro a ON a.aro_accession = h.aro_accession"):
+            "JOIN aro a ON a.aro_accession = h.aro_accession WHERE c.route = 'model'"):
         out[mid] |= {f.strip() for f in str(fam or "").split(";") if f.strip()}
     return out
 
@@ -224,14 +229,18 @@ def carriers(calls: pd.DataFrame, idx: dict[str, set[str]]) -> tuple[dict, dict,
 def model_patterns(conn, mid: str) -> pd.DataFrame:
     """Candidate patterns with their best grade, CARD families and mutation genes."""
     grades = pd.read_sql_query(
-        "SELECT pattern_id, grade FROM grade WHERE model_id = ? AND primary_rule = 1", conn,
+        "SELECT g.pattern_id, g.grade FROM grade g JOIN candidate c USING (model_id, pattern_id) "
+        "WHERE g.model_id = ? AND g.primary_rule = 1 AND c.route = 'model'", conn,
         params=(mid,))
     hits = pd.read_sql_query(
         "SELECT pm.pattern_id, a.gene_family, a.name, a.model_type, ca.state "
-        "FROM pattern_member pm JOIN card_hit h ON h.model_id = pm.model_id AND h.unitig_id = pm.unitig_id "
+        "FROM pattern_member pm "
+        "JOIN candidate c ON c.model_id = pm.model_id AND c.pattern_id = pm.pattern_id "
+        "JOIN card_hit h ON h.model_id = pm.model_id AND h.unitig_id = pm.unitig_id "
         "JOIN aro a ON a.aro_accession = h.aro_accession "
         "JOIN card_annotation ca ON ca.model_id = pm.model_id AND ca.unitig_id = pm.unitig_id "
-        "AND ca.mode = 'allele_aware' WHERE pm.model_id = ?", conn, params=(mid,))
+        "AND ca.mode = 'allele_aware' WHERE pm.model_id = ? AND c.route = 'model'", conn,
+        params=(mid,))
     fam: dict[int, set[str]] = defaultdict(set)
     mut: dict[int, list[str]] = defaultdict(list)
     for pid, gf, name, mtype, state in hits.itertuples(index=False):

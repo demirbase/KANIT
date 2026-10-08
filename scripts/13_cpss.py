@@ -108,10 +108,7 @@ def select(mm, cv_dir: Path, out_dir: Path, cfg, *, top_gain: int, candidates_fi
     cands = cpss.candidates(xgb.Booster(model_file=str(model)), table, top_gain)
     candidates_file.parent.mkdir(parents=True, exist_ok=True)
     cands.to_csv(candidates_file, index=False)
-    layer = cands[["pattern_id"]].merge(table[["pattern_id", "chi2", "pi"]], on="pattern_id",
-                                        how="left")
-    layer = layer.assign(in_prefilter=layer["pi"].notna(), pi=layer["pi"].fillna(0.0))
-    layer["passes"] = cpss.stable(layer["pi"], cfg["pi_threshold"])
+    layer = cpss.layer(cands["pattern_id"], table, cfg["pi_threshold"])
     layers_dir.mkdir(parents=True, exist_ok=True)
     layer.to_csv(layers_dir / "cpss.csv", index=False)
     summary = {

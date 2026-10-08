@@ -1,11 +1,22 @@
 // Evidence of one panel pair: RGI on the organism's genomes (08), stability selection
 // and the candidates (13), prevalence (10), MDA (12), the CARD layer (09), pyseer
-// (14), the grades (14b) and the label permutation test (12b).
+// (14), the grades (14b), the patterns nominated by association (14c) and the label
+// permutation test (12b).
 
 include { py; receipt; stubReceipt; parallel; kanitConfig } from './common'
 
 def pair(meta) {
     "--organism ${meta.organism} --antibiotic ${meta.antibiotic}"
+}
+
+// The patterns of a layer or grading task: the candidates, or with meta.set the patterns
+// nominated by association (protocol §14 item 6), graded in their own directory
+def patternSet(meta) {
+    meta.set ? " --set ${meta.set}" : ''
+}
+
+def taskKey(meta) {
+    meta.set ? "${meta.id} ${meta.set}" : meta.id
 }
 
 process RGI_LOAD {
@@ -127,7 +138,7 @@ process CPSS_SELECT {
 }
 
 process PREVALENCE {
-    tag "${meta.id}"
+    tag "${taskKey(meta)}"
     label 'light'
 
     input:
@@ -138,16 +149,16 @@ process PREVALENCE {
 
     script:
     """
-    ${py('10_prevalence.py')} ${pair(meta)}
-    ${receipt(task, 'prevalence', meta.id)}
+    ${py('10_prevalence.py')} ${pair(meta)}${patternSet(meta)}
+    ${receipt(task, 'prevalence', taskKey(meta))}
     """
 
     stub:
-    stubReceipt(task, 'prevalence', meta.id)
+    stubReceipt(task, 'prevalence', taskKey(meta))
 }
 
 process MDA {
-    tag "${meta.id}"
+    tag "${taskKey(meta)}"
     label 'mda'
 
     input:
@@ -158,16 +169,16 @@ process MDA {
 
     script:
     """
-    ${py('12_mda.py')} ${pair(meta)}
-    ${receipt(task, 'mda', meta.id)}
+    ${py('12_mda.py')} ${pair(meta)}${patternSet(meta)}
+    ${receipt(task, 'mda', taskKey(meta))}
     """
 
     stub:
-    stubReceipt(task, 'mda', meta.id)
+    stubReceipt(task, 'mda', taskKey(meta))
 }
 
 process CARD_LAYER {
-    tag "${meta.id}"
+    tag "${taskKey(meta)}"
     label 'light'
 
     input:
@@ -179,12 +190,12 @@ process CARD_LAYER {
     script:
     """
     # reasons of protocol §14 item 7
-    ${py('09_card_layer.py')} ${pair(meta)}
-    ${receipt(task, 'card_layer', meta.id)}
+    ${py('09_card_layer.py')} ${pair(meta)}${patternSet(meta)}
+    ${receipt(task, 'card_layer', taskKey(meta))}
     """
 
     stub:
-    stubReceipt(task, 'card_layer', meta.id)
+    stubReceipt(task, 'card_layer', taskKey(meta))
 }
 
 process PYSEER_PREP {
@@ -253,6 +264,28 @@ process PYSEER_POST {
 }
 
 process GRADING {
+    tag "${taskKey(meta)}"
+    label 'light'
+
+    input:
+    tuple val(meta), path(deps, stageAs: 'dep*.json')
+
+    output:
+    tuple val(meta), path('receipt.json'), emit: done
+
+    script:
+    """
+    ${py('14b_grading.py')} ${pair(meta)}${patternSet(meta)}
+    ${receipt(task, 'grading', taskKey(meta))}
+    """
+
+    stub:
+    stubReceipt(task, 'grading', taskKey(meta))
+}
+
+// The patterns nominated by association (14c; protocol §14 item 6) with their pyseer and
+// CPSS layers; PREVALENCE, MDA, CARD_LAYER and GRADING then take them with meta.set
+process ASSOCIATION_SET {
     tag "${meta.id}"
     label 'light'
 
@@ -264,12 +297,12 @@ process GRADING {
 
     script:
     """
-    ${py('14b_grading.py')} ${pair(meta)}
-    ${receipt(task, 'grading', meta.id)}
+    ${py('14c_association.py')} ${pair(meta)}
+    ${receipt(task, 'association', meta.id)}
     """
 
     stub:
-    stubReceipt(task, 'grading', meta.id)
+    stubReceipt(task, 'association', meta.id)
 }
 
 // Several permutation chunks of one model in one job, side by side (lib/packing.py)

@@ -46,6 +46,7 @@ def _config(root: Path) -> dict:
         "candidates_file": "{organism}/{antibiotic}/candidates.csv",
         "card_layer_dir": "{organism}/{antibiotic}/card", "layers_dir": "{organism}/{antibiotic}/layers",
         "grades_dir": "{organism}/{antibiotic}/grades", "cpss_dir": "{organism}/{antibiotic}/cpss",
+        "association_dir": "{organism}/{antibiotic}/assoc",
         "pyseer_dir": "{organism}/{antibiotic}/pyseer",
         "label_permutation_dir": "{organism}/{antibiotic}/lp", "cross_model_dir": "cross",
         "external_dir": "{organism}/external", "context_dir": "{organism}/context",
@@ -72,7 +73,66 @@ def _config(root: Path) -> dict:
         "pyseer": {"kinship_every": 5, "alpha": 0.05, "background_max": 10},
         "label_permutation": {"n_permutations": 6, "seed": 0, "chunk": 3, "alpha": 0.05},
         "grading": {"rule": "allele_aware"},
+        "association": {"max_patterns": 3},
     }
+
+
+def _card_by_hand(mm, store, patterns, out_dir: Path, signal: str, genome: str) -> None:
+    """09 by hand: the SIGNAL unitig lies in gyrA (a variant hit carrying the allele)."""
+    members = mm.members()
+    members = members[members["pattern_id"].isin(set(patterns))]
+    seq = store.sequences(members["unitig_index"]) if len(members) else []
+    is_signal = np.array([s == signal for s in seq], dtype=bool)
+    st = np.where(is_signal, "b", "no_card_hit")
+    card = pd.DataFrame({"pattern_id": members["pattern_id"].to_numpy(),
+                         "unitig_index": members["unitig_index"].to_numpy(),
+                         "sequence": list(seq), "length": [len(s) for s in seq],
+                         "located_genomes": genome})
+    for mode, state in (("allele_aware", st), ("homolog_only",
+                                                np.where(is_signal, "card_hit_without_b",
+                                                         "no_card_hit"))):
+        card[f"{mode}_state"] = state
+        card[f"{mode}_reasons"] = np.where(state == "card_hit_without_b", "variant_not_counted", "")
+        card[f"{mode}_aros"] = np.where(is_signal, "3003294", "")
+        card[f"{mode}_n_b"] = (state == "b").astype(int) * 3
+    out_dir.mkdir(parents=True)
+    card.to_csv(out_dir / "card_unitigs.csv", index=False)
+    pats = card.groupby("pattern_id").agg(n_members=("unitig_index", "size")).reset_index()
+    for mode in ("allele_aware", "homolog_only"):
+        best = card.groupby("pattern_id")[f"{mode}_state"].agg(
+            lambda s: "b" if (s == "b").any() else ("card_hit_without_b"
+                                                    if (s == "card_hit_without_b").any()
+                                                    else "no_card_hit"))
+        pats[f"{mode}_state"] = pats["pattern_id"].map(best)
+        pats[f"{mode}_reasons"] = np.where(pats[f"{mode}_state"] == "card_hit_without_b",
+                                           "variant_not_counted", "")
+        pats[f"{mode}_aros"] = ""
+    pats.to_csv(out_dir / "card_patterns.csv", index=False)
+
+
+def _run_main(name, config, *args):
+    """A step's main() with this config and these arguments."""
+    m = _script(name)
+    m.load_config = lambda: config
+    saved = sys.argv
+    sys.argv = ["x", "--organism", ORG, "--antibiotic", AB, *args]
+    try:
+        m.main()
+    finally:
+        sys.argv = saved
+
+
+def _association_steps(config, p, mm, signal, genome) -> None:
+    """14c, then 10, 12, 09 (by hand) and 14b of the patterns nominated by association."""
+    ps = {k: Path(v.format(organism=ORG, antibiotic=AB))
+          for k, v in config["paths_organism"].items()}
+    _script("14c_association.py").select(lambda k: ps[k], config)
+    for name in ("10_prevalence.py", "12_mda.py"):
+        _run_main(name, config, "--set", "association")
+    ids = pd.read_csv(ps["association_dir"] / "association.csv")["pattern_id"]
+    _card_by_hand(mm, matrix_store.Store(p["unitig_store_dir"]), ids,
+                  ps["association_dir"] / "card_layer", signal, genome)
+    _run_main("14b_grading.py", config, "--set", "association")
 
 
 @pytest.fixture(scope="module")
@@ -167,44 +227,21 @@ def built(tmp_path_factory):
     s14.prep(mm, p["pyseer_dir"], config["pyseer"], prefilter_file=p["cpss_dir"] / "prefilter.csv",
              candidates_file=p["candidates_file"], cpu=1)
     tested = pd.read_csv(p["pyseer_dir"] / "tested_patterns.csv")["pattern_id"]
+    cands = set(pd.read_csv(p["candidates_file"])["pattern_id"].astype(int))
     for name, pats in (("tested", tested), ("background", tested[:5])):
+        pv = np.linspace(1e-6, 0.9, len(pats))
+        if name == "tested":            # four significant patterns that are not candidates
+            others = [i for i, x in enumerate(pats) if int(x) not in cands][:4]
+            pv[others] = [4e-9, 3e-9, 2e-9, 1e-9]
         pd.DataFrame({"variant": [f"p{x}" for x in pats], "af": 0.3, "filter-pvalue": 0.5,
-                      "lrt-pvalue": np.linspace(1e-6, 0.9, len(pats)), "beta": 0.1,
+                      "lrt-pvalue": pv, "beta": 0.1,
                       "beta-std-err": 0.05, "variant_h2": 0.01, "notes": ""}).to_csv(
             p["pyseer_dir"] / f"{name}_assoc.tsv", sep="\t", index=False)
     s14.post(p["pyseer_dir"], config["pyseer"], candidates_file=p["candidates_file"],
              layers_dir=p["layers_dir"])
     # 08/09 by hand: the SIGNAL unitig lies in gyrA (a variant hit carrying the allele)
-    cands = pd.read_csv(p["candidates_file"])["pattern_id"].astype(int)
-    store = matrix_store.Store(p["unitig_store_dir"])
-    members = mm.members()
-    members = members[members["pattern_id"].isin(set(cands))]
-    seq = store.sequences(members["unitig_index"])
-    is_signal = [s == seqs["SIGNAL"] for s in seq]
-    st = np.where(is_signal, "b", "no_card_hit")
-    card = pd.DataFrame({"pattern_id": members["pattern_id"], "unitig_index": members["unitig_index"],
-                         "sequence": seq, "length": [len(s) for s in seq],
-                         "located_genomes": ids[0]})
-    for mode, state in (("allele_aware", st), ("homolog_only",
-                                                np.where(is_signal, "card_hit_without_b",
-                                                         "no_card_hit"))):
-        card[f"{mode}_state"] = state
-        card[f"{mode}_reasons"] = np.where(state == "card_hit_without_b", "variant_not_counted", "")
-        card[f"{mode}_aros"] = np.where(is_signal, "3003294", "")
-        card[f"{mode}_n_b"] = (state == "b").astype(int) * 3
-    p["card_layer_dir"].mkdir(parents=True)
-    card.to_csv(p["card_layer_dir"] / "card_unitigs.csv", index=False)
-    pats = card.groupby("pattern_id").agg(n_members=("unitig_index", "size")).reset_index()
-    for mode in ("allele_aware", "homolog_only"):
-        best = card.groupby("pattern_id")[f"{mode}_state"].agg(
-            lambda s: "b" if (s == "b").any() else ("card_hit_without_b"
-                                                    if (s == "card_hit_without_b").any()
-                                                    else "no_card_hit"))
-        pats[f"{mode}_state"] = pats["pattern_id"].map(best)
-        pats[f"{mode}_reasons"] = np.where(pats[f"{mode}_state"] == "card_hit_without_b",
-                                           "variant_not_counted", "")
-        pats[f"{mode}_aros"] = ""
-    pats.to_csv(p["card_layer_dir"] / "card_patterns.csv", index=False)
+    _card_by_hand(mm, matrix_store.Store(p["unitig_store_dir"]), cands, p["card_layer_dir"],
+                  seqs["SIGNAL"], ids[0])
     pd.DataFrame({"genome_id": ids[0], "contig": ["c1"], "start": [0], "end": [2628],
                   "strand": ["+"], "cut_off": ["Strict"], "aro": ["3003294"],
                   "aro_name": ["Escherichia coli gyrA"], "model_type": ["variant"],
@@ -215,13 +252,8 @@ def built(tmp_path_factory):
         p["rgi_dir"] / "rgi_hits.csv", index=False)
     (p["rgi_dir"] / "rgi_summary.json").write_text(json.dumps(
         {"rgi_version": "6.0.8", "card_version": "4.0.1"}))
-    m14b = _script("14b_grading.py")
-    m14b.load_config = lambda: config
-    sys.argv = argv
-    try:
-        m14b.main()
-    finally:
-        sys.argv = saved
+    _run_main("14b_grading.py", config)
+    _association_steps(config, p, mm, seqs["SIGNAL"], ids[0])
     # 16 by hand: one AMRFinderPlus call and the model's row of the comparison
     from lib import external as ex
     ext = p["external_dir"]
@@ -265,17 +297,23 @@ def test_unitig_id_is_stable_and_orientation_free():
 def test_build_loads_every_layer_and_rechecks_the_grades(built):
     _, p, mm, _, report, out = built
     n_cand = len(pd.read_csv(p["candidates_file"]))
+    n_assoc = len(pd.read_csv(p["association_dir"] / "association.csv"))
+    n = n_cand + n_assoc                      # the candidates and the association set
     t = report["tables"]
-    assert t["model"] == 1 and t["candidate"] == n_cand and t["grade"] == 2 * n_cand
-    assert report["grades_rechecked"] == 2 * n_cand and report["sha256"] == sha256_file(out)
+    assert n_assoc == 3 and report["patterns_by_route"] == {"model": n_cand,
+                                                             "association": n_assoc}
+    assert t["model"] == 1 and t["candidate"] == n and t["grade"] == 2 * n
+    assert report["grades_rechecked"] == 2 * n and report["sha256"] == sha256_file(out)
     assert t["panel_decision"] == 2 and t["genome"] == 150 and t["pyseer_result"] >= n_cand
     with sqlite3.connect(out) as conn:
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
         rel = conn.execute("SELECT protocol_version, card_version, tools FROM release").fetchone()
         assert rel[0] == "1.0" and rel[1] == "4.0.1" and "pyseer" in json.loads(rel[2])
-        assert conn.execute("SELECT count(*) FROM v_biomarker").fetchone()[0] == n_cand
-        auc = conn.execute("SELECT roc_auc_lineage_aware, flag FROM v_model").fetchone()
+        assert conn.execute("SELECT count(*) FROM v_biomarker").fetchone()[0] == n
+        auc = conn.execute("SELECT roc_auc_lineage_aware, flag, n_candidates, n_association "
+                           "FROM v_model").fetchone()
         assert auc[0] > 0.7 and auc[1] in ("", "permutation_not_significant")
+        assert auc[2:] == (n_cand, n_assoc)
         assert conn.execute("SELECT count(*) FROM source_file").fetchone()[0] > 15
         ba = conn.execute("SELECT assessable, balanced_accuracy FROM external_comparison "
                           "WHERE tool = 'model'").fetchone()
@@ -317,6 +355,58 @@ def test_signal_is_graded_from_its_card_variant_hit(built):
     assert (bits == mm.pattern(pid)).all()
 
 
+def test_the_association_set_is_graded_apart(built):
+    """Protocol §14 item 6: the pyseer-significant patterns that are not candidates, at
+    most association.max_patterns with the smallest p values, graded from their own layers
+    by the unchanged rule, stored with the route association and kept out of the
+    hypothesis tests."""
+    from lib import hypotheses
+    _, p, _, _, _, out = built
+    a = pd.read_csv(p["association_dir"] / "association.csv")
+    tested = pd.read_csv(p["pyseer_dir"] / "pyseer_tested.csv")
+    cands = set(pd.read_csv(p["candidates_file"])["pattern_id"])
+    expected = tested[tested["significant"] & ~tested["pattern_id"].isin(cands)]
+    assert len(expected) >= 4
+    assert a["pattern_id"].tolist() == expected.nsmallest(3, "lrt-pvalue")["pattern_id"].tolist()
+    assert a["rank"].tolist() == [1, 2, 3]
+    layers = p["association_dir"] / "layers"
+    assert pd.read_csv(layers / "pyseer.csv")["passes"].all()
+    assert not pd.read_csv(layers / "cpss.csv")["passes"].any()   # a stable pattern is a candidate
+    g = pd.read_csv(p["association_dir"] / "grades" / "grades_patterns.csv")
+    assert set(g["pattern_id"]) == set(a["pattern_id"]) and g["pyseer"].all()
+    assert not g["cpss"].any() and not (g["grade"] == "strong_novel").any()
+    with sqlite3.connect(out) as conn:
+        rows = conn.execute("SELECT pattern_id, source FROM candidate WHERE route = 'association' "
+                            "ORDER BY pattern_id").fetchall()
+        assert [r[0] for r in rows] == sorted(a["pattern_id"]) and {r[1] for r in rows} == {"pyseer"}
+        assert set(hypotheses.model_patterns(conn, MID)["pattern_id"]) == cands
+        n_unitigs = conn.execute("SELECT count(*) FROM v_unitig WHERE route = 'association'"
+                                 ).fetchone()[0]
+    assert n_unitigs == len(pd.read_csv(p["association_dir"] / "card_layer" / "card_unitigs.csv"))
+
+
+def test_an_empty_association_set_builds(built, tmp_path):
+    """No significant pattern outside the candidates: every step writes its tables empty and
+    the knowledge base holds no pattern of the route association."""
+    import copy
+
+    from lib import contract
+    config, p, mm, seqs, _, _ = built
+    c = copy.deepcopy(config)
+    c["paths_organism"]["association_dir"] = str(tmp_path / "{organism}" / "{antibiotic}")
+    c["association"]["max_patterns"] = 0
+    _association_steps(c, p, mm, seqs["SIGNAL"], "x")
+    for tid in ("association_patterns", "association_prevalence_layer", "association_mda_layer",
+                "association_mda_clusters", "association_card_patterns",
+                "association_grades_patterns", "association_grades_unitigs"):
+        path = contract.table_path(tid, c, ORG, AB)
+        assert pd.read_csv(path).empty, tid
+        assert contract.validate_csv(path, contract.load()["tables"][tid]) == [], tid
+    report = _script("build_kb.py").build(c, tmp_path / "kb.sqlite", kb_version="empty")
+    assert report["patterns_by_route"] == {"model": len(pd.read_csv(p["candidates_file"])),
+                                           "association": 0}
+
+
 def test_a_grade_that_does_not_follow_its_layers_stops_the_build(built, tmp_path):
     config, p, _, _, _, out = built
     before = sha256_file(out)
@@ -355,7 +445,11 @@ def test_outputs_follow_the_contract(built):
             checked.append(tid)
     assert {"panel_decisions", "genome_qc", "model_patterns", "oof_predictions", "candidates",
             "cpss_layer", "prevalence_layer", "mda_layer", "pyseer_layer", "card_unitigs",
-            "grades_patterns", "rgi_hits", "external_comparison"} <= set(checked), checked
+            "grades_patterns", "rgi_hits", "external_comparison", "association_patterns",
+            "association_cpss_layer", "association_pyseer_layer", "association_prevalence_layer",
+            "association_mda_layer", "association_mda_clusters", "association_card_unitigs",
+            "association_card_patterns", "association_grades_patterns",
+            "association_grades_unitigs"} <= set(checked), checked
 
 
 def test_reports_from_the_tables(built, monkeypatch):
@@ -375,11 +469,13 @@ def test_reports_from_the_tables(built, monkeypatch):
     names = {f.stem for f in model_dir.glob("*.png")}
     assert {"matrix", "cross_validation", "cpss", "prevalence", "mda", "card", "grading"} <= names
     page = (model_dir / "report.html").read_text()
-    for section in ("Cross-validation", "Evidence layers", "Best candidates", "base64,"):
+    for section in ("Cross-validation", "Evidence layers", "Best candidates", "base64,",
+                    "Patterns nominated by association"):
         assert section in page
     assert (rep / "panel.png").exists() and (rep / ORG / "genome_qc.png").exists()
     nums = rep / "tez_sayilari.csv"
     assert contract.validate_csv(nums, contract.load()["tables"]["thesis_numbers"]) == []
     t = pd.read_csv(nums).set_index("key")
     assert int(t.loc[f"{MID}.n_genomes", "value"]) == 150
+    assert int(t.loc[f"{MID}.association.n_patterns", "value"]) == 3
     assert t.loc[f"{MID}.roc_auc.lineage_aware", "source_table"] == "repeat_metrics"

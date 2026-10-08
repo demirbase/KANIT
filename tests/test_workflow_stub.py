@@ -37,6 +37,11 @@ def test_default_entry_reaches_every_step(tmp_path):
     assert n["CV_UNITS"] == 3 * 13 and n["LP_CHUNKS"] == 3 * 13 and n["CPSS_CHUNK"] == 3 * 1
     for p in ("PANEL", "GRADING", "LP_ACROSS", "EXTERNAL_COMPARE", "CARD_LAYER", "PYSEER_POST"):
         assert n.get(p), p
+    # the patterns nominated by association (protocol §14 item 6): every layer and the
+    # grades of every model again
+    for p in ("ASSOCIATION_SET", "PREVALENCE_ASSOCIATION", "MDA_ASSOCIATION",
+              "CARD_LAYER_ASSOCIATION", "GRADING_ASSOCIATION"):
+        assert n.get(p) == n["GRADING"], p
     assert n["RUN_OUTPUTS"] == n["SACCT_DUMP"] == n["RUN_RESOURCES"] == 1
     assert n["REPORTS"] == n["COMPLETENESS"] == n["COMPLETENESS_GATE"] == 1
     assert "BACKUP_PACK" not in n                     # no --backup_remote: no backup
@@ -53,6 +58,10 @@ def test_default_entry_reaches_every_step(tmp_path):
     assert len(receipts) == len(t)
     r = json.loads((tmp_path / "trace" / "tasks" / "PANEL" / "run" / "receipt.json").read_text())
     assert r["step"] == "panel" and r["process"].endswith("PANEL") and r["stub"] is True
+    keys = {json.loads(f.read_text())["key"]
+            for f in (tmp_path / "trace" / "tasks").glob("GRADING*/*/receipt.json")}
+    assert len(keys) == 2 * n["GRADING"]
+    assert sum(k.endswith(" association") for k in keys) == n["GRADING"]
 
 
 def test_parameters_are_checked(tmp_path):
