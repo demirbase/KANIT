@@ -107,6 +107,16 @@
                     "default": "",
                     "description": "Comma-separated organisms whose heavy steps go to queue_large (e.g. ecoli,kpneumoniae)."
                 },
+                "queue_short": {
+                    "type": "string",
+                    "enum": [
+                        "barbun",
+                        "hamsi",
+                        "orfoz",
+                        "debug"
+                    ],
+                    "description": "SLURM partition of the steps that take minutes but much memory (matrix, CPSS, MDA, pyseer); as the heavy steps when not given."
+                },
                 "queue_light": {
                     "type": "string",
                     "enum": [

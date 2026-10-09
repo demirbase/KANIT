@@ -93,9 +93,10 @@ def test_large_organisms_run_their_heavy_steps_on_their_partition(tmp_path):
         "process STORE { label 'store'; input: tuple val(org), val(abs); output: stdout\n"
         "  script: 'echo s' }\n"
         "process LIGHT { label 'light'; input: val(meta); output: stdout; script: 'echo l' }\n"
+        "process MDA { label 'mda'; input: val(meta); output: stdout; script: 'echo m' }\n"
         "workflow {\n"
         "  ms = Channel.of([id: 'ecoli__a', organism: 'ecoli'], [id: 'saureus__b', organism: 'saureus'])\n"
-        "  UNITS(ms.map { [it, 1] }); LIGHT(ms)\n"
+        "  UNITS(ms.map { [it, 1] }); LIGHT(ms); MDA(ms)\n"
         "  STORE(Channel.of(['ecoli', ['a']], ['saureus', ['b']]))\n}\n")
     (tmp_path / "local.config").write_text(
         "process.executor = 'local'\nprocess.container = null\napptainer.enabled = false\n"
@@ -115,6 +116,16 @@ def test_large_organisms_run_their_heavy_steps_on_their_partition(tmp_path):
     assert got[("UNITS", 1)] == ("barbun", 20) and got[("UNITS", 2)] == ("hamsi", 56)
     assert got[("STORE", 1)] == ("barbun", 40) and got[("STORE", 2)] == ("hamsi", 56)
     assert {q for (s, _), (q, _) in got.items() if s == "LIGHT"} == {"debug"}
+    assert {q for (s, _), (q, _) in got.items() if s == "MDA"} == {"barbun", "hamsi"}
+    r = subprocess.run([NEXTFLOW, "-q", "run", "main.nf", "-c",          # --queue_short
+                        str(PROJECT_ROOT / "conf" / "truba.config"), "-c", "local.config",
+                        "--queue", "hamsi", "--queue_light", "debug", "--queue_large", "barbun",
+                        "--large_organisms", "ecoli,kpneumoniae", "--queue_short", "debug"],
+                       cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    t = pd.read_csv(tmp_path / "trace.txt", sep="\t")
+    q = dict(zip(t["name"], t["queue"], strict=True))
+    assert q["MDA (1)"] == q["MDA (2)"] == "debug" and q["UNITS (1)"] == "barbun"
 
 
 def test_parameters_are_checked(tmp_path):
