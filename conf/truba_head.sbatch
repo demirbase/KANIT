@@ -6,7 +6,10 @@
 # the head with SIGKILL, so that the head's jobs keep running, cancels the jobs the head left
 # waiting and submits itself again, to start once the running ones have ended and resume.
 # A head on a compute node has no internet: run with --backup_remote none and back up from
-# the login node afterwards.
+# the login node afterwards. While it waits for a node, the head may run on the login node
+# (conf/truba_login_head.sh), which stops when this job runs; this job then cancels the jobs
+# left waiting and starts once the running ones have ended. A second head job that finds one
+# running ends at once.
 #
 #   cd $AMR_WORK && sbatch [--dependency=afterany:<job ids>] $AMR_HOME/conf/truba_head.sbatch \
 #       <log file> <arguments of nextflow run main.nf, with -resume <session>>
@@ -23,6 +26,17 @@ set -u
 OUT=$1
 shift
 STOP_AFTER=${KANIT_HEAD_HOURS:-70}          # hours before the head is stopped and resubmitted
+POLL=${KANIT_POLL:-60}                      # seconds between checks
+ours() { squeue -u "$USER" -h -t "$1" -o '%i %j' | awk '$2 ~ /^kanit_/ && $2 != "kanit_head" {print $1}'; }
+
+if squeue -u "$USER" -h -n kanit_head -t R -o '%i' | grep -v -x "${SLURM_JOB_ID:-0}" | grep -q .; then
+    echo "$(date '+%F %T') head job ${SLURM_JOB_ID:-}: another head job runs; this one ends" >> "$OUT"
+    exit 0
+fi
+while [ -e "$AMR_WORK/kanit_login_head" ]; do sleep "$POLL"; done   # the login head stops
+pending=$(ours PD)
+if [ -n "$pending" ]; then scancel $pending; fi
+while [ -n "$(ours R,CG)" ]; do sleep "$POLL"; done                    # its running jobs end
 
 cd "$AMR_HOME" || exit 1
 export NXF_OPTS='-Xms1g -Xmx4g -XX:+UseSerialGC -XX:-UsePerfData'
@@ -30,17 +44,17 @@ echo "$(date '+%F %T') head job $SLURM_JOB_ID on $(hostname): nextflow run main.
 nextflow run main.nf "$@" >> "$OUT" 2>&1 < /dev/null &
 NF=$!
 
-for (( t = 0; t < STOP_AFTER * 3600; t += 60 )); do
+for (( t = 0; t < STOP_AFTER * 3600; t += POLL )); do
     if ! kill -0 "$NF" 2>/dev/null; then     # the run ended, completed or failed
         wait "$NF"
         exit $?
     fi
-    sleep 60
+    sleep "$POLL"
 done
 
 kill -9 "$NF"                                 # its jobs keep running
+pkill -KILL -u "$USER" -f 'run main.nf'
 sleep 10
-ours() { squeue -u "$USER" -h -t "$1" -o '%i %j' | awk '$2 ~ /^kanit_/ && $2 != "kanit_head" {print $1}'; }
 pending=$(ours PD)
 if [ -n "$pending" ]; then scancel $pending; fi
 running=$(ours R,CG | paste -sd: -)
