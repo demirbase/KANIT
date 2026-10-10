@@ -21,16 +21,20 @@ def test_units_per_job():
     # the E. coli probe (5,681 genomes, 4.70 M patterns): two units fill a job
     assert packing.unit_memory_gb(5681, 4_700_000, cfg) > 60
     assert packing.per_job(5681, 4_700_000, cfg) == 2
-    # small models: as many as the memory holds (a fixed 4 GB each keeps them under a
-    # hamsi node's 56)
-    assert packing.per_job(1384, 500_000, cfg) == 29
-    assert packing.per_job(1204, 1_118_452, cfg) == 22                   # pilot, imipenem
+    # small models: as many as the memory holds, the part per pattern deciding
+    assert packing.per_job(1384, 500_000, cfg) == 20
+    assert packing.per_job(1204, 1_118_452, cfg) == 12                   # pilot, imipenem
     assert packing.per_job(100, 1_000, {**cfg, "max_per_job": 20}) == 20   # the cap
     # the estimate covers the peaks measured in the pilot (A. baumannii, 2026-10-06; genomes,
     # patterns, GB per unit)
     for n, p, peak in [(968, 894_710, 5.8), (760, 759_393, 5.4), (435, 614_743, 3.7),
                        (784, 746_163, 4.6), (689, 758_695, 4.3), (750, 790_436, 4.1)]:
         assert packing.unit_memory_gb(n, p, cfg) >= peak
+    # and at least the mean peak of the units of the full run (2026-10-10), whose largest
+    # peaks the retry with fewer units at once absorbs
+    for n, p, mean, top in [(913, 1_623_139, 12.6, 20.3), (961, 2_176_356, 20.6, 31.8),
+                            (2004, 2_638_866, 25.5, 28.5)]:
+        assert mean <= packing.unit_memory_gb(n, p, cfg) < top + 10
     # in between: as many as the memory holds
     mid = {**cfg, "max_per_job": 99}
     k = packing.per_job(3000, 2_000_000, mid)

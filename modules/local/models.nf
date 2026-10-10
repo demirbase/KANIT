@@ -69,6 +69,7 @@ process CV_PACKING {
 
     script:
     """
+    # packing ${kanitConfig().packing}
     PACK=\$(${py('04_nested_cv.py')} packing --organism ${meta.organism} --antibiotic ${meta.antibiotic})
     ${receipt(task, 'cv_packing', meta.id)}
     """
