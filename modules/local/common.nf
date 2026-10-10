@@ -56,16 +56,20 @@ Map deepMerge(Map base, Map over) {
 
 // The commands of a batch side by side, each with its share of the task's cores
 // (--threads), each writing to its own log. The task fails with the highest exit status
-// of its commands; their logs' last lines go to its error output.
+// of its commands; their logs' last lines go to its error output. A retry, after the job
+// ran out of memory or time, runs half as many at once as the attempt before, in waves;
+// what the commands finished before is kept (--skip-done, the chunk keys).
 def parallel(task, List items, Closure command) {
-    def lines = items.withIndex().collect { item, i ->
-        "${command(item)} --threads \$T > part_${i}.log 2>&1 &\npids+=(\$!)"
+    int wave = Math.max(1, Math.ceil(items.size() / Math.pow(2, task.attempt - 1)) as int)
+    def waves = items.withIndex().collate(wave).collect { part ->
+        part.collect { item, i -> "${command(item)} --threads \$T > part_${i}.log 2>&1 &\npids+=(\$!)" }
+            .join('\n') + '\nwait_all'
     }
     """\
-T=\$(( ${task.cpus} / ${items.size()} )); [ \$T -ge 1 ] || T=1
-pids=()
-${lines.join('\n')}
+T=\$(( ${task.cpus} / ${wave} )); [ \$T -ge 1 ] || T=1
 rc=0
-for p in "\${pids[@]}"; do c=0; wait \$p || c=\$?; [ \$c -gt \$rc ] && rc=\$c; done
+pids=()
+wait_all() { for p in "\${pids[@]}"; do c=0; wait \$p || c=\$?; [ \$c -gt \$rc ] && rc=\$c; done; pids=(); }
+${waves.join('\n')}
 if [ \$rc -ne 0 ]; then tail -n 20 part_*.log >&2; exit \$rc; fi"""
 }

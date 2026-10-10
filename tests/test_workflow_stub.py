@@ -128,6 +128,29 @@ def test_large_organisms_run_their_heavy_steps_on_their_partition(tmp_path):
     assert q["MDA (1)"] == q["MDA (2)"] == "debug" and q["UNITS (1)"] == "barbun"
 
 
+def test_a_retry_runs_fewer_units_at_once(tmp_path):
+    """A packed job that ran out of memory is retried with half as many units at once, in
+    waves; units finished before are kept. Here a unit fails (137) when more than two run
+    together: the first attempt fails, the second succeeds in two waves."""
+    (tmp_path / "unit.sh").write_text(
+        'u=$1; S=$(dirname "$0")/state; mkdir -p "$S"; [ -e "$S/done_$u" ] && exit 0\n'
+        'touch "$S/run_$u"; sleep 1; n=$(ls "$S" | grep -c "^run_")\n'
+        'if [ "$n" -gt 2 ]; then rm -f "$S/run_$u"; exit 137; fi\n'
+        'sleep 1; rm -f "$S/run_$u"; touch "$S/done_$u"\n')
+    (tmp_path / "main.nf").write_text(
+        f"include {{ parallel }} from '{PROJECT_ROOT}/modules/local/common'\n"
+        "process P {\n  cpus 4\n  errorStrategy { task.attempt <= 3 ? 'retry' : 'terminate' }\n"
+        "  maxRetries 3\n  output: path 'done.txt'\n  script:\n  \"\"\"\n"
+        "  ${parallel(task, [1, 2, 3, 4], { u -> \"bash ${projectDir}/unit.sh ${u}\" })}\n"
+        "  echo ok > done.txt\n  \"\"\"\n}\nworkflow { P() }\n")
+    r = subprocess.run([NEXTFLOW, "-q", "run", "main.nf", "-with-trace", "trace.txt"],
+                       cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    t = pd.read_csv(tmp_path / "trace.txt", sep="\t")
+    assert t["status"].tolist() == ["FAILED", "COMPLETED"]
+    assert sorted(f.name for f in (tmp_path / "state").iterdir()) == [f"done_{i}" for i in range(1, 5)]
+
+
 def test_parameters_are_checked(tmp_path):
     r, _ = _run(tmp_path)
     assert r.returncode != 0 and "organisms" in (r.stdout + r.stderr)
