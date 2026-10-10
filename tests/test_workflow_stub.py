@@ -102,7 +102,7 @@ def test_large_organisms_run_their_heavy_steps_on_their_partition(tmp_path):
         "process.executor = 'local'\nprocess.container = null\napptainer.enabled = false\n"
         "workDir = 'work'\nexecutor { cpus = 512; memory = '4 TB' }\n"
         "trace { enabled = true; overwrite = true; file = 'trace.txt'; "
-        "fields = 'name,tag,queue,cpus,memory' }\n")
+        "fields = 'name,tag,queue,cpus,memory,time' }\n")
     r = subprocess.run([NEXTFLOW, "-q", "run", "main.nf", "-c",
                         str(PROJECT_ROOT / "conf" / "truba.config"), "-c", "local.config",
                         "--queue", "hamsi", "--queue_light", "debug", "--queue_large", "barbun",
@@ -114,6 +114,8 @@ def test_large_organisms_run_their_heavy_steps_on_their_partition(tmp_path):
     got = {(s, int(i)): (q, c) for s, i, q, c in zip(
         t["step"], t["name"].str.extract(r"\((\d+)\)")[0], t["queue"], t["cpus"], strict=True)}
     assert got[("UNITS", 1)] == ("barbun", 20) and got[("UNITS", 2)] == ("hamsi", 56)
+    hours = dict(zip(t["name"], t["time"], strict=True))
+    assert hours["UNITS (1)"] == "3d" and hours["UNITS (2)"] == "1d"   # large: three times
     assert got[("STORE", 1)] == ("barbun", 40) and got[("STORE", 2)] == ("hamsi", 56)
     assert {q for (s, _), (q, _) in got.items() if s == "LIGHT"} == {"debug"}
     assert {q for (s, _), (q, _) in got.items() if s == "MDA"} == {"barbun", "hamsi"}
