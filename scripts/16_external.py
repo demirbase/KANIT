@@ -61,7 +61,9 @@ def command(out_dir: Path, genomes_dir: Path, *, amrfinder_organism: str, specie
     AMRFinderPlus's database (amrfinder_catalog.tsv; amrfinder_update does not fetch the
     ReferenceGeneCatalog, which is read too when present). $AMRFINDER
     and $RESFINDER override the executables; AMRFinderPlus's database is $AMRFINDER_DB
-    when set, ResFinder's databases come from its CGE_* variables."""
+    when set, ResFinder's databases come from its CGE_* variables. ResFinder's BLAST
+    outputs (*_blast: about 20 files per genome, 2026-10-11) are removed once a genome is
+    done; collect reads only its phenotype table."""
     return "\n".join([
         "#!/usr/bin/env bash", "set -euo pipefail",
         'AMRFINDER="${AMRFINDER:-amrfinder}"', 'RESFINDER="${RESFINDER:-python -m resfinder}"',
@@ -92,6 +94,7 @@ def command(out_dir: Path, genomes_dir: Path, *, amrfinder_organism: str, specie
         '    rm -rf "resfinder/$g"',
         f'    $RESFINDER -ifa "{genomes_dir.resolve()}/$g.fna" -o "resfinder/$g" -s "{species}" '
         '--acquired --point --ignore_missing_species > "resfinder/$g.log" 2>&1',
+        '    rm -rf "resfinder/$g/"*_blast',
         '    touch "resfinder/$g.done"', "  fi",
         "done", ""])
 
