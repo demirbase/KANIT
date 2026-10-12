@@ -155,12 +155,31 @@ def test_unitig_state_locates_and_combines(genome):
     gyra = _row(hits, "gyrA")
     (s83, e83), = [(s, e) for snp, s, e in cl.mutation_intervals(gyra) if snp == "S83L"]
     seq = contigs[gyra["contig"]][s83 - 19:e83 + 19]
-    states = cl.unitig_state(cl.revcomp(seq), ["g1"], lambda g: contigs, lambda g: hits,
-                             QUINOLONE, set())                # found on the other strand
+    states, located = cl.unitig_state(cl.revcomp(seq), ["g1"], lambda g: contigs, lambda g: hits,
+                                      QUINOLONE, set())       # found on the other strand
+    assert located == ["g1"]
     assert states["allele_aware"].state == cl.B1
     assert states["homolog_only"].state == cl.HIT_NO_B
-    with pytest.raises(ValueError, match="not found"):
-        cl.unitig_state("ACGT" * 10, ["g1"], lambda g: contigs, lambda g: hits, QUINOLONE, set())
+    # found whole in no carrier: no located genome, no CARD hit (2026-10-12)
+    states, located = cl.unitig_state("ACGT" * 10, ["g1"], lambda g: contigs, lambda g: hits,
+                                      QUINOLONE, set())
+    assert located == [] and states["allele_aware"].state == cl.NO_HIT
+    assert states["allele_aware"].n_located == 0
+
+
+def test_unitig_state_skips_a_carrier_whose_assembly_breaks_inside_the_unitig(genome):
+    """A carrier holds the unitig's k-mers but not the unitig whole when its contig ends inside
+    it (K. pneumoniae tigecycline, 2026-10-12); the next carrier by quality is used."""
+    hits, contigs = genome
+    gyra = _row(hits, "gyrA")
+    (s83, e83), = [(s, e) for snp, s, e in cl.mutation_intervals(gyra) if snp == "S83L"]
+    seq = contigs[gyra["contig"]][s83 - 19:e83 + 19]
+    broken = {name: c.replace(seq, seq[:30] + "NNNNN" + seq[30:]) for name, c in contigs.items()}
+    genomes = {"g0": broken, "g1": contigs, "g2": contigs, "g3": contigs}
+    states, located = cl.unitig_state(seq, ["g0", "g1", "g2", "g3"], genomes.__getitem__,
+                                      lambda g: hits, QUINOLONE, set(), max_located=2)
+    assert located == ["g1", "g2"]
+    assert states["allele_aware"].n_located == 2 and states["allele_aware"].state == cl.B1
 
 
 def test_near_universal_aros_counts_genomes():

@@ -288,24 +288,31 @@ def _merge(items: list[Evidence]) -> Evidence:
     return any(x[0] for x in items), any(x[1] for x in items), reasons, aros
 
 
-def unitig_state(seq: str, located: list[str], contigs_of, hits_of, targets: set[str],
+def unitig_state(seq: str, carriers: list[str], contigs_of, hits_of, targets: set[str],
                  near_universal: set[str], ref_dna: dict | None = None,
-                 min_overlap: float = 0.5) -> dict:
-    """{mode: UnitigState} of one unitig over its located genomes.
+                 min_overlap: float = 0.5, max_located: int = 3) -> tuple[dict, list[str]]:
+    """({mode: UnitigState}, located genomes) of one unitig.
 
-    ``contigs_of(genome)`` returns the genome's contigs, ``hits_of(genome)`` its
-    RGI hits. A located genome must contain the unitig."""
+    The unitig is located in the first ``max_located`` of ``carriers`` (best first) that
+    contain all of it. A carrier can hold the unitig's k-mers without holding it whole,
+    when its draft assembly breaks inside the unitig; such a carrier is skipped. A unitig
+    found whole in no carrier has no located genome and no CARD hit.
+    ``contigs_of(genome)`` returns the genome's contigs, ``hits_of(genome)`` its RGI hits."""
     per: dict[str, list[Evidence]] = {mode: [] for mode in MODES}
-    for g in located:
+    located: list[str] = []
+    for g in carriers:
+        if len(located) == max_located:
+            break
         locs = locate(seq, contigs_of(g))
         if not locs:
-            raise ValueError(f"unitig {seq[:30]}... not found in genome {g}, which carries it")
+            continue
+        located.append(g)
         hits = hits_of(g)
         found = [evaluate_location(hits, contig, s, e, targets, near_universal, ref_dna,
                                    min_overlap) for contig, s, e in locs]
         for mode in MODES:
             per[mode].append(_merge([f[mode] for f in found]))
-    return {mode: combine_genomes(per[mode]) for mode in MODES}
+    return {mode: combine_genomes(per[mode]) for mode in MODES}, located
 
 
 # the columns of card_unitigs.csv and card_patterns.csv (also when there is no pattern)
@@ -331,12 +338,17 @@ def annotate(patterns, mm, store, qc_table: pd.DataFrame, hits: pd.DataFrame, co
     want = members[members["pattern_id"].isin(list(patterns))]
     seqs = dict(zip(want["unitig_index"], store.sequences(want["unitig_index"]), strict=True))
     urows, prows = [], []
+    n_not_located = n_fewer = 0
     for pid in patterns:
-        located = pick_genomes(genomes[mm.pattern(int(pid)).astype(bool)], qc_table, max_located)
+        carriers = genomes[mm.pattern(int(pid)).astype(bool)]
+        ranked = pick_genomes(carriers, qc_table, len(carriers))
         member_states: dict[str, list[UnitigState]] = {mode: [] for mode in MODES}
         for u in want.loc[want["pattern_id"] == pid, "unitig_index"]:
-            states = unitig_state(seqs[u], located, contigs_of, lambda g: by_genome.get(g, empty),
-                                  targets, near, ref_dna, min_overlap)
+            states, located = unitig_state(seqs[u], ranked, contigs_of,
+                                           lambda g: by_genome.get(g, empty), targets, near,
+                                           ref_dna, min_overlap, max_located)
+            n_not_located += not located
+            n_fewer += 0 < len(located) < min(max_located, len(ranked))
             row = {"pattern_id": int(pid), "unitig_index": int(u), "sequence": seqs[u],
                    "length": len(seqs[u]), "located_genomes": ";".join(located)}
             for mode, s in states.items():
@@ -356,6 +368,7 @@ def annotate(patterns, mm, store, qc_table: pd.DataFrame, hits: pd.DataFrame, co
     unitigs = pd.DataFrame(urows, columns=list(UNITIG_COLUMNS))
     pats = pd.DataFrame(prows, columns=list(PATTERN_COLUMNS))
     summary = {"n_patterns": len(pats), "n_unitigs": len(unitigs), "targets": sorted(targets),
+               "n_unitigs_not_located": n_not_located, "n_unitigs_located_in_fewer": n_fewer,
                "near_universal_aros": sorted(near),
                "patterns_by_state": {mode: pats[f"{mode}_state"].value_counts().to_dict()
                                      for mode in MODES} if len(pats) else {}}
