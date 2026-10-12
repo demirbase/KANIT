@@ -669,11 +669,11 @@ tables:
       - {name: model_a, type: string, required: true, description: "First model"}
       - {name: model_b, type: string, required: true, description: "Second model"}
       - {name: same_class, type: boolean, description: "Both antibiotics in one drug class"}
-      - {name: n_a, type: integer, description: "Candidates of model a"}
-      - {name: n_b, type: integer, description: "Candidates of model b"}
-      - {name: n_shared, type: integer, description: "Shared candidates"}
-      - {name: n_universe, type: integer, description: "Unitigs that could be shared"}
-      - {name: overlap, type: number, description: "Jaccard overlap"}
+      - {name: n_a, type: integer, description: "CARD gene families of the candidates of model a"}
+      - {name: n_b, type: integer, description: "CARD gene families of the candidates of model b"}
+      - {name: n_shared, type: integer, description: "CARD gene families shared by the two models"}
+      - {name: n_universe, type: integer, description: "CARD gene families of all models of the organism"}
+      - {name: overlap, type: number, description: "Overlap coefficient: shared families over the smaller set (protocol §10, H3)"}
       - {name: fold_enrichment, type: number, description: "Observed over expected overlap"}
       - {name: fisher_p, type: number, description: "Fisher p value"}
       - {name: mc_p, type: number, description: "Monte Carlo p value"}
