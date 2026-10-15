@@ -115,7 +115,7 @@ def test_large_organisms_run_their_heavy_steps_on_their_partition(tmp_path):
         t["step"], t["name"].str.extract(r"\((\d+)\)")[0], t["queue"], t["cpus"], strict=True)}
     assert got[("UNITS", 1)] == ("barbun", 20) and got[("UNITS", 2)] == ("hamsi", 56)
     hours = dict(zip(t["name"], t["time"], strict=True))
-    assert hours["UNITS (1)"] == "3d" and hours["UNITS (2)"] == "1d"   # large: three times
+    assert hours["UNITS (1)"] == "1d 12h" and hours["UNITS (2)"] == "1d"   # large: half as much again
     assert got[("STORE", 1)] == ("barbun", 40) and got[("STORE", 2)] == ("hamsi", 56)
     assert {q for (s, _), (q, _) in got.items() if s == "LIGHT"} == {"debug"}
     assert {q for (s, _), (q, _) in got.items() if s == "MDA"} == {"barbun", "hamsi"}
