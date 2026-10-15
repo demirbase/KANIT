@@ -1,8 +1,10 @@
 #!/bin/bash
 # The Nextflow head job of a run of many days on TRUBA (conf/truba.config). The login node
 # allows a process 300 s of CPU (360 s hard), which a head spends in a day of many tasks,
-# and a resumed head spends more the more tasks it finds cached; every partition ends a job
-# after 3 days. This job runs the head on a barbun node. Two hours before its limit it stops
+# and a resumed head spends more the more tasks it finds cached. This job runs the head on a barbun
+# node. It asks for one day, not the partition's three: a job that asks for the whole limit cannot be
+# backfilled into the gaps the scheduler keeps for higher-priority jobs, and it then waits for hours
+# with nodes idle (2026-10-15). Two hours before its limit it stops
 # the head with SIGKILL, so that the head's jobs keep running, cancels the jobs the head left
 # waiting and submits itself again, to start once the running ones have ended and resume.
 # A head on a compute node has no internet: run with --backup_remote none and back up from
@@ -18,14 +20,14 @@
 #SBATCH --partition=barbun
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=20
-#SBATCH --time=3-00:00:00
-#SBATCH --exclude=barbun45,barbun46,barbun89,barbun118
+#SBATCH --time=1-00:00:00
+#SBATCH --exclude=barbun45,barbun46,barbun89,barbun106,barbun118
 #SBATCH --output=kanit_head_%j.log
 
 set -u
 OUT=$1
 shift
-STOP_AFTER=${KANIT_HEAD_HOURS:-70}          # hours before the head is stopped and resubmitted
+STOP_AFTER=${KANIT_HEAD_HOURS:-22}          # hours before the head is stopped and resubmitted
 POLL=${KANIT_POLL:-60}                      # seconds between checks
 ours() { squeue -u "$USER" -h -t "$1" -o '%i %j' | awk '$2 ~ /^kanit_/ && $2 != "kanit_head" {print $1}'; }
 
