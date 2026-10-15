@@ -2,9 +2,10 @@
 # The Nextflow head job of a run of many days on TRUBA (conf/truba.config). The login node
 # allows a process 300 s of CPU (360 s hard), which a head spends in a day of many tasks,
 # and a resumed head spends more the more tasks it finds cached. This job runs the head on a barbun
-# node. It asks for one day, not the partition's three: a job that asks for the whole limit cannot be
-# backfilled into the gaps the scheduler keeps for higher-priority jobs, and it then waits for hours
-# with nodes idle (2026-10-15). Two hours before its limit it stops
+# node, or in the partition given with -p (then also give -t and KANIT_HEAD_HOURS). It asks for one
+# day, not the partition's three: a job that asks for the whole limit cannot be backfilled into the
+# gaps the scheduler keeps for higher-priority jobs, and it then waits for hours with nodes idle
+# (2026-10-15). It resubmits itself to the partition it is running in. Two hours before its limit it stops
 # the head with SIGKILL, so that the head's jobs keep running, cancels the jobs the head left
 # waiting and submits itself again, to start once the running ones have ended and resume.
 # A head on a compute node has no internet: run with --backup_remote none and back up from
@@ -61,5 +62,13 @@ pending=$(ours PD)
 if [ -n "$pending" ]; then scancel $pending; fi
 running=$(ours R,CG | paste -sd: -)
 cd "$AMR_WORK" || exit 1
-sbatch ${running:+--dependency=afterany:$running} "$AMR_HOME/conf/truba_head.sbatch" "$OUT" "$@"
-echo "$(date '+%F %T') head stopped after ${STOP_AFTER} h; resubmitted after: ${running:-nothing}" >> "$OUT"
+# the next head stays in the partition where this one found a place: a partition that takes the job
+# within minutes is worth more than a longer one that leaves it queued for hours (2026-10-15).
+case "${SLURM_JOB_PARTITION:-barbun}" in
+    debug) PART=debug; LIMIT=4:00:00;     HOURS=3;;
+    hamsi) PART=hamsi; LIMIT=1-00:00:00;  HOURS=22;;
+    *)     PART=barbun; LIMIT=1-00:00:00; HOURS=22;;
+esac
+sbatch -p "$PART" -t "$LIMIT" --export=ALL,KANIT_HEAD_HOURS="$HOURS" \
+    ${running:+--dependency=afterany:$running} "$AMR_HOME/conf/truba_head.sbatch" "$OUT" "$@"
+echo "$(date '+%F %T') head stopped after ${STOP_AFTER} h; resubmitted to $PART after: ${running:-nothing}" >> "$OUT"
