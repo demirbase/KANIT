@@ -2,10 +2,13 @@
 # The Nextflow head job of a run of many days on TRUBA (conf/truba.config). The login node
 # allows a process 300 s of CPU (360 s hard), which a head spends in a day of many tasks,
 # and a resumed head spends more the more tasks it finds cached. This job runs the head on a barbun
-# node, or in the partition given with -p (then also give -t and KANIT_HEAD_HOURS). It asks for one
-# day, not the partition's three: a job that asks for the whole limit cannot be backfilled into the
+# node, or in the partition given with -p (then also give -t and KANIT_HEAD_HOURS). It asks for two
+# days, not the partition's three: a job that asks for the whole limit cannot be backfilled into the
 # gaps the scheduler keeps for higher-priority jobs, and it then waits for hours with nodes idle
-# (2026-10-15). It resubmits itself to the partition it is running in. Two hours before its limit it stops
+# (2026-10-15). Two days also outlast the longest task, the 36 hours of a large organism's units:
+# a head that ends while its own jobs run leaves the next one waiting on them, and nothing is
+# submitted meanwhile, so such a handover empties the queue (2026-10-18). It resubmits itself
+# to the partition it is running in. Two hours before its limit it stops
 # the head with SIGKILL, so that the head's jobs keep running, cancels the jobs the head left
 # waiting and submits itself again, to start once the running ones have ended and resume.
 # A head on a compute node has no internet: run with --backup_remote none and back up from
@@ -21,7 +24,7 @@
 #SBATCH --partition=barbun
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=20
-#SBATCH --time=1-00:00:00
+#SBATCH --time=2-00:00:00
 #SBATCH --exclude=barbun45,barbun46,barbun89,barbun106,barbun118
 #SBATCH --output=kanit_head_%j.log
 
@@ -67,7 +70,7 @@ cd "$AMR_WORK" || exit 1
 case "${SLURM_JOB_PARTITION:-barbun}" in
     debug) PART=debug; LIMIT=4:00:00;     HOURS=3;;
     hamsi) PART=hamsi; LIMIT=1-00:00:00;  HOURS=22;;
-    *)     PART=barbun; LIMIT=1-00:00:00; HOURS=22;;
+    *)     PART=barbun; LIMIT=2-00:00:00; HOURS=46;;
 esac
 sbatch -p "$PART" -t "$LIMIT" --export=ALL,KANIT_HEAD_HOURS="$HOURS" \
     ${running:+--dependency=afterany:$running} "$AMR_HOME/conf/truba_head.sbatch" "$OUT" "$@"
