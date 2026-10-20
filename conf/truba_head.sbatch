@@ -98,11 +98,13 @@ cd "$AMR_WORK" || exit 1
 # refused, so the core count travels with the partition: barbun 20, hamsi 28, orfoz 56 (TRUBA's
 # queue table; the message a rejected hamsi job prints asks for 56, which is a whole node and
 # needlessly large). orfoz is the largest partition, 192 nodes of 112 cores, and the only one with
-# room when barbun and hamsi are full (2026-10-20).
+# room when barbun and hamsi are full (2026-10-20). Every partition but debug gets the two days
+# that outlast a large organism's units; asking for one day instead bought no place in the
+# queue (squeue --start planned none) and would stall the run at the handover.
 case "${SLURM_JOB_PARTITION:-barbun}" in
     debug) PART=debug;  LIMIT=4:00:00;     HOURS=3;  CPUS=20;;
-    hamsi) PART=hamsi;  LIMIT=1-00:00:00;  HOURS=22; CPUS=28;;
-    orfoz) PART=orfoz;  LIMIT=1-00:00:00;  HOURS=22; CPUS=56;;
+    hamsi) PART=hamsi;  LIMIT=2-00:00:00;  HOURS=46; CPUS=28;;
+    orfoz) PART=orfoz;  LIMIT=2-00:00:00;  HOURS=46; CPUS=56;;
     *)     PART=barbun; LIMIT=2-00:00:00;  HOURS=46; CPUS=20;;
 esac
 sbatch -p "$PART" -t "$LIMIT" -c "$CPUS" --export=ALL,KANIT_HEAD_HOURS="$HOURS" \
