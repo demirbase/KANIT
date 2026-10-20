@@ -5,12 +5,13 @@
 # node, or in the partition given with -p (then also give -t and KANIT_HEAD_HOURS). It asks for two
 # days, not the partition's three: a job that asks for the whole limit cannot be backfilled into the
 # gaps the scheduler keeps for higher-priority jobs, and it then waits for hours with nodes idle
-# (2026-10-15). Two days also outlast the longest task, the 36 hours of a large organism's units:
-# a head that ends while its own jobs run leaves the next one waiting on them, and nothing is
-# submitted meanwhile, so such a handover empties the queue (2026-10-18). It resubmits itself
-# to the partition it is running in. Two hours before its limit it stops
-# the head with SIGKILL, so that the head's jobs keep running, cancels the jobs the head left
-# waiting and submits itself again, to start once the running ones have ended and resume.
+# (2026-10-15). A head is a babysitter and uses one core of the many it must ask for, but no
+# partition takes a smaller job. Two days also outlast the longest task, the 36 hours of a large
+# organism's units: a head that ends while its own jobs run leaves the next one waiting on them,
+# and nothing is submitted meanwhile, so such a handover empties the queue (2026-10-18). It
+# resubmits itself to the partition it is running in. Two hours before its limit it stops the head
+# with SIGKILL, so that the head's jobs keep running, cancels the jobs the head left waiting and
+# submits itself again, to start once the running ones have ended and resume.
 # A head on a compute node has no internet: run with --backup_remote none and back up from
 # the login node afterwards. While it waits for a node, the head may run on the login node
 # (conf/truba_login_head.sh), which stops when this job runs; this job then cancels the jobs
@@ -25,7 +26,7 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=20
 #SBATCH --time=2-00:00:00
-#SBATCH --exclude=barbun45,barbun46,barbun89,barbun106,barbun118
+#SBATCH --exclude=barbun45,barbun46,barbun89,barbun106,barbun118,hamsi20,hamsi29,orfoz359
 #SBATCH --output=kanit_head_%j.log
 
 set -u
@@ -66,12 +67,18 @@ if [ -n "$pending" ]; then scancel $pending; fi
 running=$(ours R,CG | paste -sd: -)
 cd "$AMR_WORK" || exit 1
 # the next head stays in the partition where this one found a place: a partition that takes the job
-# within minutes is worth more than a longer one that leaves it queued for hours (2026-10-15).
+# within minutes is worth more than a longer one that leaves it queued for hours (2026-10-15). Each
+# partition has a smallest job it accepts, and a resubmission that asks for fewer cores than that is
+# refused, so the core count travels with the partition: barbun 20, hamsi 28, orfoz 56 (TRUBA's
+# queue table; the message a rejected hamsi job prints asks for 56, which is a whole node and
+# needlessly large). orfoz is the largest partition, 192 nodes of 112 cores, and the only one with
+# room when barbun and hamsi are full (2026-10-20).
 case "${SLURM_JOB_PARTITION:-barbun}" in
-    debug) PART=debug; LIMIT=4:00:00;     HOURS=3;;
-    hamsi) PART=hamsi; LIMIT=1-00:00:00;  HOURS=22;;
-    *)     PART=barbun; LIMIT=2-00:00:00; HOURS=46;;
+    debug) PART=debug;  LIMIT=4:00:00;     HOURS=3;  CPUS=20;;
+    hamsi) PART=hamsi;  LIMIT=1-00:00:00;  HOURS=22; CPUS=28;;
+    orfoz) PART=orfoz;  LIMIT=1-00:00:00;  HOURS=22; CPUS=56;;
+    *)     PART=barbun; LIMIT=2-00:00:00;  HOURS=46; CPUS=20;;
 esac
-sbatch -p "$PART" -t "$LIMIT" --export=ALL,KANIT_HEAD_HOURS="$HOURS" \
+sbatch -p "$PART" -t "$LIMIT" -c "$CPUS" --export=ALL,KANIT_HEAD_HOURS="$HOURS" \
     ${running:+--dependency=afterany:$running} "$AMR_HOME/conf/truba_head.sbatch" "$OUT" "$@"
 echo "$(date '+%F %T') head stopped after ${STOP_AFTER} h; resubmitted to $PART after: ${running:-nothing}" >> "$OUT"
