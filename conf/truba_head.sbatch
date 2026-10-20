@@ -36,10 +36,36 @@ STOP_AFTER=${KANIT_HEAD_HOURS:-22}          # hours before the head is stopped a
 POLL=${KANIT_POLL:-60}                      # seconds between checks
 ours() { squeue -u "$USER" -h -t "$1" -o '%i %j' | awk '$2 ~ /^kanit_/ && $2 != "kanit_head" {print $1}'; }
 
-if squeue -u "$USER" -h -n kanit_head -t R -o '%i' | grep -v -x "${SLURM_JOB_ID:-0}" | grep -q .; then
-    echo "$(date '+%F %T') head job ${SLURM_JOB_ID:-}: another head job runs; this one ends" >> "$OUT"
-    exit 0
+# One head at a time. Several head jobs may be queued at once, in different partitions, so that
+# the first to find a node wins and the others end: which partition frees up cannot be predicted,
+# and a job queued in one of them is free. Asking the queue whether another head runs is not
+# enough, though: two head jobs started in the same scheduling cycle can each find the other
+# still pending, and two Nextflow heads on one work directory submit every task twice and write
+# over each other's cache. mkdir is atomic on the shared file system, so exactly one of them
+# wins. The queue is asked only about a lock that is already held, to tell a running owner from
+# one that is gone: a head killed at its time limit leaves the directory behind.
+# Taking it over needs proof that its owner has ended, from sacct: the owner's id is written
+# just after the directory is made, and a job that reads the lock in that gap finds no owner at
+# all, while a job that has just started is not yet in squeue's running jobs. Both look stale and
+# are not. An unclear answer therefore ends this head, which costs a resubmission, where a wrong
+# takeover would cost the cache. sacct may be missing on a compute node, and then no head can take
+# the lock over: the log line says which directory to remove.
+LOCK=$AMR_WORK/kanit_head.lock
+take_lock() { mkdir "$LOCK" 2>/dev/null && echo "${SLURM_JOB_ID:-$$}" > "$LOCK/owner"; }
+if ! take_lock; then
+    owner=$(cat "$LOCK/owner" 2>/dev/null)
+    state=$(sacct -n -X -j "${owner:-0}" -o State 2>/dev/null | head -1 | awk '{print $1}')
+    case "$state" in
+    COMPLETED|FAILED|CANCELLED|TIMEOUT|NODE_FAIL|OUT_OF_MEMORY|PREEMPTED|BOOT_FAIL|DEADLINE|REVOKED)
+        echo "$(date '+%F %T') head job ${SLURM_JOB_ID:-}: the lock of $owner is stale ($state)" >> "$OUT"
+        rm -rf "$LOCK"
+        take_lock || { echo "$(date '+%F %T') head job ${SLURM_JOB_ID:-}: another head took the lock; this one ends" >> "$OUT"; exit 0; } ;;
+    *)
+        echo "$(date '+%F %T') head job ${SLURM_JOB_ID:-}: head job ${owner:-unknown} holds the lock (${state:-no state}); this one ends. If no head runs, remove $LOCK" >> "$OUT"
+        exit 0 ;;
+    esac
 fi
+trap 'rm -rf "$LOCK"' EXIT
 while [ -e "$AMR_WORK/kanit_login_head" ]; do sleep "$POLL"; done   # the login head stops
 pending=$(ours PD)
 if [ -n "$pending" ]; then scancel $pending; fi
