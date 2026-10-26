@@ -32,7 +32,8 @@ Reading the result:
 homogeneous here may still split over genomes that were not sampled. Raise
 --n-genomes to tighten the bound.
 
-Outputs (default results/tables/): m3_0a_homogeneity.csv, m3_0a_summary.json
+Outputs (default results/tables/): m3_0a_homogeneity_<organism>.csv,
+m3_0a_summary_<organism>.json
 
 Usage:
     python scripts/m3_0a_unitig_kmer_homogeneity.py --organism ecoli
@@ -53,7 +54,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
-from lib import matrix_store  # noqa: E402
+from lib import matrix_store, panel  # noqa: E402
 from lib.config import load_config, resolve_path  # noqa: E402
 
 # base -> 2 bits; everything else (N, IUPAC codes) maps to 4 and breaks the run
@@ -236,27 +237,13 @@ def compare(hits, owners, offsets, sampled, store, genome_slots, n_slots):
     return pd.DataFrame(rows)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--organism", required=True)
-    ap.add_argument("--n-unitigs", type=int, default=2000)
-    ap.add_argument("--n-genomes", type=int, default=300)
-    ap.add_argument("--min-length", type=int, default=100,
-                    help="shortest unitig to sample; 100 bp holds 70 31-mers")
-    ap.add_argument("--kmers-per-unitig", type=int, default=40)
-    ap.add_argument("--threads", type=int, default=min(8, os.cpu_count() or 1))
-    ap.add_argument("--seed", type=int, default=20261026)
-    ap.add_argument("--out", type=Path, default=ROOT / "results" / "tables")
-    args = ap.parse_args()
-
-    config = load_config()
-    k = int(config["unitig"]["k"])
-    if k > 32:
-        sys.exit(f"ERROR: k={k} does not fit a uint64 code (max 32).")
-    store_dir = resolve_path("unitig_store_dir", organism=args.organism, config=config)
+def measure(organism: str, args, config, k: int) -> dict | None:
+    """One organism, start to finish. None when there is nothing to measure yet."""
+    store_dir = resolve_path("unitig_store_dir", organism=organism, config=config)
     if not (store_dir / "sequences.txt").exists():
-        sys.exit(f"ERROR: no unitig store at {store_dir}.")
-    genomes_dir = resolve_path("raw_genomes_dir", organism=args.organism, config=config)
+        print(f"  ! no unitig store at {store_dir}; skipped")
+        return None
+    genomes_dir = resolve_path("raw_genomes_dir", organism=organism, config=config)
 
     rng = np.random.default_rng(args.seed)
     store = matrix_store.Store(store_dir)
@@ -292,7 +279,8 @@ def main():
         else:
             missing += 1
     if not chosen:
-        sys.exit(f"ERROR: no assembly found under {genomes_dir}.")
+        print(f"  ! no assembly found under {genomes_dir}; skipped")
+        return None
     if missing:
         print(f"  ! {missing} assembly file(s) missing, skipped")
     genome_slots = np.asarray([store_slot[gid] for gid, _ in chosen], dtype=np.int64)
@@ -317,15 +305,18 @@ def main():
 
     table = compare(hits, owners, offsets, sampled, store, genome_slots, len(chosen))
     if table.empty:
-        sys.exit("ERROR: no sampled unitig could be compared.")
+        print("  ! no sampled unitig could be compared; skipped")
+        return None
     args.out.mkdir(parents=True, exist_ok=True)
-    table.to_csv(args.out / "m3_0a_homogeneity.csv", index=False)
+    # one file per organism: the job script measures every organism of the panel
+    csv_path = args.out / f"m3_0a_homogeneity_{organism}.csv"
+    table.to_csv(csv_path, index=False)
 
     n = len(table)
     n_hom = int(table["homogeneous"].sum())
     n_faithful = int(table["faithful"].sum())
     summary = {
-        "organism": args.organism,
+        "organism": organism,
         "k": k,
         "seed": args.seed,
         "n_unitigs_tested": n,
@@ -345,7 +336,8 @@ def main():
         "store_vs_modal_hamming_max": int(table["store_vs_modal_hamming"].max()) if n else 0,
         "caveat": "homogeneity is measured over the sampled genomes only",
     }
-    (args.out / "m3_0a_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    (args.out / f"m3_0a_summary_{organism}.json").write_text(
+        json.dumps(summary, indent=2) + "\n")
 
     print(f"\n  {n:,} unitig(s) tested, {summary['n_kmers_tested']:,} k-mer(s), "
           f"{len(chosen):,} of {len(store.genomes):,} genomes")
@@ -357,7 +349,54 @@ def main():
     else:
         print("  -> unitigs are homogeneous over the sampled genomes: the k-mer arm "
               "must not pattern-collapse (§4.2)")
-    print(f"  -> {args.out / 'm3_0a_homogeneity.csv'}")
+    print(f"  -> {csv_path}")
+    return summary
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--organism", default="all",
+                    help="organism slug, or 'all' for every organism of the panel")
+    ap.add_argument("--n-unitigs", type=int, default=2000)
+    ap.add_argument("--n-genomes", type=int, default=300)
+    ap.add_argument("--min-length", type=int, default=100,
+                    help="shortest unitig to sample; 100 bp holds 70 31-mers")
+    ap.add_argument("--kmers-per-unitig", type=int, default=40)
+    ap.add_argument("--threads", type=int, default=min(8, os.cpu_count() or 1))
+    ap.add_argument("--seed", type=int, default=20261026)
+    ap.add_argument("--out", type=Path, default=ROOT / "results" / "tables")
+    args = ap.parse_args()
+
+    config = load_config()
+    k = int(config["unitig"]["k"])
+    if k > 32:
+        sys.exit(f"ERROR: k={k} does not fit a uint64 code (max 32).")
+
+    if args.organism == "all":
+        panel_csv = resolve_path("panel_dir", config=config) / "panel_decisions.csv"
+        if not panel_csv.exists():
+            sys.exit(f"ERROR: no panel at {panel_csv}; name an organism instead.")
+        organisms = sorted({org for org, _ in panel.included_pairs(panel_csv)})
+        if not organisms:
+            sys.exit("ERROR: the panel includes no pair.")
+    else:
+        organisms = [args.organism]
+
+    done = []
+    for org in organisms:
+        print(f"\n===== {org} =====")
+        summary = measure(org, args, config, k)
+        if summary is not None:
+            done.append(summary)
+    if not done:
+        sys.exit("ERROR: no organism could be measured.")
+
+    if len(done) > 1:
+        print("\n===== all organisms =====")
+        for s in done:
+            print(f"  {s['organism']:24} homogeneous {s['homogeneous_frac']:6.1%}  "
+                  f"faithful {s['faithful_frac']:6.1%}  "
+                  f"({s['n_unitigs_tested']:,} unitigs, {s['n_genomes_sampled']:,} genomes)")
 
 
 if __name__ == "__main__":

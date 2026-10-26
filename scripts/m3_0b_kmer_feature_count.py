@@ -39,12 +39,29 @@ from lib.config import load_config, resolve_path  # noqa: E402
 BYTES_PER_NNZ = 8
 
 
-def unitig_lengths(store_dir: Path) -> np.ndarray:
-    """Length of every unitig in the store, in store index order."""
-    path = store_dir / "sequences.txt"
-    with open(path, "rb") as f:
-        lengths = [len(ln) - 1 if ln.endswith(b"\n") else len(ln) for ln in f]
-    return np.asarray(lengths, dtype=np.int64)
+def unitig_lengths(store_dir: Path, block: int = 1 << 24) -> np.ndarray:
+    """Length of every unitig in the store, in store index order.
+
+    Counted from the newline positions of each block rather than by iterating over
+    the lines: a large store holds tens of millions of unitigs, and a Python list
+    that long costs more than the int64 array it ends up as.
+    """
+    parts: list[np.ndarray] = []
+    carry = 0                                    # bytes of the line still open
+    with open(store_dir / "sequences.txt", "rb") as f:
+        while chunk := f.read(block):
+            a = np.frombuffer(chunk, dtype=np.uint8)
+            nl = np.flatnonzero(a == 0x0A)
+            if nl.size == 0:
+                carry += a.size
+                continue
+            parts.append(np.asarray([carry + int(nl[0])], dtype=np.int64))
+            if nl.size > 1:
+                parts.append((np.diff(nl) - 1).astype(np.int64))
+            carry = a.size - int(nl[-1]) - 1
+    if carry:                                    # a last line without a newline
+        parts.append(np.asarray([carry], dtype=np.int64))
+    return np.concatenate(parts) if parts else np.empty(0, dtype=np.int64)
 
 
 def pair_counts(matrix_dir: Path, lengths: np.ndarray, k: int) -> dict:
