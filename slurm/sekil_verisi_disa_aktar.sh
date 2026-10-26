@@ -24,9 +24,12 @@ KOMUT=${1:?kullanim: olc | paketle <cikti.tgz>}
 KOK=${AMR_WORK:?AMR_WORK tanimli degil}/results
 [ -d "$KOK" ] || { echo "sonuc dizini yok: $KOK" >&2; exit 1; }
 
-# Tek tek araç çıktıları: genom başına üretilirler, şekillerin hiçbiri okumaz.
-HARIC=(-path '*_blast' -o -path '*/rgi_raw' -o -path '*/resfinder_raw' -o -path '*/amrfinder_raw'
-       -o -path '*/genomes' -o -path '*/tmp')
+# Genom başına araç çıktıları: şekillerin hiçbiri okumaz, ama dosya sayısının çoğunu yaparlar
+# (ilk ölçümde 65.436 dosyanın 34.000'i; yalnız E. coli'de 2 x 5.763). Şekillerin okuduğu toplu
+# tablolar bir üst dizinde durur (<org>/external/comparison.csv, external_summary.json), o yüzden
+# yalnız alt dizinleri dışlıyoruz.
+HARIC=(-path '*/external/resfinder' -o -path '*/external/amrfinder' -o -path '*/external/rgi'
+       -o -path '*_blast' -o -path '*/genomes' -o -path '*/tmp')
 # Tek bir tablo bu boyutu aşıyorsa şekil verisi değildir (ör. unitig matrisi dökümü).
 AZAMI_MB=${AZAMI_MB:-80}
 
@@ -49,6 +52,10 @@ olc)
     echo "--- en cok yer tutan 15 dizin (organizma/antibiyotik/alt) ---"
     printf '%s\n' "${F[@]}" | sed "s|$KOK/||" | awk -F/ '{print (NF>3 ? $1"/"$2"/"$3 : $0)}' \
         | sort | uniq -c | sort -rn | head -15
+    echo
+    echo "--- en buyuk 10 dosya ---"
+    printf '%s\0' "${F[@]}" | du -h --files0-from=- 2>/dev/null | sort -rh | head -10 \
+        | sed "s|$KOK/||"
     echo
     echo "--- dislanan dizinlerde kalan dosya sayisi ---"
     find "$KOK" \( "${HARIC[@]}" \) -type d -printf '%p\n' 2>/dev/null \
