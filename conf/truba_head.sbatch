@@ -26,7 +26,7 @@
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=20
 #SBATCH --time=2-00:00:00
-#SBATCH --exclude=barbun45,barbun46,barbun89,barbun106,barbun118,hamsi20,hamsi29,orfoz359
+#SBATCH --exclude=barbun45,barbun46,barbun89,barbun106,barbun118,hamsi20,hamsi29
 #SBATCH --output=kanit_head_%j.log
 
 set -u
