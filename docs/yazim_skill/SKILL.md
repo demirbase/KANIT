@@ -41,11 +41,10 @@ Kuralların amacı metnin **açık, özgül ve doğru** olması. Bir kural bu am
    geçişinde İngilizcesini parantezde ver.
 3. **Denetle.**
    ```bash
-   python3 ${CLAUDE_SKILL_DIR}/betikler/denetle.py taslak.md --dil tr
+   python3 ${SKILL_DIZINI}/betikler/denetle.py taslak.md --dil tr
    ```
-   Claude Code `${CLAUDE_SKILL_DIR}`'i skill klasörüyle değiştirir. claude.ai'da betik bu SKILL.md'ye
-   göre `betikler/denetle.py` yolundadır; bulunamazsa
-   `find / -name denetle.py -path "*makale-yazimi*" 2>/dev/null`.
+   `${SKILL_DIZINI}` yerine skill klasörünün yolu gelir; betik ona göre `betikler/denetle.py`
+   yolundadır. Bulunamazsa `find / -name denetle.py -path "*makale-yazimi*" 2>/dev/null`.
 4. **Raporu göster.** Kullanıcıya raporun özetini ve `!` satırlarını göster. Uzun raporu olduğu
    gibi yapıştırma.
 5. **Düzelt.** Bütün `!` maddelerini düzelt. `?` maddelerinin her biri için karar ver: ya düzelt ya
@@ -64,7 +63,7 @@ uygulamadan önce sor.
 
 Yazar Türkçe taslaktan kendi İngilizcesini kurar. Bu metin **yazarındır**: yeniden yazma.
 
-1. `python3 ${CLAUDE_SKILL_DIR}/betikler/denetle.py bolum_en.md --dil en` çalıştır. Uzun dosyada
+1. `python3 ${SKILL_DIZINI}/betikler/denetle.py bolum_en.md --dil en` çalıştır. Uzun dosyada
    `--bolum "Introduction"` ile tek bölüm seç.
 2. Raporu göster.
 3. `kurallar/ingilizce_ceviri.md`'ye göre okuyarak denetle. Betiğin göremediği şeylere bak:

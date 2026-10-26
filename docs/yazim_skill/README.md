@@ -9,6 +9,11 @@ Düzenleme yönü **canlıdan depoya**, tersi değil:
 cp -R "$SKILL_DIZINI/makale-yazimi/." docs/yazim_skill/
 ```
 
+Kopyaladıktan sonra **`SKILL.md`'yi temizle.** Canlı dosya, yükleme sırasında yerine konan bir
+araç değişkeni taşıyor; depo herkese açık olduğu için araç ve sağlayıcı adları burada durmamalı.
+Değişkeni `${SKILL_DIZINI}` ile değiştir, sonra kopyayı araç adlarına karşı bir kez tara —
+commit kancası (`.git/hooks/commit-msg`) hangi ibarelerin yasak olduğunu zaten listeliyor.
+
 Depodaki kopyayı düzenlemek hiçbir şeyi değiştirmez; önce canlı sürümü düzelt, sonra kopyala.
 Bu dosya o yüzden var — iki yönlü doğruluk kaynağı olduğunda hangisinin hangisinden türediğini
 unutmak pahalıya patlıyor (`scripts/_kaynaklar_uret.py` bir koşuşta 246 düzeltilmiş künyeyi silmişti).
