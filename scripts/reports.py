@@ -271,11 +271,22 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                 "PopPUNK lineages")
     included = (dec[(dec["decision"] == panel.INCLUDED) & dec["organism"].isin(organisms)]
                 if dec is not None else pd.DataFrame(columns=["organism", "antibiotic"]))
+    if dec is not None:
+        put("panel.n_organisms_with_models", int(included["organism"].nunique()),
+            "panel_decisions", "organism", "Organisms with at least one included pair")
+        put("panel.n_antibiotics_included", int(included["antibiotic"].nunique()),
+            "panel_decisions", "antibiotic", "Antibiotics of the included pairs")
+        if "drug_class" in included:
+            put("panel.n_drug_classes_included", int(included["drug_class"].nunique()),
+                "panel_decisions", "drug_class", "Drug classes of the included pairs")
+    genomes_in_models: set[str] = set()
+    n_candidate_patterns = 0
     for org, ab in zip(included["organism"], included["antibiotic"], strict=True):
         mid = f"{org}__{ab}"
         mg = t.get("model_genomes", org, ab)
         if mg is not None:
             put(f"{mid}.n_genomes", len(mg), "model_genomes", "Genome ID", "Genomes of the model")
+            genomes_in_models.update(mg["Genome ID"].astype(str))
             put(f"{mid}.n_resistant", int((mg["label"] == 1).sum()), "model_genomes", "label",
                 "Resistant genomes")
         rm = t.get("repeat_metrics", org, ab)
@@ -290,6 +301,7 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
         if grades is not None:
             put(f"{mid}.n_candidates", len(grades), "grades_patterns", "pattern_id",
                 "Candidate patterns")
+            n_candidate_patterns += len(grades)
             for mode in ("allele_aware", "homolog_only"):
                 vc = grades[f"{mode}_grade"].value_counts()
                 for g in F.GRADES:
@@ -303,6 +315,12 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
             for g in F.GRADES:
                 put(f"{mid}.association.n_{g}", int(vc.get(g, 0)), "association_grades_patterns",
                     "grade", f"Patterns nominated by association graded {g}, primary mode")
+    if genomes_in_models:
+        put("all.n_genomes_in_models", len(genomes_in_models), "model_genomes", "Genome ID",
+            "Distinct genomes entering at least one model")
+    if n_candidate_patterns:
+        put("all.n_candidate_patterns", n_candidate_patterns, "grades_patterns", "pattern_id",
+            "Candidate patterns, summed over models (pattern numbers are model-specific)")
     lp = t.get("label_permutation_models")
     if lp is not None and "q" in lp:
         put("label_permutation.n_significant", int((lp["q"] < float(
