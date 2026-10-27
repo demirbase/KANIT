@@ -417,6 +417,7 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
         rows.append({"key": key, "value": value, "source_table": table, "column": column,
                      "description": description})
 
+    min_support = int((t.config.get("unitig") or {}).get("min_support") or 10)
     dec = t.get("panel_decisions")
     if dec is not None:
         put("panel.n_pairs", len(dec), "panel_decisions", "decision", "Organism–antibiotic pairs assessed")
@@ -432,6 +433,24 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                 "Pairs excluded because the minority class is below the threshold")
             put("panel.n_excluded_other_reason", int((~short).sum()), "panel_decisions", "reason",
                 "Pairs excluded for any other reason, e.g. a label naming no single drug")
+        # The unitig/k-mer article weighs a relative frequency floor against min_support. A
+        # floor of q is stricter exactly where q * n_eligible > min_support, so the number of
+        # pairs it would bind is what that argument turns on.
+        inc_n = pd.to_numeric(
+            dec.loc[dec["decision"] == panel.INCLUDED, "n_eligible"], errors="coerce").dropna() \
+            if "n_eligible" in dec else pd.Series(dtype=float)
+        if len(inc_n):
+            for name, q in (("1pct", 0.01), ("5pct", 0.05)):
+                put(f"panel.n_pairs_relative_floor_stricter_{name}",
+                    int((inc_n * q > min_support).sum()), "panel_decisions", "n_eligible",
+                    f"Included pairs where a {q:.0%} relative floor binds tighter than "
+                    f"min_support = {min_support}")
+            put("panel.n_eligible_median", float(inc_n.median()), "panel_decisions", "n_eligible",
+                "Median genomes of the included pairs after QC and lineage assignment")
+            put("panel.n_eligible_min", int(inc_n.min()), "panel_decisions", "n_eligible",
+                "Fewest genomes of any included pair")
+            put("panel.n_eligible_max", int(inc_n.max()), "panel_decisions", "n_eligible",
+                "Most genomes of any included pair")
         inc_min = pd.to_numeric(
             dec.loc[dec["decision"] == panel.INCLUDED, "minority"], errors="coerce").dropna()
         if len(inc_min):
@@ -466,6 +485,13 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                 if "minority" in mine:
                     put(f"{org}.max_minority", int(mine["minority"].max()), "panel_decisions",
                         "minority", "Largest minority class among this organism's pairs")
+                for r in mine.itertuples(index=False):
+                    for col, what in (("n_eligible", "Genomes after QC and lineage assignment"),
+                                      ("n_tested", "Genomes with a phenotype for this pair")):
+                        v = pd.to_numeric(getattr(r, col, None), errors="coerce")
+                        if pd.notna(v):
+                            put(f"{r.organism}__{r.antibiotic}.{col}", int(v), "panel_decisions",
+                                col, what)
         cl = t.get("lineage_clusters", org)
         if cl is not None:
             put(f"{org}.n_lineages", int(cl["Cluster"].nunique()), "lineage_clusters", "Cluster",
