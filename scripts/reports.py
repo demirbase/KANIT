@@ -31,12 +31,20 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from lib import concordance, contract, panel  # noqa: E402
+from lib import concordance, contract, panel, registry  # noqa: E402
 from lib import figures as F  # noqa: E402
 from lib.config import load_config, resolve_path  # noqa: E402
 from lib.run_metadata import git_commit_hash  # noqa: E402
 
 GRADE_ORDER = {g: i for i, g in enumerate(F.GRADES)}
+
+
+def _gram_stain(organism_id):
+    """The organism's Gram stain from the registry, or None when it has none."""
+    try:
+        return registry.get_organism(organism_id).get("gram_stain")
+    except KeyError:
+        return None
 
 
 def _four_significant(x):
@@ -422,6 +430,14 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                         int(((rows_t["sensitivity"] == 1) & (rows_t["specificity"] == 0)).sum()),
                         "external_comparison", "sensitivity",
                         f"Models where {tool} calls every genome resistant")
+                gram = rows_t["model_id"].str.split("__").str[0].map(_gram_stain)
+                for stain in ("positive", "negative"):
+                    sel = rows_t[gram == stain]
+                    if len(sel):
+                        put(f"{pre}_median_ba_tool_gram_{stain}",
+                            float(sel["balanced_accuracy"].median()), "external_comparison",
+                            "balanced_accuracy",
+                            f"Median balanced accuracy of {tool}, Gram-{stain} organisms")
     lp = t.get("label_permutation_models")
     if lp is not None and "q" in lp:
         put("label_permutation.n_significant", int((lp["q"] < float(
