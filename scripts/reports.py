@@ -21,6 +21,7 @@ import argparse
 import base64
 import html
 import json
+import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,12 +31,20 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from lib import contract, panel  # noqa: E402
+from lib import concordance, contract, panel  # noqa: E402
 from lib import figures as F  # noqa: E402
 from lib.config import load_config, resolve_path  # noqa: E402
 from lib.run_metadata import git_commit_hash  # noqa: E402
 
 GRADE_ORDER = {g: i for i, g in enumerate(F.GRADES)}
+
+
+def _four_significant(x):
+    """Round to four significant digits. A p-value can be far below the fourth
+    decimal, where the usual rounding of the numbers file would report it as 0."""
+    if x is None or x == 0:
+        return x
+    return round(x, -int(math.floor(math.log10(abs(x)))) + 3)
 
 
 class Tables:
@@ -240,11 +249,11 @@ def model_report(t: Tables, org: str, ab: str, figs: list[tuple[str, Path]], out
 def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
     rows: list[dict] = []
 
-    def put(key, value, table, column, description):
+    def put(key, value, table, column, description, digits=4):
         if value is None or (isinstance(value, float) and pd.isna(value)):
             return
-        if isinstance(value, float):
-            value = round(value, 4)
+        if isinstance(value, float) and digits is not None:
+            value = round(value, digits)
         rows.append({"key": key, "value": value, "source_table": table, "column": column,
                      "description": description})
 
@@ -254,6 +263,7 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
         for d in ("included", "excluded", "blocked"):
             put(f"panel.n_{d}", int((dec["decision"] == d).sum()), "panel_decisions", "decision",
                 f"Pairs {d}")
+    comparisons: list[pd.DataFrame] = []
     for org in organisms:
         long = t.get("phenotypes_long", org)
         if long is not None:
@@ -269,6 +279,9 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
         if cl is not None:
             put(f"{org}.n_lineages", int(cl["Cluster"].nunique()), "lineage_clusters", "Cluster",
                 "PopPUNK lineages")
+        comp = t.get("external_comparison", org)
+        if comp is not None:
+            comparisons.append(comp)
     included = (dec[(dec["decision"] == panel.INCLUDED) & dec["organism"].isin(organisms)]
                 if dec is not None else pd.DataFrame(columns=["organism", "antibiotic"]))
     if dec is not None:
@@ -329,6 +342,36 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
     if n_graded_primary:
         put("all.weak_or_none_share", n_weak_or_none / n_graded_primary, "grades_patterns",
             "grade", "Share (0-1) of the candidate patterns graded weak or none, reported rule")
+    if comparisons:
+        comp_all = pd.concat(comparisons, ignore_index=True)
+        ba = comp_all.pivot_table(index="model_id", columns="tool",
+                                  values="balanced_accuracy", aggfunc="first")
+        ok = comp_all.pivot_table(index="model_id", columns="tool",
+                                  values="assessable", aggfunc="first")
+        if "model" in ba and "model" in ok:
+            for tool in sorted(c for c in ba.columns if c != "model"):
+                both = (ok["model"] == 1) & (ok[tool] == 1)
+                d = (ba.loc[both, "model"] - ba.loc[both, tool]).dropna()
+                s = concordance.sign_test(d)
+                pre = f"compare.{tool}"
+                put(f"{pre}_n_assessable", int(both.sum()), "external_comparison", "assessable",
+                    f"Pairs both the model and {tool} can assess")
+                put(f"{pre}_n_model_better", s["n_positive"], "external_comparison",
+                    "balanced_accuracy", f"Pairs where the model beats {tool}")
+                put(f"{pre}_n_tool_better", s["n_negative"], "external_comparison",
+                    "balanced_accuracy", f"Pairs where {tool} beats the model")
+                put(f"{pre}_n_tied", s["n_tied"], "external_comparison", "balanced_accuracy",
+                    f"Pairs where the model and {tool} score the same (dropped by the sign test)")
+                put(f"{pre}_p", _four_significant(s["p_value"]), "external_comparison",
+                    "balanced_accuracy",
+                    f"Two-sided sign test of balanced accuracy, model vs {tool}, ties dropped",
+                    digits=None)
+                put(f"{pre}_median_ba_model", float(ba.loc[both, "model"].median()),
+                    "external_comparison", "balanced_accuracy",
+                    f"Median balanced accuracy of the model, pairs shared with {tool}")
+                put(f"{pre}_median_ba_tool", float(ba.loc[both, tool].median()),
+                    "external_comparison", "balanced_accuracy",
+                    f"Median balanced accuracy of {tool} on those pairs")
     lp = t.get("label_permutation_models")
     if lp is not None and "q" in lp:
         put("label_permutation.n_significant", int((lp["q"] < float(

@@ -26,6 +26,17 @@ PATTERNS = {("ecoli", "ampicillin"): ["weak", "confirmed"],
             ("kpneumoniae", "meropenem"): ["strong_novel"]}
 
 
+# One win, one tie and one loss against the tool, spread over two organisms.
+COMPARISON = {
+    "ecoli": [("ecoli__ampicillin", "model", 1, 0.9),
+              ("ecoli__ampicillin", "amrfinderplus", 1, 0.8),
+              ("ecoli__ciprofloxacin", "model", 1, 0.8),
+              ("ecoli__ciprofloxacin", "amrfinderplus", 1, 0.8)],
+    "kpneumoniae": [("kpneumoniae__meropenem", "model", 1, 0.7),
+                    ("kpneumoniae__meropenem", "amrfinderplus", 1, 0.9)],
+}
+
+
 class FakeTables:
     """Only the tables numbers() reads; everything else is absent."""
 
@@ -38,6 +49,10 @@ class FakeTables:
         if tid == "model_genomes" and key in GENOMES:
             ids = GENOMES[key]
             return pd.DataFrame({"Genome ID": ids, "label": [1] * len(ids)})
+        if tid == "external_comparison" and organism in COMPARISON:
+            return pd.DataFrame(COMPARISON[organism],
+                                columns=["model_id", "tool", "assessable",
+                                         "balanced_accuracy"])
         if tid == "grades_patterns" and key in PATTERNS:
             g = PATTERNS[key]
             return pd.DataFrame({"pattern_id": range(len(g)), "allele_aware_grade": g,
@@ -115,3 +130,29 @@ def test_aggregates_are_absent_without_models():
     assert "all.n_candidate_patterns" not in keys
     assert "all.weak_or_none_share" not in keys
     assert "panel.n_organisms_with_models" in keys
+
+
+def test_the_sign_test_counts_pairs_but_tests_only_the_signed_ones():
+    """The assessable count keeps the tie; the sign test drops it."""
+    n = _numbers()
+    assert n["compare.amrfinderplus_n_assessable"] == 3
+    assert n["compare.amrfinderplus_n_model_better"] == 1
+    assert n["compare.amrfinderplus_n_tool_better"] == 1
+    assert n["compare.amrfinderplus_n_tied"] == 1
+    assert n["compare.amrfinderplus_p"] == 1.0
+    assert n["compare.amrfinderplus_median_ba_model"] == 0.8
+    assert n["compare.amrfinderplus_median_ba_tool"] == 0.8
+
+
+def test_a_very_small_p_is_not_rounded_to_zero():
+    """Four significant digits, so a p far below the fourth decimal survives."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("amrtest_reports4",
+                                                  PROJECT_ROOT / "scripts" / "reports.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    assert m._four_significant(8.1861e-18) == 8.186e-18
+    assert m._four_significant(0.058058) == 0.05806
+    assert m._four_significant(0) == 0
+    assert m._four_significant(None) is None

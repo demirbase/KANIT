@@ -119,6 +119,33 @@ def mcnemar(y_a, y_b):
     return {"b": b, "c": c, "statistic": stat, "p_value": p}
 
 
+def sign_test(differences):
+    """Two-sided sign test on paired differences (ours minus theirs).
+
+    One pair per organism–antibiotic model: the difference of a scalar score,
+    usually balanced accuracy on the genomes both predictors can call. Ties carry
+    no sign and are dropped, which is the standard convention — a pair where both
+    score the same says nothing about which is better. ``n_tied`` is returned so
+    the dropped pairs stay visible, because counting a tie against one side
+    inflates the p-value.
+
+    Returns {n_pairs, n_positive, n_negative, n_tied, p_value}; ``p_value`` is
+    None when every pair is tied."""
+    pos = neg = tied = 0
+    for d in differences:
+        if d is None:
+            continue
+        if d > 0:
+            pos += 1
+        elif d < 0:
+            neg += 1
+        else:
+            tied += 1
+    n = pos + neg
+    return {"n_pairs": n + tied, "n_positive": pos, "n_negative": neg, "n_tied": tied,
+            "p_value": _binom_two_sided(min(pos, neg), n) if n else None}
+
+
 def _binom_two_sided(k, n, prob=0.5):
     """Exact two-sided binomial p for k successes in n at p=0.5 (McNemar exact)."""
     try:

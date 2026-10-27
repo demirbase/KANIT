@@ -72,3 +72,22 @@ def test_score_pair_bundle():
     assert set(s) >= {"sensitivity", "specificity", "balanced_accuracy",
                       "cohen_kappa", "major_error_rate", "very_major_error_rate", "n"}
     assert s["n"] == 4 and s["sensitivity"] == pytest.approx(0.5)
+
+
+def test_sign_test_drops_ties():
+    # The panel's real shape against AMRFinderPlus: 35 wins, 20 losses, 1 tie.
+    # The tie leaves the test (n = 55); counting it against the model would give 0.081.
+    s = C.sign_test([0.1] * 35 + [-0.1] * 20 + [0.0])
+    assert (s["n_pairs"], s["n_positive"], s["n_negative"], s["n_tied"]) == (56, 35, 20, 1)
+    assert s["p_value"] == pytest.approx(0.0581, abs=1e-4)
+
+
+def test_sign_test_without_a_signed_pair():
+    assert C.sign_test([0.0, 0.0])["p_value"] is None
+    assert C.sign_test([])["p_value"] is None
+
+
+def test_sign_test_does_not_favour_a_direction():
+    a = C.sign_test([0.2] * 9 + [-0.2] * 3)
+    b = C.sign_test([-0.2] * 9 + [0.2] * 3)
+    assert a["p_value"] == pytest.approx(b["p_value"])
