@@ -20,8 +20,10 @@ DECISIONS = pd.DataFrame({
 GENOMES = {("ecoli", "ampicillin"): ["g1", "g2", "g3"],
            ("ecoli", "ciprofloxacin"): ["g2", "g3", "g4"],
            ("kpneumoniae", "meropenem"): ["k1", "k2"]}
-PATTERNS = {("ecoli", "ampicillin"): 2, ("ecoli", "ciprofloxacin"): 3,
-            ("kpneumoniae", "meropenem"): 1}
+# The grade of the reported rule, per pattern: three of the six are weak or none.
+PATTERNS = {("ecoli", "ampicillin"): ["weak", "confirmed"],
+            ("ecoli", "ciprofloxacin"): ["none", "weak", "candidate"],
+            ("kpneumoniae", "meropenem"): ["strong_novel"]}
 
 
 class FakeTables:
@@ -37,9 +39,9 @@ class FakeTables:
             ids = GENOMES[key]
             return pd.DataFrame({"Genome ID": ids, "label": [1] * len(ids)})
         if tid == "grades_patterns" and key in PATTERNS:
-            n = PATTERNS[key]
-            return pd.DataFrame({"pattern_id": range(n), "allele_aware_grade": ["weak"] * n,
-                                 "homolog_only_grade": ["weak"] * n})
+            g = PATTERNS[key]
+            return pd.DataFrame({"pattern_id": range(len(g)), "allele_aware_grade": g,
+                                 "homolog_only_grade": g, "grade": g})
         return None
 
 
@@ -71,6 +73,32 @@ def test_genomes_in_models_is_a_union_and_patterns_a_sum():
     assert n["all.n_candidate_patterns"] == 6
 
 
+def test_weak_or_none_share_is_measured_on_the_reported_rule():
+    """Three of the six candidate patterns clear no evidence threshold."""
+    n = _numbers()
+    assert n["all.weak_or_none_share"] == 0.5
+
+
+def test_the_share_is_absent_without_the_reported_grade():
+    """An output carrying only the per-rule columns gives no share, not a zero."""
+    class PerRuleOnly(FakeTables):
+        def get(self, tid, organism=None, antibiotic=None):
+            out = super().get(tid, organism, antibiotic)
+            if tid == "grades_patterns" and out is not None:
+                return out.drop(columns=["grade"])
+            return out
+
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+    spec = importlib.util.spec_from_file_location("amrtest_reports3",
+                                                  PROJECT_ROOT / "scripts" / "reports.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    df = m.numbers(PerRuleOnly(), ["ecoli", "kpneumoniae"])
+    keys = set(df["key"])
+    assert "all.weak_or_none_share" not in keys
+    assert "all.n_candidate_patterns" in keys
+
+
 def test_aggregates_are_absent_without_models():
     """Nothing is reported when no model has an output yet."""
     class Empty(FakeTables):
@@ -85,4 +113,5 @@ def test_aggregates_are_absent_without_models():
     keys = set(m.numbers(Empty(), ["ecoli"])["key"])
     assert "all.n_genomes_in_models" not in keys
     assert "all.n_candidate_patterns" not in keys
+    assert "all.weak_or_none_share" not in keys
     assert "panel.n_organisms_with_models" in keys

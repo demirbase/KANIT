@@ -281,6 +281,8 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                 "panel_decisions", "drug_class", "Drug classes of the included pairs")
     genomes_in_models: set[str] = set()
     n_candidate_patterns = 0
+    n_graded_primary = 0
+    n_weak_or_none = 0
     for org, ab in zip(included["organism"], included["antibiotic"], strict=True):
         mid = f"{org}__{ab}"
         mg = t.get("model_genomes", org, ab)
@@ -302,6 +304,9 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
             put(f"{mid}.n_candidates", len(grades), "grades_patterns", "pattern_id",
                 "Candidate patterns")
             n_candidate_patterns += len(grades)
+            if "grade" in grades:
+                n_graded_primary += len(grades)
+                n_weak_or_none += int(grades["grade"].isin(("weak", "none")).sum())
             for mode in ("allele_aware", "homolog_only"):
                 vc = grades[f"{mode}_grade"].value_counts()
                 for g in F.GRADES:
@@ -321,6 +326,9 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
     if n_candidate_patterns:
         put("all.n_candidate_patterns", n_candidate_patterns, "grades_patterns", "pattern_id",
             "Candidate patterns, summed over models (pattern numbers are model-specific)")
+    if n_graded_primary:
+        put("all.weak_or_none_share", n_weak_or_none / n_graded_primary, "grades_patterns",
+            "grade", "Share (0-1) of the candidate patterns graded weak or none, reported rule")
     lp = t.get("label_permutation_models")
     if lp is not None and "q" in lp:
         put("label_permutation.n_significant", int((lp["q"] < float(
