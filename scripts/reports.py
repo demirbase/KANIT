@@ -254,6 +254,146 @@ def model_report(t: Tables, org: str, ab: str, figs: list[tuple[str, Path]], out
 
 
 # ---- numbers ---------------------------------------------------------------------------
+# Every aggregate the evidence sections of the grading article assert. They were written as
+# literals because no key produced them; a number a reader cannot regenerate is not a result.
+# `ev` is one row per candidate pattern of every model: the grade tables joined to the
+# candidate tables, plus the model id, its organism and its drug class.
+def _evidence_numbers(ev: pd.DataFrame, put) -> None:
+    layers = ("prevalence", "mda", "cpss", "pyseer")
+    for layer in layers:
+        ev[layer] = F._bool(ev[layer])
+    ev["n_layers_passed"] = ev[list(layers)].sum(axis=1)
+    n = len(ev)
+
+    # the layers, one by one and together
+    for layer in layers:
+        k = int(ev[layer].sum())
+        put(f"all.n_pass_{layer}", k, "grades_patterns", layer,
+            f"Candidates passing the {layer} layer")
+        put(f"all.share_pass_{layer}", k / n, "grades_patterns", layer,
+            f"Share (0-1) of the candidates passing the {layer} layer")
+    for k in range(len(layers) + 1):
+        put(f"all.n_layers_{k}", int((ev["n_layers_passed"] == k).sum()), "grades_patterns",
+            "passes", f"Candidates passing exactly {k} statistical layer(s)")
+    combos = ev.groupby([ev[l] for l in layers]).size().sort_values(ascending=False)
+    for rank, (flags, size) in enumerate(combos.items(), start=1):
+        passed = [l for l, f in zip(layers, flags, strict=True) if f]
+        if rank > 3 or not passed:
+            continue
+        put(f"all.n_layer_combo_{'_and_'.join(passed)}", int(size), "grades_patterns", "passes",
+            f"Candidates whose passing layers are exactly {' + '.join(passed)}")
+
+    # the two grading modes: which patterns move, and where to
+    moved = ev[ev["allele_aware_grade"] != ev["homolog_only_grade"]]
+    put("all.n_grade_differs_between_modes", len(moved), "grades_patterns", "homolog_only_grade",
+        "Candidates graded differently in the allele-aware and homolog-only modes")
+    put("all.share_grade_differs_between_modes", len(moved) / n, "grades_patterns",
+        "homolog_only_grade", "Share (0-1) of the candidates whose grade differs between modes")
+    for (a, b), size in moved.groupby(["allele_aware_grade", "homolog_only_grade"]).size().items():
+        put(f"all.n_mode_change_{a}_to_{b}", int(size), "grades_patterns", "homolog_only_grade",
+            f"Candidates graded {a} allele-aware and {b} homolog-only")
+
+    # what the gain ranking alone reports (the top-gain patterns of every model)
+    top = ev[ev["gain_rank"].notna()]
+    if len(top):
+        nt = len(top)
+        put("all.n_top_gain_patterns", nt, "candidates", "gain_rank",
+            "Patterns in the top total gain of a final model, summed over models")
+        states = {"b": "b", "card_hit_without_b": "card_hit_without_b", "no_card_hit": "no_card_hit"}
+        for name, state in states.items():
+            k = int((top["allele_aware_card_state"] == state).sum())
+            put(f"all.top_gain_n_{name}", k, "grades_patterns", "allele_aware_card_state",
+                f"Top-gain patterns whose CARD state is {state}")
+            put(f"all.top_gain_share_{name}", k / nt, "grades_patterns",
+                "allele_aware_card_state", f"Share (0-1) of the top-gain patterns with {state}")
+        first = top.loc[top.groupby("model")["gain_rank"].idxmin()]
+        put("all.n_models_top_feature_b",
+            int((first["allele_aware_card_state"] == "b").sum()), "grades_patterns",
+            "allele_aware_card_state", "Models whose single highest-gain pattern has b = 1")
+        hit = top[top["allele_aware_card_state"] == "card_hit_without_b"]
+        for reason, size in hit["allele_aware_card_reasons"].value_counts().items():
+            put(f"all.top_gain_n_reason_{reason}", int(size), "grades_patterns",
+                "allele_aware_card_reasons",
+                f"Top-gain patterns denied b = 1 because of {reason}")
+        blank = top[top["allele_aware_card_state"] == "no_card_hit"]
+        failed = blank[~blank["pyseer"]]
+        put("all.top_gain_no_hit_n_pyseer_fail", len(failed), "grades_patterns", "pyseer",
+            "Top-gain patterns without a CARD hit that do not pass the mixed model")
+        if len(blank):
+            put("all.top_gain_no_hit_share_pyseer_fail", len(failed) / len(blank),
+                "grades_patterns", "pyseer",
+                "Share (0-1) of the top-gain patterns without a CARD hit failing the mixed model")
+        put("all.top_gain_no_hit_pyseer_fail_n_prevalence_pass",
+            int(failed["prevalence"].sum()), "grades_patterns", "prevalence",
+            "Of those, the ones that still pass the prevalence difference")
+        for g in F.GRADES:
+            k = int((top["grade"] == g).sum())
+            put(f"all.top_gain_share_{g}", k / nt, "grades_patterns", "grade",
+                f"Share (0-1) of the top-gain patterns graded {g}")
+            put(f"all.n_{g}_in_top_gain", k, "grades_patterns", "grade",
+                f"Patterns graded {g} that a model ranks in its top total gain")
+
+    # the grade a candidate reaches without a CARD hit, with one, or with b = 1
+    cand = ev[ev["grade"] == "candidate"]
+    if len(cand):
+        for name, state in (("no_card_hit", "no_card_hit"),
+                            ("card_hit_without_b", "card_hit_without_b"), ("b", "b")):
+            put(f"all.n_candidate_grade_{name}",
+                int((cand["allele_aware_card_state"] == state).sum()), "grades_patterns",
+                "allele_aware_card_state", f"Candidate-graded patterns whose CARD state is {state}")
+        hit = cand[cand["allele_aware_card_state"] == "card_hit_without_b"]
+        for reason, size in hit["allele_aware_card_reasons"].value_counts().items():
+            put(f"all.n_candidate_grade_reason_{reason}", int(size), "grades_patterns",
+                "allele_aware_card_reasons", f"Candidate-graded patterns denied b = 1 by {reason}")
+
+    novel = ev[ev["grade"] == "strong_novel"]
+    if len(novel):
+        put("all.n_models_with_strong_novel", int(novel["model"].nunique()), "grades_patterns",
+            "grade", "Models contributing at least one strong_novel pattern")
+        for k in (3, 4):
+            put(f"all.n_strong_novel_layers_{k}", int((novel["n_layers_passed"] == k).sum()),
+                "grades_patterns", "passes", f"strong_novel patterns passing {k} layers")
+
+    # H2: the share of every model's stable patterns that reach b = 1
+    stable = ev[F._bool(ev["cpss_stable"])] if "cpss_stable" in ev else ev.iloc[:0]
+    if len(stable):
+        put("all.n_stable_patterns", len(stable), "candidates", "cpss_stable",
+            "Patterns the stability selection calls stable, summed over models")
+        k = int((stable["allele_aware_card_state"] == "b").sum())
+        put("all.n_stable_b", k, "grades_patterns", "allele_aware_card_state",
+            "Of those, the ones matching a curated determinant of the modelled drug class")
+        put("all.stable_b_share", k / len(stable), "grades_patterns", "allele_aware_card_state",
+            "Share (0-1) of the stable patterns with b = 1, pooled over models")
+        for mode in ("allele_aware", "homolog_only"):
+            share = (stable.assign(hit=stable[f"{mode}_card_state"] == "b")
+                     .groupby("model")["hit"].mean())
+            put(f"all.stable_b_median_share.{mode}", float(share.median()), "grades_patterns",
+                f"{mode}_card_state",
+                f"Median over models of the share of stable patterns with b = 1, {mode} mode")
+            if mode == "allele_aware":
+                put("all.stable_b_share_q1", float(share.quantile(0.25)), "grades_patterns",
+                    "allele_aware_card_state", "First quartile of that share over models")
+                put("all.stable_b_share_q3", float(share.quantile(0.75)), "grades_patterns",
+                    "allele_aware_card_state", "Third quartile of that share over models")
+                put("all.n_models_with_stable_patterns", int(share.size), "candidates",
+                    "cpss_stable", "Models with at least one stable pattern")
+                put("all.n_models_no_stable_b", int((share == 0).sum()), "grades_patterns",
+                    "allele_aware_card_state",
+                    "Models where no stable pattern matches a curated determinant")
+
+    # grade shares per organism and per drug class, which 3.3 reads off the figure
+    for col, label in (("organism", "organism"), ("drug_class", "drug class")):
+        if col not in ev:
+            continue
+        for key, part in ev.groupby(col):
+            slug = str(key).replace(" ", "_").replace("/", "_")
+            put(f"{slug}.n_candidates_in_group", len(part), "grades_patterns", "pattern_id",
+                f"Candidate patterns of this {label}")
+            for g in F.GRADES:
+                put(f"{slug}.share_{g}", float((part["grade"] == g).mean()), "grades_patterns",
+                    "grade", f"Share (0-1) of this {label}'s candidates graded {g}")
+
+
 def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
     rows: list[dict] = []
 
@@ -316,6 +456,10 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
             put("panel.n_drug_classes_included", int(included["drug_class"].nunique()),
                 "panel_decisions", "drug_class", "Drug classes of the included pairs")
     genomes_in_models: set[str] = set()
+    evidence: list[pd.DataFrame] = []
+    drug_class = (dict(zip(included["organism"] + "__" + included["antibiotic"],
+                           included["drug_class"], strict=True))
+                  if "drug_class" in included else {})
     n_candidate_patterns = 0
     n_graded_primary = 0
     n_weak_or_none = 0
@@ -352,6 +496,11 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                 for g in F.GRADES:
                     put(f"{mid}.n_{g}.{mode}", int(vc.get(g, 0)), "grades_patterns",
                         f"{mode}_grade", f"Patterns graded {g}, {mode.replace('_', '-')} mode")
+        cands = t.get("candidates", org, ab)
+        if grades is not None and cands is not None and "grade" in grades:
+            evidence.append(grades.merge(cands, on="pattern_id", how="left")
+                            .assign(model=mid, organism=org,
+                                    drug_class=drug_class.get(mid, "unmapped")))
         assoc = t.get("association_grades_patterns", org, ab)
         if assoc is not None:
             put(f"{mid}.association.n_patterns", len(assoc), "association_grades_patterns",
@@ -360,6 +509,8 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
             for g in F.GRADES:
                 put(f"{mid}.association.n_{g}", int(vc.get(g, 0)), "association_grades_patterns",
                     "grade", f"Patterns nominated by association graded {g}, primary mode")
+    if evidence:
+        _evidence_numbers(pd.concat(evidence, ignore_index=True), put)
     if genomes_in_models:
         put("all.n_genomes_in_models", len(genomes_in_models), "model_genomes", "Genome ID",
             "Distinct genomes entering at least one model")

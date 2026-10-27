@@ -27,6 +27,32 @@ GENOMES = {("ecoli", "ampicillin"): ["g1", "g2", "g3"],
 PATTERNS = {("ecoli", "ampicillin"): ["weak", "confirmed"],
             ("ecoli", "ciprofloxacin"): ["none", "weak", "candidate"],
             ("kpneumoniae", "meropenem"): ["strong_novel"]}
+# The evidence a pattern carries, in the order of PATTERNS. The homolog-only grades are
+# chosen so the totals alone cannot say which pattern moved where: confirmed -1,
+# candidate +1 fits both "confirmed -> candidate" and a pair of offsetting moves.
+EVIDENCE = {
+    ("ecoli", "ampicillin"): {
+        "prevalence": [True, True], "mda": [False, True], "cpss": [False, True],
+        "pyseer": [False, True],
+        "allele_aware_card_state": ["no_card_hit", "b"],
+        "allele_aware_card_reasons": ["", ""],
+        "homolog_only_card_state": ["no_card_hit", "no_card_hit"],
+        "homolog_only_grade": ["weak", "candidate"],
+        "gain_rank": [1, 2], "cpss_stable": [False, True]},
+    ("ecoli", "ciprofloxacin"): {
+        "prevalence": [False, True, True], "mda": [False, False, True],
+        "cpss": [False, False, False], "pyseer": [False, False, True],
+        "allele_aware_card_state": ["no_card_hit", "no_card_hit", "card_hit_without_b"],
+        "allele_aware_card_reasons": ["", "", "co_carried_known_gene"],
+        "homolog_only_card_state": ["no_card_hit", "no_card_hit", "card_hit_without_b"],
+        "homolog_only_grade": ["none", "none", "candidate"],
+        "gain_rank": [1, 2, None], "cpss_stable": [False, False, False]},
+    ("kpneumoniae", "meropenem"): {
+        "prevalence": [True], "mda": [True], "cpss": [True], "pyseer": [True],
+        "allele_aware_card_state": ["no_card_hit"], "allele_aware_card_reasons": [""],
+        "homolog_only_card_state": ["no_card_hit"], "homolog_only_grade": ["strong_novel"],
+        "gain_rank": [1], "cpss_stable": [True]},
+}
 
 
 # One win, one tie and one loss against the tool, spread over two organisms.
@@ -60,8 +86,14 @@ class FakeTables:
                                          "balanced_accuracy"])
         if tid == "grades_patterns" and key in PATTERNS:
             g = PATTERNS[key]
-            return pd.DataFrame({"pattern_id": range(len(g)), "allele_aware_grade": g,
-                                 "homolog_only_grade": g, "grade": g})
+            d = {"pattern_id": range(len(g)), "allele_aware_grade": g, "grade": g}
+            e = EVIDENCE[key]
+            d.update({k: v for k, v in e.items() if k not in ("gain_rank", "cpss_stable")})
+            return pd.DataFrame(d)
+        if tid == "candidates" and key in PATTERNS:
+            e = EVIDENCE[key]
+            return pd.DataFrame({"pattern_id": range(len(PATTERNS[key])),
+                                 "gain_rank": e["gain_rank"], "cpss_stable": e["cpss_stable"]})
         return None
 
 
@@ -191,3 +223,46 @@ def test_qc_genomes_are_summed_over_organisms():
     n = _numbers()
     assert n["ecoli.n_genomes_qc_pass"] == 10
     assert n["all.n_genomes_qc_pass"] == 15
+
+
+def test_layer_counts_and_shares_are_over_all_candidates():
+    """Six candidates; the shares divide by six, not by the models."""
+    n = _numbers()
+    assert n["all.n_pass_prevalence"] == 5
+    assert n["all.share_pass_prevalence"] == round(5 / 6, 4)
+    assert n["all.n_pass_cpss"] == 2
+    assert n["all.n_layers_0"] == 1
+    assert n["all.n_layers_1"] == 2
+    assert n["all.n_layers_4"] == 2
+
+
+def test_every_mode_transition_gets_its_own_key():
+    """The totals hide offsetting moves: confirmed -1 and candidate +1 fits more than
+    one reading, so the pair of grades a pattern moves between must be keyed."""
+    n = _numbers()
+    assert n["all.n_grade_differs_between_modes"] == 2
+    assert n["all.n_mode_change_confirmed_to_candidate"] == 1
+    assert n["all.n_mode_change_weak_to_none"] == 1
+    assert "all.n_mode_change_confirmed_to_weak" not in n
+
+
+def test_the_h2_share_is_a_median_over_models_not_a_pooled_ratio():
+    """Two models have a stable pattern: one reaches b = 1, the other does not. The
+    pooled ratio is 1/2; the median over models is also 0.5 here, and the model with no
+    stable pattern must not enter either."""
+    n = _numbers()
+    assert n["all.n_stable_patterns"] == 2
+    assert n["all.n_stable_b"] == 1
+    assert n["all.n_models_with_stable_patterns"] == 2
+    assert n["all.n_models_no_stable_b"] == 1
+    assert n["all.stable_b_median_share.allele_aware"] == 0.5
+
+
+def test_the_top_gain_subset_excludes_patterns_without_a_gain_rank():
+    """A pattern that reaches the candidate set only through stability selection has no
+    gain rank, so the gain-ranking numbers must not count it."""
+    n = _numbers()
+    assert n["all.n_top_gain_patterns"] == 5
+    assert n["all.top_gain_n_b"] == 1
+    assert n["all.n_models_top_feature_b"] == 0
+    assert "all.top_gain_n_reason_co_carried_known_gene" not in n
