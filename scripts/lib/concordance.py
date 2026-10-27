@@ -192,6 +192,24 @@ def paired_difference(differences, clusters=None, n_boot=1000, seed=0):
             "ci_low": lo, "ci_high": hi}
 
 
+def signed_rank_p(differences):
+    """Two-sided Wilcoxon signed-rank p on paired differences, zeros split.
+
+    Reported only as a sensitivity analysis. It uses the size of each difference
+    and so has more power than the sign test, but it treats the pairs as
+    independent; where several pairs come from one organism they are not, and
+    the p-value is then optimistic. ``paired_difference`` with clusters is the
+    measure to read. Returns None without scipy or without a signed pair."""
+    d = [float(x) for x in differences if x is not None]
+    if not any(x != 0 for x in d):
+        return None
+    try:
+        from scipy.stats import wilcoxon
+    except Exception:
+        return None
+    return float(wilcoxon(d, zero_method="zsplit").pvalue)
+
+
 def _binom_two_sided(k, n, prob=0.5):
     """Exact two-sided binomial p for k successes in n at p=0.5 (McNemar exact)."""
     try:

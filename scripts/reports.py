@@ -298,6 +298,8 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
     included = (dec[(dec["decision"] == panel.INCLUDED) & dec["organism"].isin(organisms)]
                 if dec is not None else pd.DataFrame(columns=["organism", "antibiotic"]))
     if dec is not None:
+        put("panel.n_organisms_assessed", int(dec["organism"].nunique()),
+            "panel_decisions", "organism", "Organisms the panel rule assessed")
         put("panel.n_organisms_with_models", int(included["organism"].nunique()),
             "panel_decisions", "organism", "Organisms with at least one included pair")
         put("panel.n_antibiotics_included", int(included["antibiotic"].nunique()),
@@ -409,6 +411,17 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                     "Upper 95% bound of that difference, organism-clustered bootstrap (§6.3)")
                 put(f"{pre}_n_organisms", pd_["n_clusters"], "external_comparison", "model_id",
                     f"Organisms contributing a pair shared with {tool}")
+                put(f"{pre}_p_signed_rank",
+                    _four_significant(concordance.signed_rank_p(d)), "external_comparison",
+                    "balanced_accuracy",
+                    f"Signed-rank p, model vs {tool}; sensitivity only, pairs not independent",
+                    digits=None)
+                rows_t = comp_all[(comp_all["tool"] == tool) & (comp_all["assessable"] == 1)]
+                if {"sensitivity", "specificity"} <= set(rows_t.columns):
+                    put(f"{pre}_n_calls_all_resistant",
+                        int(((rows_t["sensitivity"] == 1) & (rows_t["specificity"] == 0)).sum()),
+                        "external_comparison", "sensitivity",
+                        f"Models where {tool} calls every genome resistant")
     lp = t.get("label_permutation_models")
     if lp is not None and "q" in lp:
         put("label_permutation.n_significant", int((lp["q"] < float(
