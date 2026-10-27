@@ -132,8 +132,12 @@ def sign_test(differences):
     the dropped pairs stay visible, because counting a tie against one side
     inflates the p-value.
 
-    Returns {n_pairs, n_positive, n_negative, n_tied, p_value}; ``p_value`` is
-    None when every pair is tied."""
+    Returns {n_pairs, n_positive, n_negative, n_tied, p_value, p_tie_to_ours,
+    p_tie_to_theirs}; ``p_value`` is None when every pair is tied. The last two
+    give the p-value when the ties are counted for one side instead of dropped,
+    so a reader can see how much the result turns on that choice. With no tie the
+    three agree.
+    """
     pos = neg = tied = 0
     for d in differences:
         if d is None:
@@ -145,8 +149,11 @@ def sign_test(differences):
         else:
             tied += 1
     n = pos + neg
-    return {"n_pairs": n + tied, "n_positive": pos, "n_negative": neg, "n_tied": tied,
-            "p_value": _binom_two_sided(min(pos, neg), n) if n else None}
+    whole = n + tied
+    return {"n_pairs": whole, "n_positive": pos, "n_negative": neg, "n_tied": tied,
+            "p_value": _binom_two_sided(min(pos, neg), n) if n else None,
+            "p_tie_to_ours": _binom_two_sided(min(pos + tied, neg), whole) if whole else None,
+            "p_tie_to_theirs": _binom_two_sided(min(pos, neg + tied), whole) if whole else None}
 
 
 def paired_difference(differences, clusters=None, n_boot=1000, seed=0):

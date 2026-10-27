@@ -114,3 +114,17 @@ def test_paired_difference_is_seeded():
 def test_paired_difference_without_pairs():
     out = C.paired_difference([])
     assert out["median"] is None and out["ci_low"] is None and out["n"] == 0
+
+
+def test_tie_rules_bracket_the_dropped_tie_p_value():
+    """One tie among the pairs: counting it for one side moves the p-value either
+    way, and 3.5 quotes all three, so the keys must not collapse."""
+    s = C.sign_test([0.1] * 35 + [-0.1] * 20 + [0.0])
+    assert (s["n_positive"], s["n_negative"], s["n_tied"]) == (35, 20, 1)
+    assert s["p_tie_to_ours"] < s["p_value"] < s["p_tie_to_theirs"]
+
+
+def test_tie_rules_agree_without_a_tie():
+    s = C.sign_test([0.1] * 4 + [-0.1] * 2)
+    assert s["n_tied"] == 0
+    assert s["p_value"] == s["p_tie_to_ours"] == s["p_tie_to_theirs"]

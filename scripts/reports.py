@@ -399,6 +399,14 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                     "balanced_accuracy",
                     f"Two-sided sign test of balanced accuracy, model vs {tool}, ties dropped",
                     digits=None)
+                # the same test with the ties counted for one side: 3.5 reports how far the
+                # result turns on a convention, so both alternatives need a key of their own
+                put(f"{pre}_p_tie_to_model", _four_significant(s["p_tie_to_ours"]),
+                    "external_comparison", "balanced_accuracy",
+                    f"That sign test with a tie counted for the model, not dropped", digits=None)
+                put(f"{pre}_p_tie_to_tool", _four_significant(s["p_tie_to_theirs"]),
+                    "external_comparison", "balanced_accuracy",
+                    f"That sign test with a tie counted for {tool}, not dropped", digits=None)
                 put(f"{pre}_median_ba_model", float(ba.loc[both, "model"].median()),
                     "external_comparison", "balanced_accuracy",
                     f"Median balanced accuracy of the model, pairs shared with {tool}")
