@@ -17,6 +17,9 @@ predict S when truly R (missed resistance — the dangerous one), band ≤ 1.5�
 
 from __future__ import annotations
 
+import random
+from statistics import fmean, median
+
 VME_BAND = 0.075   # FDA upper bound for Very Major Error rate (1.5–7.5%)
 ME_BAND = 0.03     # FDA upper bound for Major Error rate
 
@@ -144,6 +147,49 @@ def sign_test(differences):
     n = pos + neg
     return {"n_pairs": n + tied, "n_positive": pos, "n_negative": neg, "n_tied": tied,
             "p_value": _binom_two_sided(min(pos, neg), n) if n else None}
+
+
+def paired_difference(differences, clusters=None, n_boot=1000, seed=0):
+    """Median paired difference with a 95% percentile bootstrap interval.
+
+    ``clusters`` names the unit drawn with replacement — here the organism. The
+    models of one organism share genomes and lineages, so resampling the pairs
+    themselves would count them as independent evidence and narrow the interval.
+    Drawing clusters instead follows §6.3, which already reports cluster-aware
+    intervals and a paired interval for the arm difference. Pass None to draw the
+    pairs, which is only right when they are independent.
+
+    The sign test answers whether one side wins more often; this answers by how
+    much, which is what a claim of comparable accuracy needs.
+
+    Returns {n, n_clusters, median, mean, ci_low, ci_high}; the interval is None
+    when there is nothing to resample."""
+    d = [float(x) for x in differences if x is not None]
+    if not d:
+        return {"n": 0, "n_clusters": 0, "median": None, "mean": None,
+                "ci_low": None, "ci_high": None}
+    if clusters is None:
+        groups = [[x] for x in d]
+    else:
+        by: dict = {}
+        for x, c in zip(d, clusters, strict=True):
+            by.setdefault(c, []).append(float(x))
+        groups = list(by.values())
+    rng = random.Random(seed)
+    draws = []
+    for _ in range(n_boot):
+        pooled: list[float] = []
+        for _ in groups:
+            pooled.extend(groups[rng.randrange(len(groups))])
+        if pooled:
+            draws.append(median(pooled))
+    draws.sort()
+    lo = hi = None
+    if len(draws) >= 2:
+        lo = draws[int(0.025 * (len(draws) - 1))]
+        hi = draws[int(round(0.975 * (len(draws) - 1)))]
+    return {"n": len(d), "n_clusters": len(groups), "median": median(d), "mean": fmean(d),
+            "ci_low": lo, "ci_high": hi}
 
 
 def _binom_two_sided(k, n, prob=0.5):

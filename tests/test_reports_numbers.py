@@ -40,7 +40,7 @@ COMPARISON = {
 class FakeTables:
     """Only the tables numbers() reads; everything else is absent."""
 
-    config: dict = {}
+    config: dict = {"cv": {"n_bootstrap": 200}}
 
     def get(self, tid, organism=None, antibiotic=None):
         if tid == "panel_decisions":
@@ -142,6 +142,9 @@ def test_the_sign_test_counts_pairs_but_tests_only_the_signed_ones():
     assert n["compare.amrfinderplus_p"] == 1.0
     assert n["compare.amrfinderplus_median_ba_model"] == 0.8
     assert n["compare.amrfinderplus_median_ba_tool"] == 0.8
+    # Two organisms carry the three pairs, so the interval is drawn over two clusters.
+    assert n["compare.amrfinderplus_n_organisms"] == 2
+    assert n["compare.amrfinderplus_median_diff"] == 0.0
 
 
 def test_a_very_small_p_is_not_rounded_to_zero():

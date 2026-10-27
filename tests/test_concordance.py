@@ -91,3 +91,26 @@ def test_sign_test_does_not_favour_a_direction():
     a = C.sign_test([0.2] * 9 + [-0.2] * 3)
     b = C.sign_test([-0.2] * 9 + [0.2] * 3)
     assert a["p_value"] == pytest.approx(b["p_value"])
+
+
+def test_clustering_widens_the_interval():
+    """Twenty pairs from one organism and two from another: resampling the pairs
+    calls the difference positive, resampling the organisms cannot."""
+    d = [0.1] * 20 + [-0.1] * 2
+    cl = ["a"] * 20 + ["b"] * 2
+    flat = C.paired_difference(d, None, n_boot=500)
+    grouped = C.paired_difference(d, cl, n_boot=500)
+    assert flat["ci_low"] > 0
+    assert grouped["ci_low"] <= 0 <= grouped["ci_high"]
+    assert grouped["n_clusters"] == 2 and grouped["n"] == 22
+
+
+def test_paired_difference_is_seeded():
+    d, cl = [0.3, -0.1, 0.2, 0.05], ["a", "a", "b", "b"]
+    assert C.paired_difference(d, cl, seed=4) == C.paired_difference(d, cl, seed=4)
+    assert C.paired_difference(d, cl)["median"] == pytest.approx(0.125)
+
+
+def test_paired_difference_without_pairs():
+    out = C.paired_difference([])
+    assert out["median"] is None and out["ci_low"] is None and out["n"] == 0

@@ -372,6 +372,20 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                 put(f"{pre}_median_ba_tool", float(ba.loc[both, tool].median()),
                     "external_comparison", "balanced_accuracy",
                     f"Median balanced accuracy of {tool} on those pairs")
+                pd_ = concordance.paired_difference(
+                    d, [i.split("__")[0] for i in d.index],
+                    n_boot=int(t.config["cv"]["n_bootstrap"]))
+                put(f"{pre}_median_diff", pd_["median"], "external_comparison",
+                    "balanced_accuracy",
+                    f"Median paired difference in balanced accuracy, model minus {tool}")
+                put(f"{pre}_diff_ci_low", pd_["ci_low"], "external_comparison",
+                    "balanced_accuracy",
+                    "Lower 95% bound of that difference, organism-clustered bootstrap (§6.3)")
+                put(f"{pre}_diff_ci_high", pd_["ci_high"], "external_comparison",
+                    "balanced_accuracy",
+                    "Upper 95% bound of that difference, organism-clustered bootstrap (§6.3)")
+                put(f"{pre}_n_organisms", pd_["n_clusters"], "external_comparison", "model_id",
+                    f"Organisms contributing a pair shared with {tool}")
     lp = t.get("label_permutation_models")
     if lp is not None and "q" in lp:
         put("label_permutation.n_significant", int((lp["q"] < float(
