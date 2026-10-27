@@ -264,6 +264,7 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
             put(f"panel.n_{d}", int((dec["decision"] == d).sum()), "panel_decisions", "decision",
                 f"Pairs {d}")
     comparisons: list[pd.DataFrame] = []
+    genomes_qc_pass = 0
     for org in organisms:
         long = t.get("phenotypes_long", org)
         if long is not None:
@@ -273,8 +274,20 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                 "antibiotic", "Antibiotics with a phenotype")
         qc = t.get("genome_qc", org)
         if qc is not None:
-            put(f"{org}.n_genomes_qc_pass", int(F._bool(qc["pass_overall"]).sum()), "genome_qc",
+            n_pass = int(F._bool(qc["pass_overall"]).sum())
+            put(f"{org}.n_genomes_qc_pass", n_pass, "genome_qc",
                 "pass_overall", "Genomes that pass QC")
+            genomes_qc_pass += n_pass
+        if dec is not None:
+            mine = dec[dec["organism"] == org]
+            if len(mine):
+                put(f"{org}.n_pairs_assessed", len(mine), "panel_decisions", "decision",
+                    "Pairs of this organism the panel rule assessed")
+                put(f"{org}.n_pairs_included", int((mine["decision"] == panel.INCLUDED).sum()),
+                    "panel_decisions", "decision", "Pairs of this organism that entered the panel")
+                if "minority" in mine:
+                    put(f"{org}.max_minority", int(mine["minority"].max()), "panel_decisions",
+                        "minority", "Largest minority class among this organism's pairs")
         cl = t.get("lineage_clusters", org)
         if cl is not None:
             put(f"{org}.n_lineages", int(cl["Cluster"].nunique()), "lineage_clusters", "Cluster",
@@ -296,6 +309,7 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
     n_candidate_patterns = 0
     n_graded_primary = 0
     n_weak_or_none = 0
+    grade_counts: dict[str, int] = {g: 0 for g in F.GRADES}
     for org, ab in zip(included["organism"], included["antibiotic"], strict=True):
         mid = f"{org}__{ab}"
         mg = t.get("model_genomes", org, ab)
@@ -320,6 +334,9 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
             if "grade" in grades:
                 n_graded_primary += len(grades)
                 n_weak_or_none += int(grades["grade"].isin(("weak", "none")).sum())
+                vc_primary = grades["grade"].value_counts()
+                for g in F.GRADES:
+                    grade_counts[g] += int(vc_primary.get(g, 0))
             for mode in ("allele_aware", "homolog_only"):
                 vc = grades[f"{mode}_grade"].value_counts()
                 for g in F.GRADES:
@@ -342,6 +359,12 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
     if n_graded_primary:
         put("all.weak_or_none_share", n_weak_or_none / n_graded_primary, "grades_patterns",
             "grade", "Share (0-1) of the candidate patterns graded weak or none, reported rule")
+        for g in F.GRADES:
+            put(f"all.n_{g}", grade_counts[g], "grades_patterns", "grade",
+                f"Candidate patterns graded {g}, summed over models, reported rule")
+    if genomes_qc_pass:
+        put("all.n_genomes_qc_pass", genomes_qc_pass, "genome_qc", "pass_overall",
+            "Genomes that pass QC, summed over organisms")
     if comparisons:
         comp_all = pd.concat(comparisons, ignore_index=True)
         ba = comp_all.pivot_table(index="model_id", columns="tool",

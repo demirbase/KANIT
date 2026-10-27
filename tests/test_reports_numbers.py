@@ -15,7 +15,10 @@ DECISIONS = pd.DataFrame({
     "antibiotic": ["ampicillin", "ciprofloxacin", "meropenem", "amikacin"],
     "drug_class": ["beta_lactams", "quinolones", "beta_lactams", "aminoglycosides"],
     "decision": ["included", "included", "included", "excluded"],
+    "minority": [100, 200, 300, 50],
 })
+# Genomes that pass QC, per organism; the panel's own rule never sees these.
+QC = {"ecoli": [True] * 10 + [False, False], "kpneumoniae": [True] * 5}
 # Two models share genomes, so the union is smaller than the sum (3 + 3 + 2 = 8).
 GENOMES = {("ecoli", "ampicillin"): ["g1", "g2", "g3"],
            ("ecoli", "ciprofloxacin"): ["g2", "g3", "g4"],
@@ -49,6 +52,8 @@ class FakeTables:
         if tid == "model_genomes" and key in GENOMES:
             ids = GENOMES[key]
             return pd.DataFrame({"Genome ID": ids, "label": [1] * len(ids)})
+        if tid == "genome_qc" and organism in QC:
+            return pd.DataFrame({"pass_overall": QC[organism]})
         if tid == "external_comparison" and organism in COMPARISON:
             return pd.DataFrame(COMPARISON[organism],
                                 columns=["model_id", "tool", "assessable",
@@ -159,3 +164,30 @@ def test_a_very_small_p_is_not_rounded_to_zero():
     assert m._four_significant(0.058058) == 0.05806
     assert m._four_significant(0) == 0
     assert m._four_significant(None) is None
+
+
+def test_grade_totals_sum_to_the_candidate_patterns():
+    """The five grades partition the candidate set, so they add up to its size."""
+    n = _numbers()
+    grades = ("confirmed", "strong_novel", "candidate", "weak", "none")
+    assert [n[f"all.n_{g}"] for g in grades] == [1, 1, 1, 2, 1]
+    assert sum(n[f"all.n_{g}"] for g in grades) == n["all.n_candidate_patterns"]
+    assert n["all.weak_or_none_share"] == 0.5
+
+
+def test_per_organism_panel_counts_and_the_largest_minority():
+    """An organism whose pairs all fall short keeps its counts and its minority."""
+    n = _numbers()
+    assert n["ecoli.n_pairs_assessed"] == 2
+    assert n["ecoli.n_pairs_included"] == 2
+    assert n["ecoli.max_minority"] == 200
+    assert n["enterobacter_cloacae.n_pairs_assessed"] == 1
+    assert n["enterobacter_cloacae.n_pairs_included"] == 0
+    assert n["enterobacter_cloacae.max_minority"] == 50
+
+
+def test_qc_genomes_are_summed_over_organisms():
+    """Each organism has its own genomes, so the total is a sum, not a union."""
+    n = _numbers()
+    assert n["ecoli.n_genomes_qc_pass"] == 10
+    assert n["all.n_genomes_qc_pass"] == 15
