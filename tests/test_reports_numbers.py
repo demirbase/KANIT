@@ -226,10 +226,11 @@ def test_qc_genomes_are_summed_over_organisms():
 
 
 def test_layer_counts_and_shares_are_over_all_candidates():
-    """Six candidates; the shares divide by six, not by the models."""
+    """Six candidates; the shares divide by six, not by the models. A share keeps six
+    decimals so it can be rendered as a percentage with one."""
     n = _numbers()
     assert n["all.n_pass_prevalence"] == 5
-    assert n["all.share_pass_prevalence"] == round(5 / 6, 4)
+    assert n["all.share_pass_prevalence"] == round(5 / 6, 6)
     assert n["all.n_pass_cpss"] == 2
     assert n["all.n_layers_0"] == 1
     assert n["all.n_layers_1"] == 2

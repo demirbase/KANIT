@@ -315,6 +315,9 @@ def _evidence_numbers(ev: pd.DataFrame, put) -> None:
             put(f"all.top_gain_n_reason_{reason}", int(size), "grades_patterns",
                 "allele_aware_card_reasons",
                 f"Top-gain patterns denied b = 1 because of {reason}")
+            put(f"all.top_gain_share_reason_{reason}", int(size) / len(hit), "grades_patterns",
+                "allele_aware_card_reasons",
+                f"Share (0-1) of those patterns denied b = 1 because of {reason}")
         blank = top[top["allele_aware_card_state"] == "no_card_hit"]
         failed = blank[~blank["pyseer"]]
         put("all.top_gain_no_hit_n_pyseer_fail", len(failed), "grades_patterns", "pyseer",
@@ -332,6 +335,9 @@ def _evidence_numbers(ev: pd.DataFrame, put) -> None:
                 f"Share (0-1) of the top-gain patterns graded {g}")
             put(f"all.n_{g}_in_top_gain", k, "grades_patterns", "grade",
                 f"Patterns graded {g} that a model ranks in its top total gain")
+            put(f"all.n_{g}_outside_top_gain", int((ev["grade"] == g).sum()) - k,
+                "grades_patterns", "grade",
+                f"Patterns graded {g} reaching the candidate set only by stability selection")
 
     # the grade a candidate reaches without a CARD hit, with one, or with b = 1
     cand = ev[ev["grade"] == "candidate"]
@@ -390,6 +396,8 @@ def _evidence_numbers(ev: pd.DataFrame, put) -> None:
             put(f"{slug}.n_candidates_in_group", len(part), "grades_patterns", "pattern_id",
                 f"Candidate patterns of this {label}")
             for g in F.GRADES:
+                put(f"{slug}.n_{g}", int((part["grade"] == g).sum()), "grades_patterns", "grade",
+                    f"Candidate patterns of this {label} graded {g}")
                 put(f"{slug}.share_{g}", float((part["grade"] == g).mean()), "grades_patterns",
                     "grade", f"Share (0-1) of this {label}'s candidates graded {g}")
 
@@ -397,7 +405,11 @@ def _evidence_numbers(ev: pd.DataFrame, put) -> None:
 def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
     rows: list[dict] = []
 
-    def put(key, value, table, column, description, digits=4):
+    def put(key, value, table, column, description, digits=None):
+        # A share rounded to four decimals cannot be rendered as a percentage with one
+        # decimal: 0.074471 becomes 0.0745, which reads as 7.5 % instead of 7.4 %.
+        if digits is None:
+            digits = 6 if description.startswith("Share (0-1)") else 4
         if value is None or (isinstance(value, float) and pd.isna(value)):
             return
         if isinstance(value, float) and digits is not None:
@@ -411,6 +423,24 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
         for d in ("included", "excluded", "blocked"):
             put(f"panel.n_{d}", int((dec["decision"] == d).sum()), "panel_decisions", "decision",
                 f"Pairs {d}")
+        # 3.1 splits the excluded pairs by why they fell out, and quotes the minority class of
+        # the pairs that stayed; both were literals because no key carried them.
+        exc = dec[dec["decision"] == "excluded"]
+        if len(exc) and "reason" in exc:
+            short = exc["reason"].str.startswith("minority")
+            put("panel.n_excluded_small_minority", int(short.sum()), "panel_decisions", "reason",
+                "Pairs excluded because the minority class is below the threshold")
+            put("panel.n_excluded_other_reason", int((~short).sum()), "panel_decisions", "reason",
+                "Pairs excluded for any other reason, e.g. a label naming no single drug")
+        inc_min = pd.to_numeric(
+            dec.loc[dec["decision"] == panel.INCLUDED, "minority"], errors="coerce").dropna()
+        if len(inc_min):
+            put("panel.median_minority_included", float(inc_min.median()), "panel_decisions",
+                "minority", "Median minority class of the included pairs")
+            put("panel.min_minority_included", int(inc_min.min()), "panel_decisions", "minority",
+                "Smallest minority class of the included pairs")
+            put("panel.max_minority_included", int(inc_min.max()), "panel_decisions", "minority",
+                "Largest minority class of the included pairs")
     comparisons: list[pd.DataFrame] = []
     genomes_qc_pass = 0
     for org in organisms:
@@ -496,6 +526,13 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                 for g in F.GRADES:
                     put(f"{mid}.n_{g}.{mode}", int(vc.get(g, 0)), "grades_patterns",
                         f"{mode}_grade", f"Patterns graded {g}, {mode.replace('_', '-')} mode")
+        cpss = t.get("cpss_patterns", org, ab)
+        if cpss is not None and "pi" in cpss and len(cpss):
+            pi = pd.to_numeric(cpss["pi"], errors="coerce")
+            put(f"{mid}.max_cpss_pi", float(pi.max()), "cpss_patterns", "pi",
+                "Highest selection frequency the stability selection reached")
+            put(f"{mid}.n_patterns_cpss_pi_positive", int((pi > 0).sum()), "cpss_patterns", "pi",
+                "Patterns the stability selection picked at least once")
         cands = t.get("candidates", org, ab)
         if grades is not None and cands is not None and "grade" in grades:
             evidence.append(grades.merge(cands, on="pattern_id", how="left")
@@ -511,6 +548,54 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                     "grade", f"Patterns nominated by association graded {g}, primary mode")
     if evidence:
         _evidence_numbers(pd.concat(evidence, ignore_index=True), put)
+    # 3.1 quotes the spread of model performance and of the gap between the two arms. Both are
+    # medians over models, so they belong here rather than in any one model's keys.
+    auc: dict[str, dict[str, float]] = {"lineage_aware": {}, "lineage_blind": {}}
+    for row in rows:
+        for arm in auc:
+            if row["key"].endswith(f".roc_auc.{arm}"):
+                auc[arm][row["key"].rsplit(".", 2)[0]] = row["value"]
+    if auc["lineage_aware"]:
+        a_vals = pd.Series(auc["lineage_aware"])
+        put("models.roc_auc_median.lineage_aware", float(a_vals.median()), "repeat_metrics",
+            "roc_auc", "Median over models of the lineage-aware ROC-AUC")
+        put("models.roc_auc_min.lineage_aware", float(a_vals.min()), "repeat_metrics", "roc_auc",
+            "Lowest lineage-aware ROC-AUC of any model")
+        put("models.roc_auc_max.lineage_aware", float(a_vals.max()), "repeat_metrics", "roc_auc",
+            "Highest lineage-aware ROC-AUC of any model")
+        shared = sorted(set(auc["lineage_aware"]) & set(auc["lineage_blind"]))
+        if shared:
+            gap = pd.Series({m: auc["lineage_blind"][m] - auc["lineage_aware"][m]
+                             for m in shared})
+            put("models.arm_gap_median", float(gap.median()), "repeat_metrics", "roc_auc",
+                "Median over models of the random-split minus lineage-aware ROC-AUC")
+            put("models.arm_gap_max", float(gap.max()), "repeat_metrics", "roc_auc",
+                "Largest such gap")
+            put("models.arm_gap_min", float(gap.min()), "repeat_metrics", "roc_auc",
+                "Smallest such gap; above zero means no model is an exception")
+            put("models.n_arm_gap_positive", int((gap > 0).sum()), "repeat_metrics", "roc_auc",
+                "Models where the random split gives the higher ROC-AUC")
+            by_organism = {}
+            for org in organisms:
+                mine = gap[[m for m in gap.index if m.startswith(f"{org}__")]]
+                if len(mine):
+                    by_organism[org] = float(mine.median())
+                    put(f"{org}.arm_gap_median", float(mine.median()), "repeat_metrics",
+                        "roc_auc", "Median arm gap over this organism's models")
+                    put(f"{org}.arm_gap_max", float(mine.max()), "repeat_metrics", "roc_auc",
+                        "Largest arm gap among this organism's models")
+                own = pd.Series({m: v for m, v in auc["lineage_aware"].items()
+                                 if m.startswith(f"{org}__")})
+                if len(own):
+                    put(f"{org}.roc_auc_median.lineage_aware", float(own.median()),
+                        "repeat_metrics", "roc_auc",
+                        "Median lineage-aware ROC-AUC of this organism's models")
+            if by_organism:
+                put("models.arm_gap_median_by_organism_min", min(by_organism.values()),
+                    "repeat_metrics", "roc_auc",
+                    "Smallest of the per-organism median arm gaps")
+                put("models.arm_gap_median_by_organism_max", max(by_organism.values()),
+                    "repeat_metrics", "roc_auc", "Largest of the per-organism median arm gaps")
     if genomes_in_models:
         put("all.n_genomes_in_models", len(genomes_in_models), "model_genomes", "Genome ID",
             "Distinct genomes entering at least one model")
@@ -523,6 +608,8 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
         for g in F.GRADES:
             put(f"all.n_{g}", grade_counts[g], "grades_patterns", "grade",
                 f"Candidate patterns graded {g}, summed over models, reported rule")
+            put(f"all.share_{g}", grade_counts[g] / n_graded_primary, "grades_patterns", "grade",
+                f"Share (0-1) of the candidate patterns graded {g}, reported rule")
     if genomes_qc_pass:
         put("all.n_genomes_qc_pass", genomes_qc_pass, "genome_qc", "pass_overall",
             "Genomes that pass QC, summed over organisms")
