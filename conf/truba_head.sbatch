@@ -54,7 +54,10 @@ LOCK=$AMR_WORK/kanit_head.lock
 take_lock() { mkdir "$LOCK" 2>/dev/null && echo "${SLURM_JOB_ID:-$$}" > "$LOCK/owner"; }
 if ! take_lock; then
     owner=$(cat "$LOCK/owner" 2>/dev/null)
-    state=$(sacct -n -X -j "${owner:-0}" -o State 2>/dev/null | head -1 | awk '{print $1}')
+    # State%40: at sacct's default width of 10 a state longer than the field is cut and marked
+    # with '+' ("CANCELLED by <uid>" reads CANCELLED+, OUT_OF_MEMORY reads OUT_OF_ME+), which no
+    # case below matches, so a head that died that way would keep its lock (2026-11-01)
+    state=$(sacct -n -X -j "${owner:-0}" -o State%40 2>/dev/null | head -1 | awk '{sub(/\+$/, "", $1); print $1}')
     case "$state" in
     COMPLETED|FAILED|CANCELLED|TIMEOUT|NODE_FAIL|OUT_OF_MEMORY|PREEMPTED|BOOT_FAIL|DEADLINE|REVOKED)
         echo "$(date '+%F %T') head job ${SLURM_JOB_ID:-}: the lock of $owner is stale ($state)" >> "$OUT"
