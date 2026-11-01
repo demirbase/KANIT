@@ -1026,6 +1026,20 @@ steps:
     summary: {location: kb_dir, file: kb_report.json}
     files: [{location: kb_dir, file: kanit.sqlite, kind: file}]
     figure: null
+  kb_package:
+    script: kb_package.py
+    entry: KB
+    level: global
+    main: null
+    summary: {location: kb_dir, file: package_report.json}
+    files:
+      - {location: kb_dir, file: package/kanit.sqlite, kind: file}
+      - {location: kb_dir, file: package/kanit_tables.zip, kind: file}
+      - {location: kb_dir, file: package/README.md, kind: file}
+      - {location: kb_dir, file: package/DATA_DICTIONARY.md, kind: file}
+      - {location: kb_dir, file: package/CITATION.cff, kind: file}
+      - {location: kb_dir, file: package/SHA256SUMS, kind: file}
+    figure: null
   hypotheses:
     script: hypotheses.py
     entry: KB

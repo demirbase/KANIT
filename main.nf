@@ -9,7 +9,7 @@
  *                     cross-validation, evidence layers, grades, label
  *                     permutation and the comparison with genotype-based tools
  *   -entry CONTEXT    login node (internet): NCBI context of the candidate unitigs
- *   -entry KB         the knowledge base and the hypothesis tests
+ *   -entry KB         the knowledge base, the hypothesis tests and its release package
  *   -entry CABBAGE    external validation of the final models on CABBAGE isolates
  *                     (secondary analysis, protocol §14 item 4; after the primary run)
  *
@@ -34,7 +34,7 @@ include { CABBAGE_LIGHT as CABBAGE_PREPARE; CABBAGE_LIGHT as CABBAGE_EXTERNAL_CO
           CABBAGE_HEAVY as CABBAGE_ASSIGN; CABBAGE_HEAVY as CABBAGE_CALL;
           CABBAGE_HEAVY as CABBAGE_PREDICT } from './modules/local/cabbage'
 include { CONTEXT_QUERY; CONTEXT_BUILD } from './modules/local/context'
-include { BUILD_KB; HYPOTHESES } from './modules/local/kb'
+include { BUILD_KB; HYPOTHESES; KB_PACKAGE } from './modules/local/kb'
 include { FINISH } from './subworkflows/local/finish'
 include { runManifestStart; runManifestComplete } from './modules/local/run'
 include { kanitConfig } from './modules/local/common'
@@ -152,5 +152,6 @@ workflow KB {
     CONTEXT_BUILD(orgs)
     BUILD_KB(CONTEXT_BUILD.out.done.map { org, r -> r }.collect())
     HYPOTHESES(BUILD_KB.out.done)
-    FINISH(HYPOTHESES.out.done.collect(), 'KB')
+    KB_PACKAGE(HYPOTHESES.out.done)        // last, so that its failure cannot stop the tests
+    FINISH(KB_PACKAGE.out.done.collect(), 'KB')
 }

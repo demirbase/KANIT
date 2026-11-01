@@ -479,3 +479,21 @@ def test_reports_from_the_tables(built, monkeypatch):
     assert int(t.loc[f"{MID}.n_genomes", "value"]) == 150
     assert int(t.loc[f"{MID}.association.n_patterns", "value"]) == 3
     assert t.loc[f"{MID}.roc_auc.lineage_aware", "source_table"] == "repeat_metrics"
+
+
+def test_the_built_knowledge_base_packages(built, tmp_path):
+    """The release package (kb_package.py) of a knowledge base built by build_kb.py."""
+    import shutil
+    import zipfile
+    out = built[-1]
+    d = tmp_path / "kb"
+    d.mkdir()
+    shutil.copy2(out, d / "kanit.sqlite")
+    shutil.copy2(out.parent / "kb_report.json", d / "kb_report.json")
+    r = _script("kb_package.py").package(d / "kanit.sqlite", d / "package")
+    assert r["draft"] and r["tables"]["candidate"] == built[4]["tables"]["candidate"]
+    with zipfile.ZipFile(d / "package" / "kanit_tables.zip") as z:
+        dp = json.loads(z.read("datapackage.json"))
+        grade = pd.read_csv(z.open("tables/grade.csv"), keep_default_na=False)
+    assert len(dp["resources"]) == len(built[4]["tables"])
+    assert set(grade["grade"]) <= {"confirmed", "strong_novel", "candidate", "weak", "none"}

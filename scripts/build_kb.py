@@ -310,8 +310,8 @@ def aro_table(org: str, config: dict, src: Sources) -> tuple[pd.DataFrame, dict]
 
 
 # ---- build ----------------------------------------------------------------------
-def build(config: dict, out_file: Path, *, kb_version: str,
-          allow_missing_context: bool = False) -> dict:
+def build(config: dict, out_file: Path, *, kb_version: str, allow_missing_context: bool = False,
+          license: str | None = None, doi: str | None = None) -> dict:
     src = Sources()
     decisions = src.csv(resolve_path("panel_dir", config=config) / "panel_decisions.csv")
     included = decisions[decisions["decision"] == panel.INCLUDED]
@@ -425,7 +425,7 @@ def build(config: dict, out_file: Path, *, kb_version: str,
                 "config_sha256": hashlib.sha256(Path(CONFIG_FILE).read_bytes()).hexdigest(),
                 "code_commit": git_commit_hash(), "code_dirty": git_is_dirty(),
                 "card_version": next(iter(cards)) if cards else None,
-                "tools": json.dumps(tools, sort_keys=True), "license": None, "doi": None}]))
+                "tools": json.dumps(tools, sort_keys=True), "license": license, "doi": doi}]))
         report = kb.validate(conn)
     except BaseException:
         conn.close()
@@ -447,12 +447,15 @@ def main():
     ap.add_argument("--kb-version", default="1.0.0")
     ap.add_argument("--allow-missing-context", action="store_true",
                     help="build without the NCBI context of an organism (development only)")
+    ap.add_argument("--license", default=None,
+                    help="data licence of the release, an SPDX identifier (e.g. CC-BY-4.0)")
+    ap.add_argument("--doi", default=None, help="DOI reserved for the deposit of the release")
     ap.add_argument("--out", type=Path, default=None,
                     help="SQLite file (default: paths_organism.kb_dir/kanit.sqlite)")
     args = ap.parse_args()
     out = args.out or resolve_path("kb_dir", config=config) / "kanit.sqlite"
     r = build(config, out, kb_version=args.kb_version,
-              allow_missing_context=args.allow_missing_context)
+              allow_missing_context=args.allow_missing_context, license=args.license, doi=args.doi)
     t = r["tables"]
     routes = r["patterns_by_route"]
     print(f"KANIT {args.kb_version} -> {out}: {t['model']} models, {routes['model']} candidates "

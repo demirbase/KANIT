@@ -61,6 +61,14 @@
                     "default": false,
                     "description": "KB entry only: build without the NCBI context of an organism (development builds)."
                 },
+                "kb_license": {
+                    "type": "string",
+                    "description": "KB entry only: data licence of the release, an SPDX identifier (e.g. CC-BY-4.0). Without it the release package is a draft."
+                },
+                "kb_doi": {
+                    "type": "string",
+                    "description": "KB entry only: DOI reserved for the deposit of the release. Without it the release package is a draft."
+                },
                 "trace_dir": {
                     "type": "string",
                     "format": "directory-path",

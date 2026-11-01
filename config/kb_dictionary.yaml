@@ -1,0 +1,411 @@
+# ============================================================================
+# KNOWLEDGE BASE DATA DICTIONARY — the description of every table and column
+# ============================================================================
+# The public data dictionary of the release package (scripts/kb_package.py:
+# DATA_DICTIONARY.md and datapackage.json) is generated from this file and from
+# the database itself. Types, NOT NULL, keys and allowed values are read from the
+# schema (scripts/lib/knowledge_base.py), never written here, so they cannot drift.
+# What only a person can say lives here: what a table holds, which protocol section
+# defines it, and what each column means. The package step stops when this file
+# does not describe exactly the tables and columns of the database.
+#
+# tables: <name>
+#   group        heading the table is listed under
+#   section      protocol section that defines the content ("" = none)
+#   description  one sentence
+#   columns      <column>: description
+# views: <name>: description
+# ============================================================================
+schema_version: "1.0"
+
+tables:
+  # ---- release and provenance ------------------------------------------------
+  release:
+    group: Release and provenance
+    section: ""
+    description: "The release record: versions and checksums of the protocol, configuration, code and tools that produced this knowledge base. One row."
+    columns:
+      kb_version: "Version of this knowledge base release"
+      schema_version: "Version of the database schema"
+      created_at: "Time of the build (UTC, ISO 8601)"
+      protocol_version: "Version of the analysis protocol"
+      protocol_sha256: "SHA-256 checksum of the protocol text in force"
+      config_sha256: "SHA-256 checksum of the analysis configuration file"
+      code_commit: "Git commit of the code that built the knowledge base"
+      code_dirty: "1 when the code had uncommitted changes at build time"
+      card_version: "CARD version that RGI used"
+      tools: "Versions of the tools, a JSON object {tool: version}"
+      license: "Data licence (SPDX identifier); empty in a draft build"
+      doi: "DOI of the deposited release; empty in a draft build"
+  source_file:
+    group: Release and provenance
+    section: ""
+    description: "Every step output the build read, with its checksum."
+    columns:
+      path: "Path of the file, relative to the project root"
+      sha256: "SHA-256 checksum of the file"
+      bytes: "Size of the file in bytes"
+  data_snapshot:
+    group: Release and provenance
+    section: "§2.1"
+    description: "The frozen BV-BRC snapshot of each organism: the queries, their time and the number of genomes."
+    columns:
+      organism_id: "Organism (organism.organism_id)"
+      source: "API queried"
+      api_version: "Version of the API"
+      queried_at: "Time of the query"
+      frozen_at: "Time the snapshot was frozen"
+      filters: "The genome query and the phenotype-record query, a JSON object"
+      n_genomes: "Phenotyped genomes whose assembly was downloaded and passed its checks"
+      sha256: "SHA-256 checksum of the snapshot record, which lists the checksums of its files"
+  reference_database:
+    group: Release and provenance
+    section: "§13"
+    description: "The reference databases the steps used, with their versions and checksums."
+    columns:
+      name: "Database"
+      version: "Version, as read from the database itself"
+      downloaded_on: "Date of the download"
+      source: "Where it was downloaded from"
+      n_files: "Files of the database"
+      sha256: "SHA-256 checksum of the list of its files' checksums"
+  parameter:
+    group: Release and provenance
+    section: ""
+    description: "Every threshold and setting of the protocol, with the section that defines it, so that each decision in the knowledge base can be derived again."
+    columns:
+      name: "Parameter, as its path in the configuration"
+      value: "Value, as text"
+      protocol_section: "Protocol section that defines the parameter"
+
+  # ---- reference data --------------------------------------------------------
+  organism:
+    group: Reference data
+    section: ""
+    description: "The organisms of the panel."
+    columns:
+      organism_id: "Short name of the organism (e.g. ecoli)"
+      name: "Species name"
+      ncbi_taxids: "NCBI Taxonomy identifiers at or below which the organism's genomes lie, semicolon-separated"
+      gram_stain: "Gram stain"
+      phylum: "Phylum"
+  antibiotic:
+    group: Reference data
+    section: "Appendix A"
+    description: "The antibiotics, with their drug class and the CARD terms of that class."
+    columns:
+      antibiotic_id: "Canonical name of the antibiotic"
+      drug_class: "Drug class; empty when the antibiotic has no registered class"
+      card_drug_classes: "CARD drug-class terms of the class (protocol Appendix A), semicolon-separated"
+      who_aware: "WHO AWaRe category"
+  aro:
+    group: Reference data
+    section: "§8.1"
+    description: "The CARD terms (ARO) that RGI reported in the genomes of the models."
+    columns:
+      aro_accession: "ARO accession (ARO:nnnnnnn)"
+      name: "CARD term name"
+      model_type: "CARD model type"
+      gene_family: "AMR gene family"
+      drug_class: "CARD drug classes, semicolon-separated"
+      mechanism: "Resistance mechanism"
+  genome:
+    group: Reference data
+    section: "§2.1–§2.4"
+    description: "Every genome of the snapshots, with its assembly quality, lineage cluster and NCBI identifiers."
+    columns:
+      genome_id: "BV-BRC genome identifier"
+      organism_id: "Organism"
+      checkm2_completeness: "CheckM2 completeness (%)"
+      checkm2_contamination: "CheckM2 contamination (%)"
+      n50: "N50 of the assembly (bp, QUAST)"
+      n_contigs: "Contigs of the assembly (QUAST)"
+      total_length: "Total length of the assembly (bp, QUAST)"
+      qc_pass: "1 when the assembly passes quality control (§2.3)"
+      lineage_cluster: "PopPUNK lineage cluster (§2.4); empty when none was assigned"
+      ncbi_taxid: "NCBI Taxonomy identifier of the genome"
+      assembly_accession: "NCBI assembly accession, where BV-BRC records one"
+      sra_accession: "SRA run accessions, comma-separated"
+      biosample_accession: "NCBI BioSample accession"
+  phenotype:
+    group: Reference data
+    section: "§2.2"
+    description: "The binary phenotype of every genome and antibiotic."
+    columns:
+      genome_id: "Genome"
+      antibiotic_id: "Antibiotic"
+      resistant: "1 resistant, 0 susceptible"
+
+  # ---- panel and models ------------------------------------------------------
+  panel_decision:
+    group: Panel and models
+    section: "§3"
+    description: "The panel decision of every organism–antibiotic pair, with its counts and reason."
+    columns:
+      organism_id: "Organism"
+      antibiotic_id: "Antibiotic"
+      decision: "included (a model is built); excluded (not a single drug, or too few genomes in the minority class, parameter panel.min_minority); blocked (passes the rule but the antibiotic has no registered class)"
+      reason: "Reason of the decision"
+      n_resistant: "Eligible resistant genomes"
+      n_susceptible: "Eligible susceptible genomes"
+  model:
+    group: Panel and models
+    section: "§3–§6"
+    description: "One row per included pair: the model's genomes, features and final model."
+    columns:
+      model_id: "Model identifier, organism__antibiotic"
+      organism_id: "Organism"
+      antibiotic_id: "Antibiotic"
+      n_genomes: "Genomes of the model"
+      n_resistant: "Resistant genomes"
+      n_susceptible: "Susceptible genomes"
+      n_lineages: "PopPUNK lineage clusters among the genomes"
+      largest_lineage_share: "Share of the genomes in the largest lineage cluster"
+      n_unitigs: "Unitigs after the frequency filter (§4)"
+      n_patterns: "Distinct presence/absence patterns of those unitigs (§4)"
+      evaluable: "1 when the lineage-aware cross-validation design is evaluable (§6.2)"
+      final_n_trees: "Trees of the final model"
+      final_params: "Hyperparameters of the final model, a JSON object"
+  model_genome:
+    group: Panel and models
+    section: "§3"
+    description: "The genomes of each model, with their label, lineage and row in the model's matrix."
+    columns:
+      model_id: "Model"
+      genome_id: "Genome"
+      row_index: "Row of the genome in the model's matrix, and its bit position in pattern.carriers"
+      resistant: "1 resistant, 0 susceptible"
+      lineage_cluster: "PopPUNK lineage cluster"
+  model_metric:
+    group: Panel and models
+    section: "§6.3"
+    description: "The pooled out-of-fold metrics of each model in both cross-validation arms, and their difference."
+    columns:
+      model_id: "Model"
+      arm: "Cross-validation arm: lineage_aware, lineage_blind, or lineage_blind_minus_lineage_aware (the difference of the two)"
+      metric: "Metric or count, as the cross-validation step names it (e.g. roc_auc, pr_auc, balanced_accuracy, mcc, brier, n_repeats)"
+      value: "Value of the metric"
+      ci_low: "Lower bound of the lineage-cluster bootstrap interval (ROC-AUC only)"
+      ci_high: "Upper bound of the lineage-cluster bootstrap interval (ROC-AUC only)"
+  label_permutation:
+    group: Panel and models
+    section: "§8.6"
+    description: "The label permutation test of each model: whether it predicts better than with permuted labels."
+    columns:
+      model_id: "Model"
+      auc_observed: "Pooled out-of-fold ROC-AUC with the true labels"
+      null_mean: "Mean ROC-AUC with permuted labels"
+      null_sd: "Standard deviation of the ROC-AUC with permuted labels"
+      z: "(auc_observed − null_mean) / null_sd"
+      n_permutations: "Label permutations"
+      p: "Permutation p value, (1 + permutations with ROC-AUC at least the observed) / (n_permutations + 1)"
+      q: "Benjamini–Hochberg q value across models"
+      flag: "permutation_not_significant when q is at least α; empty otherwise. A flagged model stays in the knowledge base and in every analysis"
+
+  # ---- features --------------------------------------------------------------
+  unitig:
+    group: Features
+    section: "§4"
+    description: "The unitigs of the graded patterns, with a persistent identifier derived from the sequence."
+    columns:
+      unitig_id: "KU followed by the first 20 hexadecimal digits of the SHA-256 of the canonical sequence; the same unitig has the same identifier in every model and release"
+      sequence: "Canonical sequence: the lexicographically smaller of the sequence and its reverse complement"
+      length: "Length (bp)"
+  pattern:
+    group: Features
+    section: "§4"
+    description: "The presence/absence patterns of each model that a layer tested or the grading rule graded."
+    columns:
+      model_id: "Model"
+      pattern_id: "Pattern number, valid within its model and release only; the persistent reference is (model_id, unitig_id)"
+      n_members: "Unitigs with this pattern"
+      n_present: "Genomes that carry the pattern"
+      carriers: "Genomes that carry the pattern, for graded patterns only: one bit per genome in model_genome.row_index order (see Conventions)"
+  pattern_member:
+    group: Features
+    section: "§4"
+    description: "The unitigs of each graded pattern."
+    columns:
+      model_id: "Model"
+      pattern_id: "Pattern"
+      unitig_id: "Unitig"
+  candidate:
+    group: Features
+    section: "§7, §14 item 6"
+    description: "The graded patterns of each model and the route that led each to its grade."
+    columns:
+      model_id: "Model"
+      pattern_id: "Pattern"
+      route: "model: a candidate of the model (§7), whose grade is a primary result; association: nominated by pyseer association (§14 item 6), graded with its own layers, reported apart and entering no hypothesis test"
+      source: "Why the pattern is graded: gain (among the top patterns by total gain), cpss (stable in CPSS), both, or pyseer (the association route)"
+      gain_rank: "Rank by total gain in the final model; empty for the association route"
+      total_gain: "Total gain in the final model; empty for the association route"
+
+  # ---- evidence layers (measurements) ----------------------------------------
+  prevalence_result:
+    group: Evidence layers (measurements)
+    section: "§8.2"
+    description: "The prevalence layer of each graded pattern: its carriage among resistant and susceptible genomes."
+    columns:
+      model_id: "Model"
+      pattern_id: "Pattern"
+      present_resistant: "Resistant genomes that carry the pattern"
+      present_susceptible: "Susceptible genomes that carry the pattern"
+      prev_resistant: "Share of the resistant genomes that carry the pattern"
+      prev_susceptible: "Share of the susceptible genomes that carry the pattern"
+      delta: "prev_resistant − prev_susceptible"
+      direction: "Sign of delta: R (more common among resistant genomes), S, or none"
+      fisher_p: "Two-sided Fisher exact test p value"
+      q: "Benjamini–Hochberg q value over the patterns of the route (the candidates, or the patterns nominated by association)"
+      passes: "1 when the layer passes"
+  mda_result:
+    group: Evidence layers (measurements)
+    section: "§8.3"
+    description: "The permutation importance layer of each graded pattern: the mean decrease in ROC-AUC when the pattern is permuted in the outer-fold models."
+    columns:
+      model_id: "Model"
+      pattern_id: "Pattern"
+      n_fold_models_using: "Outer-fold models that use the pattern"
+      auc_observed: "ROC-AUC with the pattern intact"
+      auc_permuted: "Mean ROC-AUC with the pattern permuted"
+      mda: "Mean decrease in ROC-AUC"
+      n_permuted_ge_observed: "Permutations with ROC-AUC at least the observed"
+      p: "Permutation p value"
+      q: "Benjamini–Hochberg q value"
+      passes: "1 when the layer passes"
+  mda_cluster:
+    group: Evidence layers (measurements)
+    section: "§8.3"
+    description: "Sensitivity analysis of the permutation importance layer: correlated graded patterns permuted together as one cluster."
+    columns:
+      model_id: "Model"
+      pattern_id: "Pattern"
+      cluster: "Cluster of correlated patterns (|r| at least mda.cluster_r) that holds the pattern"
+      cluster_size: "Patterns in the cluster"
+      cluster_patterns: "Pattern numbers of the cluster, semicolon-separated"
+      mda: "Mean decrease in ROC-AUC when the cluster is permuted"
+      p: "Permutation p value"
+      q: "Benjamini–Hochberg q value"
+      passes: "1 when the cluster passes"
+  cpss_result:
+    group: Evidence layers (measurements)
+    section: "§8.4"
+    description: "The stability selection layer (CPSS) of every pattern of the χ² prefilter and of every graded pattern."
+    columns:
+      model_id: "Model"
+      pattern_id: "Pattern"
+      in_prefilter: "1 when the pattern is in the χ² prefilter"
+      chi2: "χ² statistic of the prefilter; empty outside it"
+      n_selected: "Times the pattern was selected over the complementary pairs of subsamples"
+      pi: "Selection frequency π (0 outside the prefilter)"
+      passes: "1 when π reaches the threshold (cpss.pi_threshold)"
+  pyseer_result:
+    group: Evidence layers (measurements)
+    section: "§8.5"
+    description: "The association layer: the pyseer linear mixed model result of every tested pattern."
+    columns:
+      model_id: "Model"
+      pattern_id: "Pattern"
+      af: "Allele frequency: share of the genomes that carry the pattern"
+      beta: "Effect size"
+      beta_se: "Standard error of the effect size"
+      lrt_p: "Likelihood ratio test p value"
+      notes: "pyseer notes; empty when none"
+      passes: "1 when the pattern is significant"
+  card_hit:
+    group: Evidence layers (measurements)
+    section: "§8.1"
+    description: "The CARD terms of the RGI hits that overlap a graded unitig, in the genomes where the unitig was located."
+    columns:
+      model_id: "Model"
+      unitig_id: "Unitig"
+      aro_accession: "CARD term of the hit"
+  card_annotation:
+    group: Evidence layers (measurements)
+    section: "§8.1"
+    description: "The CARD state of every graded unitig in both modes, and why a hit did not give b = 1."
+    columns:
+      model_id: "Model"
+      unitig_id: "Unitig"
+      mode: "allele_aware (the rule) or homolog_only (its sensitivity analysis, in which variant and overexpression hits never give b = 1)"
+      state: "b (a hit gives b = 1 in more than half of the located genomes), card_hit_without_b, or no_card_hit"
+      reasons: "Why the hits did not give b = 1, semicolon-separated: co_carried_known_gene, near_universal_gene, allele_not_in_unitig, b_in_minority_of_located_genomes, variant_not_counted; empty when none"
+      n_b: "Located genomes in which b = 1"
+      located_genomes: "Genomes in which the unitig was located (at most card.max_located_genomes), semicolon-separated"
+
+  # ---- inference -------------------------------------------------------------
+  grade:
+    group: Inference
+    section: "§9"
+    description: "The evidence grade of every graded pattern under both rules."
+    columns:
+      model_id: "Model"
+      pattern_id: "Pattern"
+      rule: "allele_aware or homolog_only"
+      primary_rule: "1 for the rule reported as the grade (parameter grading.rule)"
+      card_state: "CARD state of the pattern: the best state of its unitigs"
+      card_reasons: "Reasons of the pattern's unitigs, semicolon-separated; empty when none"
+      n_layers: "Statistical layers passed (prevalence, mda, cpss, pyseer)"
+      layers_passed: "The layers passed, semicolon-separated, in the order prevalence, mda, cpss, pyseer; empty when none"
+      grade: "Evidence grade. A grade states association with resistance, not that the pattern causes it"
+
+  # ---- context (not evidence) ------------------------------------------------
+  unitig_context:
+    group: Context (not evidence)
+    section: "§12"
+    description: "The NCBI nt context of graded unitigs, searched within the organism. Context is shown beside the evidence and enters no grade."
+    columns:
+      unitig_id: "Unitig"
+      organism_id: "Organism within which nt was searched"
+      source: "Source of the context"
+      queried_on: "Date of the query"
+      nt_release: "Release date of nt, as the BLAST report states it"
+      n_hits: "Hits"
+      best_accession: "Accession of the best hit"
+      best_title: "Title of the best hit"
+      best_identity: "Identity of the best hit (%)"
+      best_coverage: "Query coverage of the best hit (fraction of the unitig)"
+      best_evalue: "E value of the best hit"
+      gene: "Gene of the best hit (GenBank)"
+      product: "Product of the best hit (GenBank)"
+      plasmid_share: "Share of the hits on plasmid records"
+
+  # ---- comparison with genotype-based prediction -----------------------------
+  external_call:
+    group: Comparison with genotype-based prediction
+    section: "§11"
+    description: "The AMRFinderPlus elements of every genome of the models: the genotype-based reference."
+    columns:
+      genome_id: "Genome"
+      call_index: "Number of the element within the genome"
+      element_symbol: "Element symbol"
+      type: "Element type"
+      subtype: "Element subtype"
+      scope: "core or plus"
+      class: "AMRFinderPlus class"
+      subclass: "AMRFinderPlus subclass"
+  external_comparison:
+    group: Comparison with genotype-based prediction
+    section: "§11"
+    description: "Agreement of AMRFinderPlus, ResFinder, RGI and the model with the phenotypes of each model's genomes."
+    columns:
+      model_id: "Model"
+      tool: "Predictor: amrfinderplus, resfinder, rgi_all, rgi_without_near_universal, or model (the model's out-of-fold predictions)"
+      assessable: "1 when the predictor covers the antibiotic"
+      n: "Genomes compared"
+      n_resistant: "Resistant genomes among them"
+      tp: "True positives (resistant predicted resistant)"
+      fp: "False positives"
+      tn: "True negatives"
+      fn: "False negatives"
+      sensitivity: "Sensitivity"
+      specificity: "Specificity"
+      balanced_accuracy: "Balanced accuracy"
+      very_major_error_rate: "Share of the resistant genomes predicted susceptible"
+      major_error_rate: "Share of the susceptible genomes predicted resistant"
+
+views:
+  v_biomarker: "One row per graded pattern: model, route, the grade under both rules, CARD state, the statistics of the four layers and the CARD genes hit by its unitigs."
+  v_unitig: "One row per unitig of a graded pattern, with the primary grade of its pattern and its own allele-aware CARD state."
+  v_model: "One row per model: its size, the ROC-AUC of both arms with the bootstrap interval, the label permutation, and its counts of candidates, confirmed and strong_novel candidates, and patterns nominated by association."
+  v_novel: "The strong_novel candidates, with the NCBI context of their longest unitig beside them; context_is_evidence is 0 in every row."
