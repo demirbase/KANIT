@@ -468,16 +468,18 @@ def _hypothesis_numbers(summary: dict, put, pre: str, label: str = "") -> None:
 
     for test, field, key, table, column, text in HYPOTHESIS_KEYS:
         x = val((summary.get(test) or {}).get(field))
-        put(f"{pre}.{key}", _four_significant(x) if field.startswith("p") else x, table, column,
-            label + text)
+        if field.startswith("p"):
+            put(f"{pre}.{key}", _four_significant(x), table, column, label + text, digits=None)
+        else:
+            put(f"{pre}.{key}", x, table, column, label + text)
     for thr, tag in EXPECTED_THRESHOLDS.items():
         s = (summary.get("H7") or {}).get(thr) or {}
         for field, key, text in EXPECTED_KEYS:
             x = val(s.get(field))
-            put(f"{pre}.expected.{key}.{tag}", _four_significant(x) if field == "secondary_p"
-                else x, "h7_determinants", "best_grade",
-                f"{label}Protocol H7, threshold {thr}: {text}",
-                digits=6 if field == "share_confirmed" else None)
+            p_value = field == "secondary_p"
+            put(f"{pre}.expected.{key}.{tag}", _four_significant(x) if p_value else x,
+                "h7_determinants", "best_grade", f"{label}Protocol H7, threshold {thr}: {text}",
+                digits=None if p_value else 6 if field == "share_confirmed" else "auto")
         table = s.get("secondary_table")
         if table:
             for (i, j), key, text in SECONDARY_CELLS:
@@ -532,10 +534,12 @@ def _permutation_sensitivity(ev: pd.DataFrame, flagged: list[str], put) -> None:
 def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
     rows: list[dict] = []
 
-    def put(key, value, table, column, description, digits=None):
+    def put(key, value, table, column, description, digits="auto"):
         # A share rounded to four decimals cannot be rendered as a percentage with one
         # decimal: 0.074471 becomes 0.0745, which reads as 7.5 % instead of 7.4 %.
-        if digits is None:
+        # digits=None keeps the value as it is: a p-value, already rounded to four
+        # significant digits, would read 0 at four decimals.
+        if digits == "auto":
             digits = 6 if description.startswith("Share (0-1)") else 4
         if value is None or (isinstance(value, float) and pd.isna(value)):
             return

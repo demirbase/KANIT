@@ -217,6 +217,15 @@ def test_a_very_small_p_is_not_rounded_to_zero():
     assert m._four_significant(None) is None
 
 
+def test_a_p_value_keeps_its_four_significant_digits_in_the_file(monkeypatch):
+    """The numbers file must not round it again to four decimals: 0.058058 is written
+    0.05806, not 0.0581."""
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+    from lib import concordance
+    monkeypatch.setattr(concordance, "signed_rank_p", lambda d: 0.058058)
+    assert _numbers()["compare.amrfinderplus_p_signed_rank"] == 0.05806
+
+
 def test_grade_totals_sum_to_the_candidate_patterns():
     """The five grades partition the candidate set, so they add up to its size."""
     n = _numbers()
@@ -326,7 +335,7 @@ SUMMARY = {"H1": {"n_models": 3, "n_with_stable": 2, "supported": False},
            "H7": {"0.1": H7, "0.05": {**H7, "n_expected": 6}, "0.2": {"n_expected": 0,
                                                                       "supported_primary": False}},
            "H6": {"n_acquired": 0, "n_mutational": 2, "n_mixed": 1,
-                  "p_acquired_gt_mutational": None}}
+                  "p_acquired_gt_mutational": 8.1861e-18}}
 
 
 class HypothesisTables(FakeTables):
@@ -349,13 +358,14 @@ def test_the_hypotheses_are_keyed_by_what_they_measure():
     assert not any(f"h{i}" in k.lower() for k in hyp for i in range(1, 8))
     assert n["hyp.stable.supported"] == 0 and n["hyp.curated.supported"] == 1
     assert n["hyp.curated.median_share"] == 0.75 and n["hyp.class_overlap.n_within"] == 1
-    assert "hyp.class_overlap.p" not in n and "hyp.acquired_vs_mutational.p" not in n
+    assert "hyp.class_overlap.p" not in n
+    assert n["hyp.acquired_vs_mutational.p"] == 8.186e-18      # four significant digits
     assert n["hyp.expected.share_confirmed.thr10"] == 0.75
     assert n["hyp.expected.n_expected.thr5"] == 6 and n["hyp.expected.n_expected.thr20"] == 0
     assert "hyp.expected.share_confirmed.thr20" not in n
     assert n["hyp.expected.secondary_expected_confirmed.thr10"] == 3
     assert n["hyp.expected.secondary_other_not_confirmed.thr10"] == 6
-    assert n["hyp.expected.secondary_p.thr10"] == pytest.approx(0.01235, abs=1e-4)
+    assert n["hyp.expected.secondary_p.thr10"] == 0.01235
     assert n["hyp.acquired_vs_mutational.n_mutational"] == 2
     assert n["hyp.n_organisms_without_reference"] == 1
     assert not any(k.startswith("lp_sensitivity.hyp.") for k in n)
