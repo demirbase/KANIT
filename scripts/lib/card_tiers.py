@@ -90,6 +90,30 @@ def model_table(patterns: pd.DataFrame, unitigs: pd.DataFrame, tiers: pd.Series,
     return p.merge(pattern_tiers(unitigs, tiers, rule), on="pattern_id", how="left")
 
 
+def collect(get, models) -> pd.DataFrame:
+    """model_table rows of every (organism, antibiotic) in ``models``, with model and organism
+    columns; empty when no organism has its hit table. ``get(table_id, organism, antibiotic,
+    **read_csv)`` reads a table of the run, None when absent."""
+    parts = []
+    for org in dict.fromkeys(o for o, _ in models):
+        hits = get("rgi_hits", org, usecols=["genome_id", "aro", "cut_off"],
+                   dtype={"genome_id": str, "aro": str})
+        if hits is None:
+            continue
+        tiers = pair_tiers(hits)
+        for o, ab in models:
+            if o != org:
+                continue
+            pats = get("grades_patterns", org, ab)
+            units = get("grades_unitigs", org, ab,
+                        dtype={"located_genomes": str, f"{RULE}_card_aros": str})
+            if pats is None or units is None:
+                continue
+            parts.append(model_table(pats, units, tiers).assign(model=f"{org}__{ab}",
+                                                                organism=org))
+    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+
+
 def mantel_haenszel(strata: list[tuple[int, int, int, int]]) -> dict:
     """Common odds ratio over 2×2 tables (a, b, c, d) = (row 1 with, row 1 without, row 2 with,
     row 2 without), its Robins–Breslow–Greenland 95% interval and the Cochran–Mantel–Haenszel

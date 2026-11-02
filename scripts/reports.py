@@ -534,24 +534,7 @@ def _permutation_sensitivity(ev: pd.DataFrame, flagged: list[str], put) -> None:
 def card_tier_table(t: Tables, models: list[tuple[str, str]]) -> pd.DataFrame:
     """The candidates with a CARD hit of every model, with the RGI tier of their hits
     (protocol §14 item 10). Empty when no organism has its hit table."""
-    parts = []
-    for org in dict.fromkeys(o for o, _ in models):
-        hits = t.get("rgi_hits", org, usecols=["genome_id", "aro", "cut_off"],
-                     dtype={"genome_id": str, "aro": str})
-        if hits is None:
-            continue
-        tiers = card_tiers.pair_tiers(hits)
-        for o, ab in models:
-            if o != org:
-                continue
-            pats = t.get("grades_patterns", org, ab)
-            units = t.get("grades_unitigs", org, ab, dtype={"located_genomes": str,
-                          f"{card_tiers.RULE}_card_aros": str})
-            if pats is None or units is None:
-                continue
-            parts.append(card_tiers.model_table(pats, units, tiers)
-                         .assign(model=f"{org}__{ab}", organism=org))
-    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+    return card_tiers.collect(t.get, models)
 
 
 def _card_tier_numbers(table: pd.DataFrame, put) -> None:
