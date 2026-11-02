@@ -31,7 +31,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from lib import concordance, contract, panel, registry  # noqa: E402
+from lib import card_tiers, concordance, contract, panel, registry  # noqa: E402
 from lib import figures as F  # noqa: E402
 from lib.config import load_config, resolve_path  # noqa: E402
 from lib.run_metadata import git_commit_hash  # noqa: E402
@@ -62,14 +62,14 @@ class Tables:
         self.config = config
         self.skipped: list[str] = []
 
-    def get(self, tid: str, organism=None, antibiotic=None) -> pd.DataFrame | None:
+    def get(self, tid: str, organism=None, antibiotic=None, **read_csv) -> pd.DataFrame | None:
         try:
             p = contract.table_path(tid, self.config, organism, antibiotic)
         except KeyError:
             return None
         if not p.exists():
             return None
-        return pd.read_csv(p, keep_default_na=True, low_memory=False)
+        return pd.read_csv(p, keep_default_na=True, low_memory=False, **read_csv)
 
     def json(self, location, file, organism=None, antibiotic=None) -> dict | None:
         p = contract.output_path(location, file, self.config, organism, antibiotic)
@@ -531,6 +531,80 @@ def _permutation_sensitivity(ev: pd.DataFrame, flagged: list[str], put) -> None:
                 layer, f"Candidates of this flagged model passing the {layer} layer")
 
 
+def card_tier_table(t: Tables, models: list[tuple[str, str]]) -> pd.DataFrame:
+    """The candidates with a CARD hit of every model, with the RGI tier of their hits
+    (protocol §14 item 10). Empty when no organism has its hit table."""
+    parts = []
+    for org in dict.fromkeys(o for o, _ in models):
+        hits = t.get("rgi_hits", org, usecols=["genome_id", "aro", "cut_off"],
+                     dtype={"genome_id": str, "aro": str})
+        if hits is None:
+            continue
+        tiers = card_tiers.pair_tiers(hits)
+        for o, ab in models:
+            if o != org:
+                continue
+            pats = t.get("grades_patterns", org, ab)
+            units = t.get("grades_unitigs", org, ab, dtype={"located_genomes": str,
+                          f"{card_tiers.RULE}_card_aros": str})
+            if pats is None or units is None:
+                continue
+            parts.append(card_tiers.model_table(pats, units, tiers)
+                         .assign(model=f"{org}__{ab}", organism=org))
+    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+
+
+def _card_tier_numbers(table: pd.DataFrame, put) -> None:
+    src = "grades_unitigs"
+    tiered = table[table["tier"].notna() & table["group"].notna()]
+    put("card_tier.n_patterns", len(tiered), src, "located_genomes",
+        "Candidates with a CARD hit and an RGI tier (§14 item 10)")
+    put("card_tier.n_patterns_without_tier", int(table["tier"].isna().sum()), src,
+        "located_genomes", "Candidates with a CARD hit whose every (genome, ARO) pair is "
+        "ambiguous or has no hit")
+    put("card_tier.n_models", int(tiered["model"].nunique()), src, "pattern_id",
+        "Models with at least one such candidate")
+    aros = {a for x in tiered["aros"].dropna() for a in str(x).split(";")}
+    put("card_tier.n_aros", len(aros), "rgi_hits", "aro", "AROs behind those candidates")
+    for c, what in (("n_perfect", "Perfect"), ("n_strict", "Strict"),
+                    ("n_ambiguous", "ambiguous (hits of the ARO in both tiers)"),
+                    ("n_no_hit", "without a Perfect or Strict hit of the ARO")):
+        put(f"card_tier.n_pairs_{c[2:]}", int(table[c].fillna(0).sum()), "rgi_hits", "cut_off",
+            f"(genome, ARO) pairs of the candidates, {what}")
+    for g in card_tiers.GROUPS:
+        s = tiered[tiered["group"] == g]
+        for tier in card_tiers.TIER_ORDER:
+            put(f"card_tier.n_{g}_{tier.lower()}", int((s["tier"] == tier).sum()), "rgi_hits",
+                "cut_off", f"Candidates of group {g} whose tier is {tier}")
+        if len(s):
+            put(f"card_tier.share_perfect_{g}", float((s["tier"] == "Perfect").mean()),
+                "rgi_hits", "cut_off", f"Share (0-1) of the group {g} whose tier is Perfect")
+    for org, s in tiered.groupby("organism"):
+        for g in card_tiers.COMPARED:
+            sg = s[s["group"] == g]
+            put(f"card_tier.{org}.n_{g}", len(sg), "rgi_hits", "cut_off",
+                f"Candidates of group {g} with a tier")
+            if len(sg):
+                put(f"card_tier.{org}.share_perfect_{g}", float((sg["tier"] == "Perfect").mean()),
+                    "rgi_hits", "cut_off", f"Share (0-1) of the group {g} whose tier is Perfect")
+    c = card_tiers.compare(tiered)
+    put("card_tier.compare.n_confirmed", c["n_confirmed"], src, "allele_aware_grade",
+        "confirmed candidates with b = 1 and a tier, in the comparison")
+    put("card_tier.compare.n_candidate", c["n_candidate_b"], src, "allele_aware_grade",
+        "candidate candidates with b = 1 and a tier, in the comparison")
+    put("card_tier.compare.n_organisms", c["n_strata"], "rgi_hits", "cut_off",
+        "Organisms with both grades and both outcomes, which the test is computed over")
+    put("card_tier.compare.odds_ratio", c["odds_ratio"], "rgi_hits", "cut_off",
+        "Mantel–Haenszel odds ratio of a Perfect tier, confirmed vs candidate, by organism")
+    put("card_tier.compare.ci_low", c["ci_low"], "rgi_hits", "cut_off",
+        "Lower 95% bound of that odds ratio (Robins–Breslow–Greenland)")
+    put("card_tier.compare.ci_high", c["ci_high"], "rgi_hits", "cut_off",
+        "Upper 95% bound of that odds ratio (Robins–Breslow–Greenland)")
+    if c["p"] is not None:
+        put("card_tier.compare.p", _four_significant(c["p"]), "rgi_hits", "cut_off",
+            "Cochran–Mantel–Haenszel p, two-sided, no continuity correction", digits=None)
+
+
 def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
     rows: list[dict] = []
 
@@ -712,6 +786,10 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                    if lp is not None else None)
         if flagged is not None:
             _permutation_sensitivity(ev, flagged, put)
+        tier_table = card_tier_table(t, sorted({(m.split("__")[0], m.split("__", 1)[1])
+                                                for m in ev["model"]}))
+        if len(tier_table):
+            _card_tier_numbers(tier_table, put)
     # 3.1 quotes the spread of model performance and of the gap between the two arms. Both are
     # medians over models, so they belong here rather than in any one model's keys.
     auc: dict[str, dict[str, float]] = {"lineage_aware": {}, "lineage_blind": {}}

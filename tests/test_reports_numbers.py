@@ -71,7 +71,7 @@ class FakeTables:
 
     config: dict = {"cv": {"n_bootstrap": 200}}
 
-    def get(self, tid, organism=None, antibiotic=None):
+    def get(self, tid, organism=None, antibiotic=None, **_):
         if tid == "panel_decisions":
             return DECISIONS
         key = (organism, antibiotic)
@@ -108,7 +108,7 @@ class PermutedTables(FakeTables):
     def __init__(self, q: dict[str, float]):
         self.q = q
 
-    def get(self, tid, organism=None, antibiotic=None):
+    def get(self, tid, organism=None, antibiotic=None, **_):
         if tid == "label_permutation_models":
             return pd.DataFrame({"organism": [m.split("__")[0] for m in self.q],
                                  "antibiotic": [m.split("__")[1] for m in self.q],
@@ -153,7 +153,7 @@ def test_weak_or_none_share_is_measured_on_the_reported_rule():
 def test_the_share_is_absent_without_the_reported_grade():
     """An output carrying only the per-rule columns gives no share, not a zero."""
     class PerRuleOnly(FakeTables):
-        def get(self, tid, organism=None, antibiotic=None):
+        def get(self, tid, organism=None, antibiotic=None, **_):
             out = super().get(tid, organism, antibiotic)
             if tid == "grades_patterns" and out is not None:
                 return out.drop(columns=["grade"])
@@ -173,7 +173,7 @@ def test_the_share_is_absent_without_the_reported_grade():
 def test_aggregates_are_absent_without_models():
     """Nothing is reported when no model has an output yet."""
     class Empty(FakeTables):
-        def get(self, tid, organism=None, antibiotic=None):
+        def get(self, tid, organism=None, antibiotic=None, **_):
             return DECISIONS if tid == "panel_decisions" else None
 
     sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
