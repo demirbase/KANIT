@@ -402,6 +402,89 @@ def _evidence_numbers(ev: pd.DataFrame, put) -> None:
                     "grade", f"Share (0-1) of this {label}'s candidates graded {g}")
 
 
+# hypotheses.json (protocol §10) -> keys. A key names what its test measures, not the
+# test's number: the protocol's H3 and H7 are the article's H4 and H3, so a number in the
+# key would be right for one text and wrong for the other.
+# (summary, field, key, table, column, description)
+HYPOTHESIS_KEYS = [
+    ("H1", "n_models", "stable.n_models", "h1_models", "model_id", "H1: models tested"),
+    ("H1", "n_with_stable", "stable.n_with_stable", "h1_models", "has_stable",
+     "H1: models with at least one stable pattern"),
+    ("H1", "supported", "stable.supported", "h1_models", "has_stable",
+     "H1: 1 if every model has a stable pattern, else 0"),
+    ("H2", "n_defined", "curated.n_models", "h2_models", "share_b_allele_aware",
+     "H2: models with stable patterns, the ones the median is taken over"),
+    ("H2", "median", "curated.median_share", "h2_models", "share_b_allele_aware",
+     "H2: median over models of the share of stable patterns with b = 1"),
+    ("H2", "median_homolog_only", "curated.median_share_homolog_only", "h2_models",
+     "share_b_homolog_only", "H2: that median in the homolog-only mode"),
+    ("H2", "supported", "curated.supported", "h2_models", "share_b_allele_aware",
+     "H2: 1 if the median is at least 0.40, else 0"),
+    ("H3", "n_within", "class_overlap.n_within", "h3_pairs", "same_class",
+     "Protocol H3: within-class model pairs with a defined overlap"),
+    ("H3", "n_cross", "class_overlap.n_cross", "h3_pairs", "same_class",
+     "Protocol H3: cross-class model pairs with a defined overlap"),
+    ("H3", "median_within", "class_overlap.median_within", "h3_pairs", "overlap",
+     "Protocol H3: median overlap coefficient of the within-class pairs"),
+    ("H3", "median_cross", "class_overlap.median_cross", "h3_pairs", "overlap",
+     "Protocol H3: median overlap coefficient of the cross-class pairs"),
+    ("H3", "p", "class_overlap.p", "h3_pairs", "overlap",
+     "Protocol H3: one-sided Mann-Whitney U p, within-class above cross-class"),
+    ("H3", "supported", "class_overlap.supported", "h3_pairs", "overlap",
+     "Protocol H3: 1 if p < 0.05, else 0"),
+    ("H6", "n_acquired", "acquired_vs_mutational.n_acquired", "h6_models", "class",
+     "H6 (explanatory): acquired phenotypes with an H2 share"),
+    ("H6", "n_mutational", "acquired_vs_mutational.n_mutational", "h6_models", "class",
+     "H6 (explanatory): mutational phenotypes with an H2 share"),
+    ("H6", "n_mixed", "acquired_vs_mutational.n_mixed", "h6_models", "class",
+     "H6 (explanatory): mixed phenotypes"),
+    ("H6", "p_acquired_gt_mutational", "acquired_vs_mutational.p", "h6_models", "h2_share",
+     "H6 (explanatory): one-sided Mann-Whitney U p, acquired above mutational"),
+]
+# protocol H7 at each threshold of expected prevalence among the resistant genomes
+EXPECTED_THRESHOLDS = {"0.1": "thr10", "0.05": "thr5", "0.2": "thr20"}
+EXPECTED_KEYS = [
+    ("n_expected", "n_expected", "expected determinants"),
+    ("n_recovered", "n_recovered", "expected determinants a candidate maps to"),
+    ("share_confirmed", "share_confirmed", "share (0-1) of those whose best grade is confirmed"),
+    ("supported_primary", "supported_primary", "1 if that share is at least 0.5, else 0"),
+    ("secondary_p", "secondary_p",
+     "one-sided Fisher p, confirmed more often among candidates of an expected determinant"),
+    ("supported_secondary", "supported_secondary", "1 if that p is below 0.05, else 0"),
+]
+SECONDARY_CELLS = [((0, 0), "expected_confirmed", "candidates of an expected determinant, confirmed"),
+                   ((0, 1), "expected_not_confirmed",
+                    "candidates of an expected determinant, not confirmed"),
+                   ((1, 0), "other_confirmed",
+                    "candidates with a CARD hit to another family, confirmed"),
+                   ((1, 1), "other_not_confirmed",
+                    "candidates with a CARD hit to another family, not confirmed")]
+
+
+def _hypothesis_numbers(summary: dict, put, pre: str, label: str = "") -> None:
+    """The verdicts and statistics of one set of hypothesis summaries under pre."""
+    def val(x):
+        return int(x) if isinstance(x, bool) else x
+
+    for test, field, key, table, column, text in HYPOTHESIS_KEYS:
+        x = val((summary.get(test) or {}).get(field))
+        put(f"{pre}.{key}", _four_significant(x) if field.startswith("p") else x, table, column,
+            label + text)
+    for thr, tag in EXPECTED_THRESHOLDS.items():
+        s = (summary.get("H7") or {}).get(thr) or {}
+        for field, key, text in EXPECTED_KEYS:
+            x = val(s.get(field))
+            put(f"{pre}.expected.{key}.{tag}", _four_significant(x) if field == "secondary_p"
+                else x, "h7_determinants", "best_grade",
+                f"{label}Protocol H7, threshold {thr}: {text}",
+                digits=6 if field == "share_confirmed" else None)
+        table = s.get("secondary_table")
+        if table:
+            for (i, j), key, text in SECONDARY_CELLS:
+                put(f"{pre}.expected.secondary_{key}.{tag}", int(table[i][j]), "h7_determinants",
+                    "best_grade", f"{label}Protocol H7, threshold {thr}: {text}")
+
+
 def _flagged_models(lp: pd.DataFrame, models: list[str], alpha: float) -> list[str] | None:
     """Models whose label permutation q is at or above α (§8.6); None unless every model
     has its row, since the q values are corrected across all of them."""
@@ -769,6 +852,17 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
         put("label_permutation.n_flagged", int((lp["q"] >= float(
             t.config["label_permutation"]["alpha"])).sum()), "label_permutation_models", "q",
             "Models whose q is at or above α: flagged, kept in every analysis (§8.6)")
+    hyp = t.json("cross_model_dir", "hypotheses/hypotheses.json")
+    if hyp is not None:
+        _hypothesis_numbers(hyp, put, "hyp")
+        put("hyp.n_organisms_without_reference", len(hyp.get("reference_missing") or []),
+            "h7_determinants", "model_id",
+            "Organisms without AMRFinderPlus calls, left out of H7 and H6")
+        sens = hyp.get("sensitivity_label_permutation") or {}
+        if sens.get("status") == "computed":
+            put("lp_sensitivity.hyp.n_models_excluded", len(sens["excluded_models"]),
+                "h1_models", "model_id", "Models the hypotheses are recomputed without (§14 item 9)")
+            _hypothesis_numbers(sens, put, "lp_sensitivity.hyp", "Without the flagged models. ")
     return pd.DataFrame(rows, columns=["key", "value", "source_table", "column", "description"])
 
 

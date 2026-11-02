@@ -96,6 +96,9 @@ class FakeTables:
                                  "gain_rank": e["gain_rank"], "cpss_stable": e["cpss_stable"]})
         return None
 
+    def json(self, location, file, organism=None, antibiotic=None):
+        return None
+
 
 class PermutedTables(FakeTables):
     """The same run with its label permutation table (q per model)."""
@@ -312,3 +315,57 @@ def test_no_sensitivity_keys_without_every_q_or_a_flag():
     assert n["label_permutation.n_flagged"] == 0
     assert not any(k.startswith("lp_sensitivity.") or (".n_pass_" in k and not k.startswith("all."))
                    for k in n)
+
+
+H7 = {"n_expected": 5, "n_recovered": 4, "share_confirmed": 0.75, "supported_primary": True,
+      "secondary_table": [[3, 1], [2, 6]], "secondary_p": 0.0123456, "supported_secondary": True}
+SUMMARY = {"H1": {"n_models": 3, "n_with_stable": 2, "supported": False},
+           "H2": {"n_defined": 2, "median": 0.75, "median_homolog_only": 0.5, "supported": True},
+           "H3": {"n_within": 1, "n_cross": 2, "median_within": 1.0, "median_cross": 0.0,
+                  "p": None, "supported": False},
+           "H7": {"0.1": H7, "0.05": {**H7, "n_expected": 6}, "0.2": {"n_expected": 0,
+                                                                      "supported_primary": False}},
+           "H6": {"n_acquired": 0, "n_mutational": 2, "n_mixed": 1,
+                  "p_acquired_gt_mutational": None}}
+
+
+class HypothesisTables(FakeTables):
+    """The same run after the hypothesis tests."""
+
+    def __init__(self, sensitivity: dict):
+        self.summary = {**SUMMARY, "reference_missing": ["kpneumoniae"],
+                        "sensitivity_label_permutation": sensitivity}
+
+    def json(self, location, file, organism=None, antibiotic=None):
+        return self.summary if file == "hypotheses/hypotheses.json" else None
+
+
+def test_the_hypotheses_are_keyed_by_what_they_measure():
+    """The protocol's H3 and H7 are the article's H4 and H3: no key carries the number.
+    A verdict is 1 or 0; a statistic the test could not compute has no key."""
+    n = _numbers(HypothesisTables({"status": "no model flagged: the primary analysis",
+                                   "excluded_models": []}))
+    hyp = {k: v for k, v in n.items() if k.startswith("hyp.")}
+    assert not any(f"h{i}" in k.lower() for k in hyp for i in range(1, 8))
+    assert n["hyp.stable.supported"] == 0 and n["hyp.curated.supported"] == 1
+    assert n["hyp.curated.median_share"] == 0.75 and n["hyp.class_overlap.n_within"] == 1
+    assert "hyp.class_overlap.p" not in n and "hyp.acquired_vs_mutational.p" not in n
+    assert n["hyp.expected.share_confirmed.thr10"] == 0.75
+    assert n["hyp.expected.n_expected.thr5"] == 6 and n["hyp.expected.n_expected.thr20"] == 0
+    assert "hyp.expected.share_confirmed.thr20" not in n
+    assert n["hyp.expected.secondary_expected_confirmed.thr10"] == 3
+    assert n["hyp.expected.secondary_other_not_confirmed.thr10"] == 6
+    assert n["hyp.expected.secondary_p.thr10"] == pytest.approx(0.01235, abs=1e-4)
+    assert n["hyp.acquired_vs_mutational.n_mutational"] == 2
+    assert n["hyp.n_organisms_without_reference"] == 1
+    assert not any(k.startswith("lp_sensitivity.hyp.") for k in n)
+
+
+def test_the_hypotheses_without_the_flagged_models_get_their_own_keys():
+    n = _numbers(HypothesisTables({"status": "computed",
+                                   "excluded_models": ["kpneumoniae__meropenem"],
+                                   **SUMMARY, "H2": {**SUMMARY["H2"], "median": 0.5}}))
+    assert n["lp_sensitivity.hyp.n_models_excluded"] == 1
+    assert n["lp_sensitivity.hyp.curated.median_share"] == 0.5
+    assert n["hyp.curated.median_share"] == 0.75
+    assert n["lp_sensitivity.hyp.expected.share_confirmed.thr10"] == 0.75

@@ -223,6 +223,23 @@ def test_no_sensitivity_analysis_without_every_permutation_or_a_flag(conn):
     assert s["status"].startswith("no model flagged") and s["excluded_models"] == []
 
 
+def test_the_numbers_file_reads_fields_the_summaries_have(conn):
+    """reports.py keys hypotheses.json by field name; a renamed field would drop a key
+    without an error."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("amrtest_reports_h",
+                                                  PROJECT_ROOT / "scripts" / "reports.py")
+    r = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(r)
+    s = hy.run(conn, _reference(), IDX, KEYWORDS, n_mc=200, seed=1)["summary"]
+    for test, field, *_ in r.HYPOTHESIS_KEYS:
+        assert field in s[test], (test, field)
+    assert set(r.EXPECTED_THRESHOLDS) == set(s["H7"])
+    for field, *_ in r.EXPECTED_KEYS:
+        assert field in s["H7"]["0.1"], field
+    assert len(s["H7"]["0.1"]["secondary_table"]) == 2
+
+
 def test_script_end_to_end(tmp_path, monkeypatch):
     import importlib.util
     import json
