@@ -402,6 +402,50 @@ def _evidence_numbers(ev: pd.DataFrame, put) -> None:
                     "grade", f"Share (0-1) of this {label}'s candidates graded {g}")
 
 
+def _flagged_models(lp: pd.DataFrame, models: list[str], alpha: float) -> list[str] | None:
+    """Models whose label permutation q is at or above α (§8.6); None unless every model
+    has its row, since the q values are corrected across all of them."""
+    if "q" not in lp:
+        return None
+    q = dict(zip(lp["organism"] + "__" + lp["antibiotic"], lp["q"], strict=True))
+    if any(m not in q for m in models):
+        return None
+    return sorted(m for m in models if pd.notna(q[m]) and q[m] >= alpha)
+
+
+def _permutation_sensitivity(ev: pd.DataFrame, flagged: list[str], put) -> None:
+    """Protocol §14 item 9: the grade distribution without the flagged models, and the
+    layers each flagged model's candidates pass (an illustration, not a test). The grades
+    of a flagged model are its {model}.n_{grade} keys. The hypotheses are recomputed in
+    hypotheses.json."""
+    layers = ("prevalence", "mda", "cpss", "pyseer")
+    rest = ev[~ev["model"].isin(flagged)]
+    if flagged and len(rest):
+        pre = "lp_sensitivity"
+        put(f"{pre}.n_models", int(rest["model"].nunique()), "grades_patterns", "pattern_id",
+            "Models left once the models flagged by label permutation are excluded")
+        put(f"{pre}.n_candidate_patterns", len(rest), "grades_patterns", "pattern_id",
+            "Candidate patterns of those models")
+        for g in F.GRADES:
+            k = int((rest["grade"] == g).sum())
+            put(f"{pre}.n_{g}", k, "grades_patterns", "grade",
+                f"Candidate patterns graded {g} without the flagged models, reported rule")
+            put(f"{pre}.share_{g}", k / len(rest), "grades_patterns", "grade",
+                f"Share (0-1) of those candidate patterns graded {g}, reported rule")
+        put(f"{pre}.weak_or_none_share", float(rest["grade"].isin(("weak", "none")).mean()),
+            "grades_patterns", "grade",
+            "Share (0-1) of those candidate patterns graded weak or none, reported rule")
+        for layer in layers:
+            put(f"{pre}.share_pass_{layer}", float(F._bool(rest[layer]).mean()),
+                "grades_patterns", layer,
+                f"Share (0-1) of those candidate patterns passing the {layer} layer")
+    for mid in flagged:
+        part = ev[ev["model"] == mid]
+        for layer in layers:
+            put(f"{mid}.n_pass_{layer}", int(F._bool(part[layer]).sum()), "grades_patterns",
+                layer, f"Candidates of this flagged model passing the {layer} layer")
+
+
 def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
     rows: list[dict] = []
 
@@ -573,7 +617,14 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                 put(f"{mid}.association.n_{g}", int(vc.get(g, 0)), "association_grades_patterns",
                     "grade", f"Patterns nominated by association graded {g}, primary mode")
     if evidence:
-        _evidence_numbers(pd.concat(evidence, ignore_index=True), put)
+        ev = pd.concat(evidence, ignore_index=True)
+        _evidence_numbers(ev, put)
+        lp = t.get("label_permutation_models")
+        flagged = (_flagged_models(lp, sorted(ev["model"].unique()),
+                                   float(t.config["label_permutation"]["alpha"]))
+                   if lp is not None else None)
+        if flagged is not None:
+            _permutation_sensitivity(ev, flagged, put)
     # 3.1 quotes the spread of model performance and of the gap between the two arms. Both are
     # medians over models, so they belong here rather than in any one model's keys.
     auc: dict[str, dict[str, float]] = {"lineage_aware": {}, "lineage_blind": {}}
@@ -715,6 +766,9 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
         put("label_permutation.n_significant", int((lp["q"] < float(
             t.config["label_permutation"]["alpha"])).sum()), "label_permutation_models", "q",
             "Models whose label permutation q is below α")
+        put("label_permutation.n_flagged", int((lp["q"] >= float(
+            t.config["label_permutation"]["alpha"])).sum()), "label_permutation_models", "q",
+            "Models whose q is at or above α: flagged, kept in every analysis (§8.6)")
     return pd.DataFrame(rows, columns=["key", "value", "source_table", "column", "description"])
 
 

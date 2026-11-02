@@ -97,13 +97,29 @@ class FakeTables:
         return None
 
 
-def _numbers():
+class PermutedTables(FakeTables):
+    """The same run with its label permutation table (q per model)."""
+
+    config: dict = {"cv": {"n_bootstrap": 200}, "label_permutation": {"alpha": 0.05}}
+
+    def __init__(self, q: dict[str, float]):
+        self.q = q
+
+    def get(self, tid, organism=None, antibiotic=None):
+        if tid == "label_permutation_models":
+            return pd.DataFrame({"organism": [m.split("__")[0] for m in self.q],
+                                 "antibiotic": [m.split("__")[1] for m in self.q],
+                                 "q": list(self.q.values())})
+        return super().get(tid, organism, antibiotic)
+
+
+def _numbers(tables=None):
     sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
     spec = importlib.util.spec_from_file_location("amrtest_reports",
                                                   PROJECT_ROOT / "scripts" / "reports.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
-    df = m.numbers(FakeTables(), ["ecoli", "kpneumoniae", "enterobacter_cloacae"])
+    df = m.numbers(tables or FakeTables(), ["ecoli", "kpneumoniae", "enterobacter_cloacae"])
     return df.set_index("key")["value"].to_dict()
 
 
@@ -267,3 +283,32 @@ def test_the_top_gain_subset_excludes_patterns_without_a_gain_rank():
     assert n["all.top_gain_n_b"] == 1
     assert n["all.n_models_top_feature_b"] == 0
     assert "all.top_gain_n_reason_co_carried_known_gene" not in n
+
+
+Q = {"ecoli__ampicillin": 0.01, "ecoli__ciprofloxacin": 0.02, "kpneumoniae__meropenem": 0.3}
+
+
+def test_the_flagged_model_leaves_the_grade_distribution():
+    """Protocol §14 item 9: meropenem is flagged; the five E. coli candidates remain, three
+    of them weak or none. Its own layers are keyed; its grades already are."""
+    n = _numbers(PermutedTables(Q))
+    assert n["label_permutation.n_flagged"] == 1 and n["label_permutation.n_significant"] == 2
+    assert n["lp_sensitivity.n_models"] == 2 and n["lp_sensitivity.n_candidate_patterns"] == 5
+    assert n["lp_sensitivity.n_strong_novel"] == 0 and n["lp_sensitivity.n_weak"] == 2
+    assert n["lp_sensitivity.weak_or_none_share"] == 0.6
+    assert n["lp_sensitivity.share_pass_mda"] == 0.4
+    assert n["kpneumoniae__meropenem.n_pass_mda"] == 1
+    assert n["kpneumoniae__meropenem.n_pass_cpss"] == 1
+    assert "ecoli__ampicillin.n_pass_mda" not in n
+    assert n["all.n_strong_novel"] == 1                  # the primary numbers keep it
+
+
+def test_no_sensitivity_keys_without_every_q_or_a_flag():
+    """A model without its q leaves the correction open; with no flag there is nothing
+    to recompute."""
+    partial = {k: v for k, v in Q.items() if k != "ecoli__ampicillin"}
+    assert not any(k.startswith("lp_sensitivity.") for k in _numbers(PermutedTables(partial)))
+    n = _numbers(PermutedTables({k: 0.01 for k in Q}))
+    assert n["label_permutation.n_flagged"] == 0
+    assert not any(k.startswith("lp_sensitivity.") or (".n_pass_" in k and not k.startswith("all."))
+                   for k in n)

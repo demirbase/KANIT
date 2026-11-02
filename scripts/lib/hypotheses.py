@@ -14,6 +14,9 @@ an ARO name or CARD short name; otherwise the symbol without its allele number;
 otherwise the one family shared by every ARO that extends the allele-less symbol
 with an allele number; van cluster genes (vanH-A) through CARD's cluster terms.
 Unmapped symbols are reported with their counts.
+
+The sensitivity analysis of protocol §14 item 9 runs every test again without the
+models the label permutation flags (sensitivity()).
 """
 from __future__ import annotations
 
@@ -28,27 +31,29 @@ from scipy.stats import fisher_exact, hypergeom, mannwhitneyu
 
 GRADE_RANK = {"confirmed": 4, "strong_novel": 3, "candidate": 2, "weak": 1, "none": 0}
 MUTATION_MODELS = ("variant", "overexpression", "rrna_variant")
+PERMUTATION_FLAG = "permutation_not_significant"     # label_permutation.flag, §8.6
 
 
 def _param(conn, name) -> float:
     return float(conn.execute("SELECT value FROM parameter WHERE name = ?", (name,)).fetchone()[0])
 
 
-def _models(conn) -> pd.DataFrame:
-    return pd.read_sql_query(
+def _models(conn, exclude=()) -> pd.DataFrame:
+    m = pd.read_sql_query(
         "SELECT m.model_id, m.organism_id, m.antibiotic_id, a.drug_class FROM model m "
         "JOIN antibiotic a USING (antibiotic_id) WHERE m.evaluable = 1 ORDER BY m.model_id", conn)
+    return m[~m["model_id"].isin(exclude)].reset_index(drop=True)
 
 
 # ---- H1 and H2 ---------------------------------------------------------------------
-def h1(conn) -> tuple[pd.DataFrame, dict]:
+def h1(conn, exclude=()) -> tuple[pd.DataFrame, dict]:
     """Every model has a stable pattern; the Meinshausen–Bühlmann bound of each."""
     q, pi = _param(conn, "cpss.q"), _param(conn, "cpss.pi_threshold")
     t = pd.read_sql_query(
         "SELECT model_id, sum(in_prefilter) AS n_prefilter, "
         "sum(CASE WHEN passes = 1 THEN 1 ELSE 0 END) AS n_stable FROM cpss_result "
         "GROUP BY model_id", conn)
-    t = _models(conn)[["model_id"]].merge(t, on="model_id", how="left").fillna(0)
+    t = _models(conn, exclude)[["model_id"]].merge(t, on="model_id", how="left").fillna(0)
     t["mb_bound"] = q ** 2 / ((2 * pi - 1) * t["n_prefilter"].where(t["n_prefilter"] > 0))
     t["has_stable"] = t["n_stable"] >= 1
     return t, {"criterion": "every model has a pattern with pi >= threshold",
@@ -56,7 +61,7 @@ def h1(conn) -> tuple[pd.DataFrame, dict]:
                "supported": bool(len(t)) and bool(t["has_stable"].all())}
 
 
-def h2(conn) -> tuple[pd.DataFrame, dict]:
+def h2(conn, exclude=()) -> tuple[pd.DataFrame, dict]:
     """Share of the stable patterns of every model with b = 1; median >= 0.40."""
     d = pd.read_sql_query(
         "SELECT c.model_id, g.rule, g.card_state FROM cpss_result c JOIN grade g "
@@ -64,7 +69,7 @@ def h2(conn) -> tuple[pd.DataFrame, dict]:
         "JOIN candidate k ON k.model_id = c.model_id AND k.pattern_id = c.pattern_id "
         "WHERE c.passes = 1 AND k.route = 'model'", conn)
     rows = []
-    for mid in _models(conn)["model_id"]:
+    for mid in _models(conn, exclude)["model_id"]:
         row = {"model_id": mid}
         for rule in ("allele_aware", "homolog_only"):
             s = d[(d["model_id"] == mid) & (d["rule"] == rule)]["card_state"]
@@ -112,10 +117,11 @@ def benjamini_yekutieli(p) -> np.ndarray:
     return out
 
 
-def h3(conn, *, n_mc: int = 10_000, seed: int = 0, alpha: float = 0.05) -> tuple[pd.DataFrame, dict]:
+def h3(conn, *, n_mc: int = 10_000, seed: int = 0, alpha: float = 0.05,
+       exclude=()) -> tuple[pd.DataFrame, dict]:
     """Overlap of CARD gene families between the models of an organism; within-class
     pairs against cross-class pairs (one-sided Mann–Whitney U)."""
-    fam, models = families(conn), _models(conn)
+    fam, models = families(conn), _models(conn, exclude)
     rng = np.random.default_rng(seed)
     rows = []
     for org, ms in models.groupby("organism_id"):
@@ -263,7 +269,8 @@ def matches(det: str, families: set[str], mutation_aros: list[str]) -> bool:
 
 
 def h7(conn, reference: dict[str, pd.DataFrame], idx: dict[str, set[str]], keywords: dict,
-       *, thresholds=(0.10, 0.05, 0.20), alpha: float = 0.05) -> tuple[pd.DataFrame, dict, dict]:
+       *, thresholds=(0.10, 0.05, 0.20), alpha: float = 0.05,
+       exclude=()) -> tuple[pd.DataFrame, dict, dict]:
     """Expected determinants of every model and whether they get the top grade.
 
     ``reference``: {organism: AMRFinderPlus calls of its analysed genomes}. Returns
@@ -271,7 +278,7 @@ def h7(conn, reference: dict[str, pd.DataFrame], idx: dict[str, set[str]], keywo
     rows: list[dict] = []
     pattern_rows: list[dict] = []
     unmapped_all: dict[str, int] = defaultdict(int)
-    for m in _models(conn).itertuples(index=False):
+    for m in _models(conn, exclude).itertuples(index=False):
         kw = keywords.get(m.antibiotic_id, set())
         if not kw or m.organism_id not in reference:
             continue
@@ -330,12 +337,12 @@ def h7(conn, reference: dict[str, pd.DataFrame], idx: dict[str, set[str]], keywo
     return t, summary, dict(unmapped_all)
 
 
-def h6(conn, reference: dict[str, pd.DataFrame], keywords: dict, h2_table: pd.DataFrame
-       ) -> tuple[pd.DataFrame, dict]:
+def h6(conn, reference: dict[str, pd.DataFrame], keywords: dict, h2_table: pd.DataFrame,
+       exclude=()) -> tuple[pd.DataFrame, dict]:
     """Acquired, mutational or mixed phenotype; H2 share acquired > mutational."""
     share = dict(zip(h2_table["model_id"], h2_table["share_b_allele_aware"], strict=True))
     rows = []
-    for m in _models(conn).itertuples(index=False):
+    for m in _models(conn, exclude).itertuples(index=False):
         kw = keywords.get(m.antibiotic_id, set())
         if not kw or m.organism_id not in reference:
             continue
@@ -366,14 +373,42 @@ def h6(conn, reference: dict[str, pd.DataFrame], keywords: dict, h2_table: pd.Da
                "n_mixed": int((t["class"] == "mixed").sum()), "p_acquired_gt_mutational": p}
 
 
-def run(conn: sqlite3.Connection, reference, idx, keywords, *, n_mc: int, seed: int) -> dict:
-    t1, s1 = h1(conn)
-    t2, s2 = h2(conn)
-    t3, s3 = h3(conn, n_mc=n_mc, seed=seed)
-    t7, s7, unmapped = h7(conn, reference, idx, keywords)
-    t6, s6 = h6(conn, reference, keywords, t2)
+def run(conn: sqlite3.Connection, reference, idx, keywords, *, n_mc: int, seed: int,
+        exclude=()) -> dict:
+    t1, s1 = h1(conn, exclude)
+    t2, s2 = h2(conn, exclude)
+    t3, s3 = h3(conn, n_mc=n_mc, seed=seed, exclude=exclude)
+    t7, s7, unmapped = h7(conn, reference, idx, keywords, exclude=exclude)
+    t6, s6 = h6(conn, reference, keywords, t2, exclude)
     return {"tables": {"h1_models": t1, "h2_models": t2, "h3_pairs": t3,
                        "h7_determinants": t7, "h6_models": t6,
                        "h7_unmapped_symbols": pd.DataFrame(sorted(unmapped.items()),
                                                            columns=["symbol", "n_calls"])},
             "summary": {"H1": s1, "H2": s2, "H3": s3, "H7": s7, "H6": s6}}
+
+
+# ---- protocol §14 item 9 -------------------------------------------------------------
+def flagged_models(conn) -> list[str] | None:
+    """Evaluable models the label permutation flags (q >= alpha, §8.6); None while one of
+    them has no test, since the q values are corrected across all of them."""
+    rows = conn.execute(
+        "SELECT m.model_id, lp.flag FROM model m LEFT JOIN label_permutation lp "
+        "USING (model_id) WHERE m.evaluable = 1 ORDER BY m.model_id").fetchall()
+    if not rows or any(flag is None for _, flag in rows):
+        return None
+    return [mid for mid, flag in rows if flag == PERMUTATION_FLAG]
+
+
+def sensitivity(conn: sqlite3.Connection, reference, idx, keywords, *, n_mc: int,
+                seed: int) -> dict:
+    """The hypotheses again without the flagged models (protocol §14 item 9), reported
+    next to the primary results. The per-model rows are those of the primary tables; only
+    the summaries change, and H3 through the families of each organism's models."""
+    excluded = flagged_models(conn)
+    if excluded is None:
+        return {"status": "not computed: an evaluable model has no label permutation test",
+                "excluded_models": []}
+    if not excluded:
+        return {"status": "no model flagged: the primary analysis", "excluded_models": []}
+    res = run(conn, reference, idx, keywords, n_mc=n_mc, seed=seed, exclude=excluded)
+    return {"status": "computed", "excluded_models": excluded, **res["summary"]}

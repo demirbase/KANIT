@@ -8,7 +8,8 @@ out of H7 and H6 and listed in the summary; one whose reference misses a model
 genome stops the run. The tests are in lib/hypotheses.py.
 
 Outputs (cross_model_dir/hypotheses/): one CSV per table and hypotheses.json with
-every criterion, statistic and verdict.
+every criterion, statistic and verdict, and under sensitivity_label_permutation the
+same summaries without the models the label permutation flags (protocol §14 item 9).
 """
 import argparse
 import json
@@ -84,8 +85,9 @@ def main():
     idx = hy.card_family_index(aro_index)
     with sqlite3.connect(f"file:{kb_file}?mode=ro", uri=True) as conn:
         reference, missing = references(conn, config)
-        res = hy.run(conn, reference, idx, registry.load_amrfinder_keywords(), n_mc=args.n_mc,
-                     seed=args.seed)
+        keywords = registry.load_amrfinder_keywords()
+        res = hy.run(conn, reference, idx, keywords, n_mc=args.n_mc, seed=args.seed)
+        sens = hy.sensitivity(conn, reference, idx, keywords, n_mc=args.n_mc, seed=args.seed)
         kb_version = conn.execute("SELECT kb_version FROM release").fetchone()[0]
     out = resolve_path("cross_model_dir", config=config) / "hypotheses"
     out.mkdir(parents=True, exist_ok=True)
@@ -94,13 +96,15 @@ def main():
     summary = {"created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                "kb_version": kb_version, "kb_file": str(kb_file),
                "reference_missing": missing, "n_mc": args.n_mc, "seed": args.seed,
-               **res["summary"]}
+               **res["summary"], "sensitivity_label_permutation": sens}
     (out / "hypotheses.json").write_text(json.dumps(_plain(summary), indent=2) + "\n")
     s = res["summary"]
     print(f"H1 {s['H1']['supported']} · H2 {s['H2']['supported']} (median "
           f"{s['H2']['median']}) · H3 {s['H3']['supported']} (p {s['H3']['p']}) · H7 "
           f"{s['H7'].get('0.1', {}).get('supported_primary')}"
           + (f" · no AMRFinderPlus reference for {missing}" if missing else ""))
+    print(f"Without the flagged models (§14 item 9): {sens['status']}"
+          + (f", {len(sens['excluded_models'])} excluded" if sens["excluded_models"] else ""))
 
 
 if __name__ == "__main__":

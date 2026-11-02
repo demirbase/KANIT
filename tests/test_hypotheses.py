@@ -190,6 +190,39 @@ def test_h6(conn):
     assert s["n_mutational"] == 2 and s["n_acquired"] == 0      # ampicillin has no H2 share
 
 
+def _permuted(conn, flagged=()):
+    kb.insert(conn, "label_permutation", pd.DataFrame([{
+        "model_id": mid, "auc_observed": 0.9, "null_mean": 0.5, "n_permutations": 100,
+        "p": 0.3 if mid in flagged else 0.0099, "q": 0.3 if mid in flagged else 0.01,
+        "flag": hy.PERMUTATION_FLAG if mid in flagged else ""} for mid in PATTERNS]))
+
+
+def test_the_sensitivity_analysis_drops_the_flagged_models(conn):
+    """Protocol §14 item 9: without levofloxacin, H3 loses its only within-class pair and
+    H7 two of its confirmed determinants; the per-model results stay as they were."""
+    _permuted(conn, flagged={"ecoli__levofloxacin"})
+    assert hy.flagged_models(conn) == ["ecoli__levofloxacin"]
+    s = hy.sensitivity(conn, _reference(), IDX, KEYWORDS, n_mc=200, seed=1)
+    assert s["status"] == "computed" and s["excluded_models"] == ["ecoli__levofloxacin"]
+    assert s["H1"]["n_models"] == 2 and s["H2"]["median"] == 0.5 and s["H2"]["supported"]
+    assert s["H3"]["n_within"] == 0 and s["H3"]["n_cross"] == 1 and not s["H3"]["supported"]
+    assert s["H7"]["0.1"]["n_recovered"] == 3 and not s["H7"]["0.1"]["supported_primary"]
+    assert s["H6"]["n_mutational"] == 1
+    t1, _ = hy.h1(conn)                                  # the primary analysis is unchanged
+    assert len(t1) == 3
+
+
+def test_no_sensitivity_analysis_without_every_permutation_or_a_flag(conn):
+    """The q values are corrected across all models, so a missing test stops it; with no
+    flagged model it is the primary analysis."""
+    assert hy.flagged_models(conn) is None
+    s = hy.sensitivity(conn, _reference(), IDX, KEYWORDS, n_mc=200, seed=1)
+    assert s["status"].startswith("not computed") and "H1" not in s
+    _permuted(conn)
+    s = hy.sensitivity(conn, _reference(), IDX, KEYWORDS, n_mc=200, seed=1)
+    assert s["status"].startswith("no model flagged") and s["excluded_models"] == []
+
+
 def test_script_end_to_end(tmp_path, monkeypatch):
     import importlib.util
     import json
@@ -220,6 +253,7 @@ def test_script_end_to_end(tmp_path, monkeypatch):
     m.main()
     s = json.loads((tmp_path / "x" / "hypotheses" / "hypotheses.json").read_text())
     assert s["H2"]["supported"] and s["reference_missing"] == [] and s["H6"]["n_mutational"] == 2
+    assert s["sensitivity_label_permutation"]["status"].startswith("not computed")
     assert (tmp_path / "x" / "hypotheses" / "h3_pairs.csv").exists()
     from lib import contract  # the tables follow the output contract
     for tid in ("h1_models", "h2_models", "h3_pairs", "h6_models", "h7_determinants",
