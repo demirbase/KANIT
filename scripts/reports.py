@@ -531,6 +531,14 @@ def _permutation_sensitivity(ev: pd.DataFrame, flagged: list[str], put) -> None:
                 layer, f"Candidates of this flagged model passing the {layer} layer")
 
 
+def _b_aros(units: pd.DataFrame | None) -> set[str]:
+    """AROs behind b = 1 of a path's unitigs, primary mode: the determinants it recovered."""
+    if units is None or "allele_aware_state" not in units:
+        return set()
+    b = units[units["allele_aware_state"] == "b"]
+    return {a for x in b["allele_aware_aros"].dropna() for a in str(x).split(";") if a}
+
+
 def card_tier_table(t: Tables, models: list[tuple[str, str]]) -> pd.DataFrame:
     """The candidates with a CARD hit of every model, with the RGI tier of their hits
     (protocol §14 item 10). Empty when no organism has its hit table."""
@@ -708,6 +716,10 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
     n_graded_primary = 0
     n_weak_or_none = 0
     grade_counts: dict[str, int] = {g: 0 for g in F.GRADES}
+    # 3.7: the determinants each path recovers, counted per model (an ARO in two models
+    # counts twice), and the models where the association path adds one.
+    overlap = {"candidate_only": 0, "both": 0, "association_only": 0}
+    n_models_association_only = n_models_overlap = 0
     for org, ab in zip(included["organism"], included["antibiotic"], strict=True):
         mid = f"{org}__{ab}"
         mg = t.get("model_genomes", org, ab)
@@ -760,6 +772,23 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
             for g in F.GRADES:
                 put(f"{mid}.association.n_{g}", int(vc.get(g, 0)), "association_grades_patterns",
                     "grade", f"Patterns nominated by association graded {g}, primary mode")
+            aros = {"dtype": {"allele_aware_aros": str}}
+            cand_b = _b_aros(t.get("card_unitigs", org, ab, **aros))
+            assoc_b = _b_aros(t.get("association_card_unitigs", org, ab, **aros))
+            overlap["candidate_only"] += len(cand_b - assoc_b)
+            overlap["both"] += len(cand_b & assoc_b)
+            overlap["association_only"] += len(assoc_b - cand_b)
+            n_models_association_only += bool(assoc_b - cand_b)
+            n_models_overlap += 1
+    if n_models_overlap:
+        for k, what in (("candidate_only", "only among the candidates"),
+                        ("both", "on both paths"),
+                        ("association_only", "only on the association path")):
+            put(f"assoc_overlap.n_{k}", overlap[k], "card_unitigs", "allele_aware_aros",
+                f"(model, ARO) pairs giving b = 1 {what}, primary mode, summed over models")
+        put("assoc_overlap.n_models_association_only", n_models_association_only,
+            "association_card_unitigs", "allele_aware_aros",
+            "Models where the association path recovers an ARO the candidates miss")
     if evidence:
         ev = pd.concat(evidence, ignore_index=True)
         _evidence_numbers(ev, put)

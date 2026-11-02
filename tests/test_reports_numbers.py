@@ -379,3 +379,37 @@ def test_the_hypotheses_without_the_flagged_models_get_their_own_keys():
     assert n["lp_sensitivity.hyp.curated.median_share"] == 0.5
     assert n["hyp.curated.median_share"] == 0.75
     assert n["lp_sensitivity.hyp.expected.share_confirmed.thr10"] == 0.75
+
+
+# Unitigs of the two paths: (state, AROs). Only b = 1 counts; a CARD hit without b does not.
+UNITIGS = {("ecoli", "ampicillin"): ([("b", "3000001"), ("b", "3000002;3000003"),
+                                     ("card_hit_without_b", "3000009")],
+                                    [("b", "3000003"), ("b", "3000004"), ("no_card_hit", None)]),
+           ("ecoli", "ciprofloxacin"): ([("b", "3000001")], [("card_hit_without_b", "3000001")])}
+
+
+class AssocTables(FakeTables):
+    """The two E. coli models also have the association path; meropenem has none."""
+
+    def get(self, tid, organism=None, antibiotic=None, **_):
+        key = (organism, antibiotic)
+        if key in UNITIGS and tid in ("card_unitigs", "association_card_unitigs"):
+            rows = UNITIGS[key][tid.startswith("association")]
+            return pd.DataFrame(rows, columns=["allele_aware_state", "allele_aware_aros"])
+        if key in UNITIGS and tid == "association_grades_patterns":
+            return pd.DataFrame({"pattern_id": [0], "grade": ["confirmed"]})
+        return super().get(tid, organism, antibiotic)
+
+
+def test_the_determinant_overlap_counts_b_aros_per_model():
+    """3.7: ampicillin finds 3000001-3 among its candidates and 3000003-4 by association;
+    ciprofloxacin finds 3000001 only among the candidates (its association hit has no b)."""
+    n = _numbers(AssocTables())
+    assert n["assoc_overlap.n_candidate_only"] == 3
+    assert n["assoc_overlap.n_both"] == 1
+    assert n["assoc_overlap.n_association_only"] == 1
+    assert n["assoc_overlap.n_models_association_only"] == 1
+
+
+def test_no_overlap_keys_without_the_association_path():
+    assert not any(k.startswith("assoc_overlap.") for k in _numbers())
