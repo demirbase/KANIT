@@ -344,7 +344,7 @@ label_permutation:
 # GRADING RULE (14b_grading.py, lib/grading.py; protocol §9)
 # ----------------------------------------------------------------------------
 grading:
-  rule: allele_aware        # grading_rule reported as `grade`: allele_aware | homolog_only (both stored)
+  primary_mode: allele_aware   # CARD mode reported as `grade`: allele_aware | homolog_only (both stored)
 
 # Hyperparameter search and training of every model (lib/train.py): Optuna TPE
 # with a median pruner on up to search_max_genomes genomes; trees by early

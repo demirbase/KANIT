@@ -14,7 +14,7 @@ import math
 import pandas as pd
 from scipy.stats import chi2
 
-RULE = "allele_aware"                  # the primary rule (§9)
+PRIMARY = "allele_aware"               # the primary CARD mode (§9)
 TIERS = ("Perfect", "Strict")
 TIER_ORDER = ("Perfect", "Strict", "mixed")
 AMBIGUOUS, NO_HIT = "ambiguous", "no_hit"
@@ -45,15 +45,15 @@ def pair_tiers(hits: pd.DataFrame) -> pd.Series:
     return g.agg(lambda s: s.iloc[0] if s.nunique() == 1 else AMBIGUOUS).rename("tier")
 
 
-def pattern_tiers(unitigs: pd.DataFrame, tiers: pd.Series, rule: str = RULE) -> pd.DataFrame:
+def pattern_tiers(unitigs: pd.DataFrame, tiers: pd.Series, mode: str = PRIMARY) -> pd.DataFrame:
     """Per candidate pattern with a CARD hit: its (genome, ARO) pairs by tier and its own tier.
 
     ``unitigs`` is grades_unitigs of one model, ``tiers`` the output of pair_tiers for its
     organism. The genome IDs must have been read as text: as floats, 562.10010 becomes 562.1001."""
-    u = unitigs[unitigs[f"{rule}_card_state"] != NO_CARD_HIT]
+    u = unitigs[unitigs[f"{mode}_card_state"] != NO_CARD_HIT]
     rows = [(pid, g, a)
             for pid, gs, aros in zip(u["pattern_id"], u["located_genomes"],
-                                     u[f"{rule}_card_aros"], strict=True)
+                                     u[f"{mode}_card_aros"], strict=True)
             for g in _split(gs) for a in _split(aros)]
     pairs = pd.DataFrame(rows, columns=["pattern_id", "genome_id", "aro"]).drop_duplicates()
     if pairs.empty:
@@ -81,13 +81,13 @@ def group(grade: str, card_state: str) -> str | None:
 
 
 def model_table(patterns: pd.DataFrame, unitigs: pd.DataFrame, tiers: pd.Series,
-                rule: str = RULE) -> pd.DataFrame:
+                mode: str = PRIMARY) -> pd.DataFrame:
     """One row per candidate pattern with a CARD hit: grade, CARD state, group and tier."""
-    p = patterns[patterns[f"{rule}_card_state"] != NO_CARD_HIT][
-        ["pattern_id", f"{rule}_grade", f"{rule}_card_state"]].rename(
-        columns={f"{rule}_grade": "grade", f"{rule}_card_state": "card_state"})
+    p = patterns[patterns[f"{mode}_card_state"] != NO_CARD_HIT][
+        ["pattern_id", f"{mode}_grade", f"{mode}_card_state"]].rename(
+        columns={f"{mode}_grade": "grade", f"{mode}_card_state": "card_state"})
     p["group"] = [group(g, s) for g, s in zip(p["grade"], p["card_state"], strict=True)]
-    return p.merge(pattern_tiers(unitigs, tiers, rule), on="pattern_id", how="left")
+    return p.merge(pattern_tiers(unitigs, tiers, mode), on="pattern_id", how="left")
 
 
 def collect(get, models) -> pd.DataFrame:
@@ -106,7 +106,7 @@ def collect(get, models) -> pd.DataFrame:
                 continue
             pats = get("grades_patterns", org, ab)
             units = get("grades_unitigs", org, ab,
-                        dtype={"located_genomes": str, f"{RULE}_card_aros": str})
+                        dtype={"located_genomes": str, f"{PRIMARY}_card_aros": str})
             if pats is None or units is None:
                 continue
             parts.append(model_table(pats, units, tiers).assign(model=f"{org}__{ab}",

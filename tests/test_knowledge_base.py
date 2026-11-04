@@ -72,7 +72,7 @@ def _config(root: Path) -> dict:
         "candidates": {"top_gain": 5},
         "pyseer": {"kinship_every": 5, "alpha": 0.05, "background_max": 10},
         "label_permutation": {"n_permutations": 6, "seed": 0, "chunk": 3, "alpha": 0.05},
-        "grading": {"rule": "allele_aware"},
+        "grading": {"primary_mode": "allele_aware"},
         "association": {"max_patterns": 3},
     }
 

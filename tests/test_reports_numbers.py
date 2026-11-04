@@ -23,7 +23,7 @@ QC = {"ecoli": [True] * 10 + [False, False], "kpneumoniae": [True] * 5}
 GENOMES = {("ecoli", "ampicillin"): ["g1", "g2", "g3"],
            ("ecoli", "ciprofloxacin"): ["g2", "g3", "g4"],
            ("kpneumoniae", "meropenem"): ["k1", "k2"]}
-# The grade of the reported rule, per pattern: three of the six are weak or none.
+# The grade of the primary mode, per pattern: three of the six are weak or none.
 PATTERNS = {("ecoli", "ampicillin"): ["weak", "confirmed"],
             ("ecoli", "ciprofloxacin"): ["none", "weak", "candidate"],
             ("kpneumoniae", "meropenem"): ["strong_novel"]}
@@ -151,8 +151,8 @@ def test_weak_or_none_share_is_measured_on_the_reported_rule():
 
 
 def test_the_share_is_absent_without_the_reported_grade():
-    """An output carrying only the per-rule columns gives no share, not a zero."""
-    class PerRuleOnly(FakeTables):
+    """An output carrying only the per-mode columns gives no share, not a zero."""
+    class PerModeOnly(FakeTables):
         def get(self, tid, organism=None, antibiotic=None, **_):
             out = super().get(tid, organism, antibiotic)
             if tid == "grades_patterns" and out is not None:
@@ -164,7 +164,7 @@ def test_the_share_is_absent_without_the_reported_grade():
                                                   PROJECT_ROOT / "scripts" / "reports.py")
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
-    df = m.numbers(PerRuleOnly(), ["ecoli", "kpneumoniae"])
+    df = m.numbers(PerModeOnly(), ["ecoli", "kpneumoniae"])
     keys = set(df["key"])
     assert "all.weak_or_none_share" not in keys
     assert "all.n_candidate_patterns" in keys

@@ -514,12 +514,12 @@ def _permutation_sensitivity(ev: pd.DataFrame, flagged: list[str], put) -> None:
         for g in F.GRADES:
             k = int((rest["grade"] == g).sum())
             put(f"{pre}.n_{g}", k, "grades_patterns", "grade",
-                f"Candidate patterns graded {g} without the flagged models, reported rule")
+                f"Candidate patterns graded {g} without the flagged models, primary mode")
             put(f"{pre}.share_{g}", k / len(rest), "grades_patterns", "grade",
-                f"Share (0-1) of those candidate patterns graded {g}, reported rule")
+                f"Share (0-1) of those candidate patterns graded {g}, primary mode")
         put(f"{pre}.weak_or_none_share", float(rest["grade"].isin(("weak", "none")).mean()),
             "grades_patterns", "grade",
-            "Share (0-1) of those candidate patterns graded weak or none, reported rule")
+            "Share (0-1) of those candidate patterns graded weak or none, primary mode")
         for layer in layers:
             put(f"{pre}.share_pass_{layer}", float(F._bool(rest[layer]).mean()),
                 "grades_patterns", layer,
@@ -858,12 +858,12 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
             "Candidate patterns, summed over models (pattern numbers are model-specific)")
     if n_graded_primary:
         put("all.weak_or_none_share", n_weak_or_none / n_graded_primary, "grades_patterns",
-            "grade", "Share (0-1) of the candidate patterns graded weak or none, reported rule")
+            "grade", "Share (0-1) of the candidate patterns graded weak or none, primary mode")
         for g in F.GRADES:
             put(f"all.n_{g}", grade_counts[g], "grades_patterns", "grade",
-                f"Candidate patterns graded {g}, summed over models, reported rule")
+                f"Candidate patterns graded {g}, summed over models, primary mode")
             put(f"all.share_{g}", grade_counts[g] / n_graded_primary, "grades_patterns", "grade",
-                f"Share (0-1) of the candidate patterns graded {g}, reported rule")
+                f"Share (0-1) of the candidate patterns graded {g}, primary mode")
     if genomes_qc_pass:
         put("all.n_genomes_qc_pass", genomes_qc_pass, "genome_qc", "pass_overall",
             "Genomes that pass QC, summed over organisms")

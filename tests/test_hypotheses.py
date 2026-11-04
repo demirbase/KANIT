@@ -80,14 +80,14 @@ def _kb(path: Path) -> sqlite3.Connection:
                                                     "in_prefilter": 1, "n_selected": 1,
                                                     "pi": 0.9 if stable else 0.1,
                                                     "passes": int(stable)}]))
-            for rule in ("allele_aware", "homolog_only"):
+            for mode in ("allele_aware", "homolog_only"):
                 ins(conn, "grade", pd.DataFrame([{
-                    "model_id": mid, "pattern_id": pid, "rule": rule,
-                    "primary_rule": int(rule == "allele_aware"), "card_state": state,
+                    "model_id": mid, "pattern_id": pid, "mode": mode,
+                    "primary_mode": int(mode == "allele_aware"), "card_state": state,
                     "card_reasons": "", "n_layers": 2, "layers_passed": "cpss;pyseer",
                     "grade": grade}]))
                 ins(conn, "card_annotation", pd.DataFrame([{
-                    "model_id": mid, "unitig_id": uid, "mode": rule, "state": state,
+                    "model_id": mid, "unitig_id": uid, "mode": mode, "state": state,
                     "reasons": "", "n_b": 3 if state == "b" else 0, "located_genomes": "g0"}]))
             for a in aros:
                 ins(conn, "card_hit", pd.DataFrame([{"model_id": mid, "unitig_id": uid,

@@ -5,9 +5,9 @@ statistical layers it passes: prevalence, MDA, CPSS and pyseer. ``RULES`` is the
 protocol's table in its order; the first matching row gives the grade. Member
 unitigs take the grade of their pattern and keep their own CARD annotation.
 
-Both CARD modes are graded: ``allele_aware`` (the rule) and ``homolog_only``
+Both CARD modes are graded: ``allele_aware`` (the primary mode) and ``homolog_only``
 (its sensitivity analysis, in which variant and overexpression hits are CARD
-hits without ``b``). The configured grading rule names the one reported as
+hits without ``b``). The configured primary mode names the one reported as
 ``grade``; both are stored.
 
 Each statistical layer writes one file per model, ``<layers_dir>/<layer>.csv``,
@@ -75,12 +75,12 @@ def read_layer(path, layer: str) -> pd.Series:
 
 
 def grade_patterns(card_patterns: pd.DataFrame, layers: Mapping[str, pd.Series],
-                   rule: str) -> pd.DataFrame:
+                   primary_mode: str) -> pd.DataFrame:
     """One row per candidate pattern: the layers it passes and, in both modes, its
     CARD state, the reasons of a CARD hit without b, and its grade; ``grade`` is
-    the grade under ``rule``."""
-    if rule not in MODES:
-        raise ValueError(f"grading rule must be one of {MODES}, not {rule!r}")
+    the grade under ``primary_mode``."""
+    if primary_mode not in MODES:
+        raise ValueError(f"primary mode must be one of {MODES}, not {primary_mode!r}")
     if set(layers) != set(LAYERS):
         raise ValueError(f"layers must be {LAYERS}, got {sorted(layers)}")
     out = card_patterns[["pattern_id", "n_members"]].copy()
@@ -100,7 +100,7 @@ def grade_patterns(card_patterns: pd.DataFrame, layers: Mapping[str, pd.Series],
         out[f"{mode}_card_state"] = states
         out[f"{mode}_card_reasons"] = card_patterns[f"{mode}_reasons"].fillna("").tolist()
         out[f"{mode}_grade"] = [grade(s, p) for s, p in zip(states, passed, strict=True)]
-    out["grade"] = out[f"{rule}_grade"]
+    out["grade"] = out[f"{primary_mode}_grade"]
     return out
 
 
@@ -116,9 +116,9 @@ def grade_unitigs(card_unitigs: pd.DataFrame, graded: pd.DataFrame) -> pd.DataFr
     return u
 
 
-def summary(graded: pd.DataFrame, rule: str) -> dict:
+def summary(graded: pd.DataFrame, primary_mode: str) -> dict:
     return {
-        "grading_rule": rule, "n_patterns": len(graded),
+        "primary_mode": primary_mode, "n_patterns": len(graded),
         "patterns_by_grade": {mode: {g: int((graded[f"{mode}_grade"] == g).sum()) for g in GRADES}
                               for mode in MODES},
         "patterns_passing": {layer: int(graded[layer].sum()) for layer in LAYERS},

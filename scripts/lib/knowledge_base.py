@@ -287,18 +287,18 @@ CREATE TABLE card_annotation (          -- §8.1: CARD state of every graded uni
 );
 
 -- Inference ---------------------------------------------------------------------
-CREATE TABLE grade (                    -- §9, both rules
+CREATE TABLE grade (                    -- §9, both modes
     model_id       TEXT NOT NULL,
     pattern_id     INTEGER NOT NULL,
-    rule           TEXT NOT NULL CHECK (rule IN ('allele_aware', 'homolog_only')),
-    primary_rule   INTEGER NOT NULL CHECK (primary_rule IN (0, 1)),
+    mode           TEXT NOT NULL CHECK (mode IN ('allele_aware', 'homolog_only')),
+    primary_mode   INTEGER NOT NULL CHECK (primary_mode IN (0, 1)),
     card_state     TEXT NOT NULL CHECK (card_state IN ('b', 'card_hit_without_b', 'no_card_hit')),
     card_reasons   TEXT NOT NULL,
     n_layers       INTEGER NOT NULL CHECK (n_layers BETWEEN 0 AND 4),
     layers_passed  TEXT NOT NULL,
     grade          TEXT NOT NULL CHECK (grade IN ('confirmed', 'strong_novel', 'candidate',
                                                   'weak', 'none')),
-    PRIMARY KEY (model_id, pattern_id, rule),
+    PRIMARY KEY (model_id, pattern_id, mode),
     FOREIGN KEY (model_id, pattern_id) REFERENCES candidate
 );
 
@@ -356,7 +356,7 @@ CREATE TABLE external_comparison (
 CREATE VIEW v_biomarker AS
 SELECT c.model_id, m.organism_id, m.antibiotic_id, c.pattern_id, c.route, p.n_members,
        p.n_present, c.source AS candidate_source, c.gain_rank,
-       gp.rule AS grading_rule, gp.grade,
+       gp.mode AS primary_mode, gp.grade,
        ga.grade AS grade_allele_aware, gh.grade AS grade_homolog_only,
        ga.card_state AS card_state_allele_aware, ga.card_reasons AS card_reasons_allele_aware,
        gh.card_state AS card_state_homolog_only,
@@ -371,9 +371,9 @@ SELECT c.model_id, m.organism_id, m.antibiotic_id, c.pattern_id, c.route, p.n_me
   FROM candidate c
   JOIN model m ON m.model_id = c.model_id
   JOIN pattern p ON p.model_id = c.model_id AND p.pattern_id = c.pattern_id
-  JOIN grade gp ON gp.model_id = c.model_id AND gp.pattern_id = c.pattern_id AND gp.primary_rule = 1
-  JOIN grade ga ON ga.model_id = c.model_id AND ga.pattern_id = c.pattern_id AND ga.rule = 'allele_aware'
-  JOIN grade gh ON gh.model_id = c.model_id AND gh.pattern_id = c.pattern_id AND gh.rule = 'homolog_only'
+  JOIN grade gp ON gp.model_id = c.model_id AND gp.pattern_id = c.pattern_id AND gp.primary_mode = 1
+  JOIN grade ga ON ga.model_id = c.model_id AND ga.pattern_id = c.pattern_id AND ga.mode = 'allele_aware'
+  JOIN grade gh ON gh.model_id = c.model_id AND gh.pattern_id = c.pattern_id AND gh.mode = 'homolog_only'
   JOIN prevalence_result pr ON pr.model_id = c.model_id AND pr.pattern_id = c.pattern_id
   JOIN mda_result md ON md.model_id = c.model_id AND md.pattern_id = c.pattern_id
   JOIN cpss_result cs ON cs.model_id = c.model_id AND cs.pattern_id = c.pattern_id
@@ -385,7 +385,7 @@ SELECT u.unitig_id, u.sequence, u.length, pm.model_id, pm.pattern_id, c.route, g
   FROM pattern_member pm
   JOIN unitig u ON u.unitig_id = pm.unitig_id
   JOIN candidate c ON c.model_id = pm.model_id AND c.pattern_id = pm.pattern_id
-  JOIN grade g ON g.model_id = pm.model_id AND g.pattern_id = pm.pattern_id AND g.primary_rule = 1
+  JOIN grade g ON g.model_id = pm.model_id AND g.pattern_id = pm.pattern_id AND g.primary_mode = 1
   JOIN card_annotation ca ON ca.model_id = pm.model_id AND ca.unitig_id = pm.unitig_id
                          AND ca.mode = 'allele_aware';
 
@@ -398,10 +398,10 @@ SELECT m.model_id, m.organism_id, m.antibiotic_id, m.n_genomes, m.n_resistant, m
        (SELECT count(*) FROM candidate c WHERE c.model_id = m.model_id
                                            AND c.route = 'model') AS n_candidates,
        (SELECT count(*) FROM grade g JOIN candidate c USING (model_id, pattern_id)
-         WHERE g.model_id = m.model_id AND g.primary_rule = 1 AND c.route = 'model'
+         WHERE g.model_id = m.model_id AND g.primary_mode = 1 AND c.route = 'model'
            AND g.grade = 'confirmed') AS n_confirmed,
        (SELECT count(*) FROM grade g JOIN candidate c USING (model_id, pattern_id)
-         WHERE g.model_id = m.model_id AND g.primary_rule = 1 AND c.route = 'model'
+         WHERE g.model_id = m.model_id AND g.primary_mode = 1 AND c.route = 'model'
            AND g.grade = 'strong_novel') AS n_strong_novel,
        (SELECT count(*) FROM candidate c WHERE c.model_id = m.model_id
                                            AND c.route = 'association') AS n_association
@@ -457,7 +457,7 @@ PARAMETERS = (
     ("pyseer.alpha", ("pyseer", "alpha"), "§8.5"),
     ("label_permutation.n_permutations", ("label_permutation", "n_permutations"), "§8.6"),
     ("label_permutation.alpha", ("label_permutation", "alpha"), "§8.6"),
-    ("grading.rule", ("grading", "rule"), "§9"),
+    ("grading.primary_mode", ("grading", "primary_mode"), "§9"),
     ("association.max_patterns", ("association", "max_patterns"), "§14 item 6"),
 )
 
@@ -512,7 +512,7 @@ def validate(conn: sqlite3.Connection) -> dict:
             problems.append(f"{bad} candidate(s) without exactly {n} row(s) in {table}")
     bad = conn.execute(
         "SELECT count(*) FROM candidate c WHERE (SELECT count(*) FROM grade g WHERE "
-        "g.model_id = c.model_id AND g.pattern_id = c.pattern_id AND g.primary_rule = 1) != 1"
+        "g.model_id = c.model_id AND g.pattern_id = c.pattern_id AND g.primary_mode = 1) != 1"
     ).fetchone()[0]
     if bad:
         problems.append(f"{bad} candidate(s) without exactly one primary grade")
@@ -535,7 +535,7 @@ def validate(conn: sqlite3.Connection) -> dict:
     if missing:
         problems.append(f"{missing} candidate unitig(s) without a CARD annotation")
     # the grades follow from the stored layers and CARD states (lib.grading)
-    q = """SELECT g.model_id, g.pattern_id, g.rule, g.card_state, g.grade, g.n_layers,
+    q = """SELECT g.model_id, g.pattern_id, g.mode, g.card_state, g.grade, g.n_layers,
                   pr.passes, md.passes, cs.passes, py.passes
              FROM grade g
              JOIN prevalence_result pr USING (model_id, pattern_id)
@@ -543,10 +543,10 @@ def validate(conn: sqlite3.Connection) -> dict:
              JOIN cpss_result cs USING (model_id, pattern_id)
              JOIN pyseer_result py USING (model_id, pattern_id)"""
     n_checked = 0
-    for mid, pid, rule, state, g, n_layers, *passes in conn.execute(q):
+    for mid, pid, mode, state, g, n_layers, *passes in conn.execute(q):
         layers = dict(zip(grading.LAYERS, (bool(x) for x in passes), strict=True))
         if grading.grade(state, layers) != g or grading.n_passed(layers) != n_layers:
-            problems.append(f"grade of {mid} pattern {pid} ({rule}) does not follow its layers")
+            problems.append(f"grade of {mid} pattern {pid} ({mode}) does not follow its layers")
             break
         n_checked += 1
     if problems:

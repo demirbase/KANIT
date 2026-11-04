@@ -4,7 +4,7 @@
 Every member unitig of every candidate pattern is located in up to three
 carrier genomes of the model and compared with their RGI hits (08); the result
 is one state per unitig and per pattern, in two modes: ``allele_aware`` (the
-grading rule) and ``homolog_only`` (its sensitivity analysis). The rule is in
+primary mode) and ``homolog_only`` (its sensitivity analysis). The rule is in
 lib/card_layer.py. With --set association, the same for the patterns nominated by
 association (§14 item 6; lib/pattern_sets.py).
 

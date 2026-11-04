@@ -64,17 +64,17 @@ def h1(conn, exclude=()) -> tuple[pd.DataFrame, dict]:
 def h2(conn, exclude=()) -> tuple[pd.DataFrame, dict]:
     """Share of the stable patterns of every model with b = 1; median >= 0.40."""
     d = pd.read_sql_query(
-        "SELECT c.model_id, g.rule, g.card_state FROM cpss_result c JOIN grade g "
+        "SELECT c.model_id, g.mode, g.card_state FROM cpss_result c JOIN grade g "
         "ON g.model_id = c.model_id AND g.pattern_id = c.pattern_id "
         "JOIN candidate k ON k.model_id = c.model_id AND k.pattern_id = c.pattern_id "
         "WHERE c.passes = 1 AND k.route = 'model'", conn)
     rows = []
     for mid in _models(conn, exclude)["model_id"]:
         row = {"model_id": mid}
-        for rule in ("allele_aware", "homolog_only"):
-            s = d[(d["model_id"] == mid) & (d["rule"] == rule)]["card_state"]
+        for mode in ("allele_aware", "homolog_only"):
+            s = d[(d["model_id"] == mid) & (d["mode"] == mode)]["card_state"]
             row["n_stable"] = len(s)
-            row[f"share_b_{rule}"] = float((s == "b").mean()) if len(s) else np.nan
+            row[f"share_b_{mode}"] = float((s == "b").mean()) if len(s) else np.nan
         rows.append(row)
     t = pd.DataFrame(rows, columns=["model_id", "n_stable", "share_b_allele_aware",
                                     "share_b_homolog_only"])
@@ -236,7 +236,7 @@ def model_patterns(conn, mid: str) -> pd.DataFrame:
     """Candidate patterns with their best grade, CARD families and mutation genes."""
     grades = pd.read_sql_query(
         "SELECT g.pattern_id, g.grade FROM grade g JOIN candidate c USING (model_id, pattern_id) "
-        "WHERE g.model_id = ? AND g.primary_rule = 1 AND c.route = 'model'", conn,
+        "WHERE g.model_id = ? AND g.primary_mode = 1 AND c.route = 'model'", conn,
         params=(mid,))
     hits = pd.read_sql_query(
         "SELECT pm.pattern_id, a.gene_family, a.name, a.model_type, ca.state "

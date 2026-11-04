@@ -327,7 +327,7 @@ tables:
     columns:
       model_id: "Model"
       unitig_id: "Unitig"
-      mode: "allele_aware (the rule) or homolog_only (its sensitivity analysis, in which variant and overexpression hits never give b = 1)"
+      mode: "allele_aware (the primary mode) or homolog_only (its sensitivity analysis, in which variant and overexpression hits never give b = 1)"
       state: "b (a hit gives b = 1 in more than half of the located genomes), card_hit_without_b, or no_card_hit"
       reasons: "Why the hits did not give b = 1, semicolon-separated: co_carried_known_gene, near_universal_gene, allele_not_in_unitig, b_in_minority_of_located_genomes, variant_not_counted; empty when none"
       n_b: "Located genomes in which b = 1"
@@ -337,12 +337,12 @@ tables:
   grade:
     group: Inference
     section: "§9"
-    description: "The evidence grade of every graded pattern under both rules."
+    description: "The evidence grade of every graded pattern under both modes."
     columns:
       model_id: "Model"
       pattern_id: "Pattern"
-      rule: "allele_aware or homolog_only"
-      primary_rule: "1 for the rule reported as the grade (parameter grading.rule)"
+      mode: "allele_aware or homolog_only"
+      primary_mode: "1 for the mode reported as the grade (parameter grading.primary_mode)"
       card_state: "CARD state of the pattern: the best state of its unitigs"
       card_reasons: "Reasons of the pattern's unitigs, semicolon-separated; empty when none"
       n_layers: "Statistical layers passed (prevalence, mda, cpss, pyseer)"
@@ -405,7 +405,7 @@ tables:
       major_error_rate: "Share of the susceptible genomes predicted resistant"
 
 views:
-  v_biomarker: "One row per graded pattern: model, route, the grade under both rules, CARD state, the statistics of the four layers and the CARD genes hit by its unitigs."
+  v_biomarker: "One row per graded pattern: model, route, the grade under both modes, CARD state, the statistics of the four layers and the CARD genes hit by its unitigs."
   v_unitig: "One row per unitig of a graded pattern, with the primary grade of its pattern and its own allele-aware CARD state."
   v_model: "One row per model: its size, the ROC-AUC of both arms with the bootstrap interval, the label permutation, and its counts of candidates, confirmed and strong_novel candidates, and patterns nominated by association."
   v_novel: "The strong_novel candidates, with the NCBI context of their longest unitig beside them; context_is_evidence is 0 in every row."

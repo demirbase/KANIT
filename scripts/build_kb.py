@@ -289,10 +289,10 @@ def model_tables(org: str, ab: str, config: dict, src: Sources) -> dict[str, pd.
     out["card_hit"] = pd.DataFrame(sorted(set(hits)), columns=["unitig_id", "aro_accession"]).assign(
         model_id=mid)[["model_id", "unitig_id", "aro_accession"]]
 
-    rule = config["grading"]["rule"]
+    primary = config["grading"]["primary_mode"]
     out["grade"] = pd.concat([pd.DataFrame({
-        "model_id": mid, "pattern_id": grades["pattern_id"], "rule": mode,
-        "primary_rule": int(mode == rule), "card_state": grades[f"{mode}_card_state"],
+        "model_id": mid, "pattern_id": grades["pattern_id"], "mode": mode,
+        "primary_mode": int(mode == primary), "card_state": grades[f"{mode}_card_state"],
         "card_reasons": grades[f"{mode}_card_reasons"].astype(str),
         "n_layers": grades["n_layers"].astype(int), "layers_passed": grades["layers_passed"],
         "grade": grades[f"{mode}_grade"]}) for mode in MODES], ignore_index=True)

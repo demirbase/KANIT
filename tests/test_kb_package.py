@@ -100,7 +100,7 @@ def test_the_dictionary_describes_exactly_the_schema():
     grade = next(t for t in tables if t["name"] == "grade")
     cols = {c["name"]: c for c in grade["columns"]}
     assert cols["grade"]["enum"] == ["confirmed", "strong_novel", "candidate", "weak", "none"]
-    assert cols["n_layers"]["range"] == (0, 4) and cols["primary_rule"]["enum"] == [0, 1]
+    assert cols["n_layers"]["range"] == (0, 4) and cols["primary_mode"]["enum"] == [0, 1]
     assert grade["foreign_keys"] == [{"fields": ["model_id", "pattern_id"],
                                       "resource": "candidate",
                                       "reference": ["model_id", "pattern_id"]}]
@@ -177,7 +177,7 @@ def test_the_tables_come_back_from_the_csv(tmp_path):
     assert field("grade", "grade")["constraints"]["required"] is True
     assert field("grade", "n_layers")["constraints"] == {"required": True, "minimum": 0,
                                                          "maximum": 4}
-    assert by["grade"]["schema"]["primaryKey"] == ["model_id", "pattern_id", "rule"]
+    assert by["grade"]["schema"]["primaryKey"] == ["model_id", "pattern_id", "mode"]
     assert {"fields": ["model_id", "pattern_id"], "reference": {
         "resource": "candidate", "fields": ["model_id", "pattern_id"]}} in \
         by["grade"]["schema"]["foreignKeys"]

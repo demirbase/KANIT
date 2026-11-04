@@ -132,7 +132,7 @@ def test_a_candidate_missing_from_a_layer_stops_the_grading():
     del bits[5]
     with pytest.raises(ValueError, match="no result"):
         gr.grade_patterns(_card_patterns(), _layers(bits), "allele_aware")
-    with pytest.raises(ValueError, match="grading rule"):
+    with pytest.raises(ValueError, match="primary mode"):
         gr.grade_patterns(_card_patterns(), _layers(LAYER_BITS), "blast")
 
 
@@ -173,7 +173,7 @@ def test_grading_script_end_to_end(tmp_path, monkeypatch, load_script):
     paths = {"candidates_file": tmp_path / "candidates.csv", "card_layer_dir": tmp_path / "card",
              "layers_dir": tmp_path / "layers", "grades_dir": tmp_path / "grades"}
     config = {"paths_organism": {k: str(v) for k, v in paths.items()},
-              "grading": {"rule": "allele_aware"}}
+              "grading": {"primary_mode": "allele_aware"}}
     monkeypatch.setattr(m, "load_config", lambda: config)
     monkeypatch.setattr(sys, "argv", ["14b", "--organism", "ecoli", "--antibiotic", "x"])
     cp = _card_patterns().assign(allele_aware_aros="", homolog_only_aros="")
@@ -193,16 +193,16 @@ def test_grading_script_end_to_end(tmp_path, monkeypatch, load_script):
     out = pd.read_csv(paths["grades_dir"] / "grades_patterns.csv", keep_default_na=False)
     assert out.set_index("pattern_id").loc[3, "allele_aware_card_reasons"] == CO_CARRIED
     summary = json.loads((paths["grades_dir"] / "grades_summary.json").read_text())
-    assert summary["grading_rule"] == "allele_aware" and summary["n_unitigs"] == 2
+    assert summary["primary_mode"] == "allele_aware" and summary["n_unitigs"] == 2
     pd.DataFrame({"pattern_id": [1, 2]}).to_csv(paths["candidates_file"], index=False)
     with pytest.raises(SystemExit, match="rerun 09"):
         m.main()
 
 
-@pytest.mark.parametrize("rule", ["allele_aware", "homolog_only"])
-def test_truth_table_through_both_modes(rule):
+@pytest.mark.parametrize("primary", ["allele_aware", "homolog_only"])
+def test_truth_table_through_both_modes(primary):
     """All 48 combinations through grade_patterns: each mode grades from its own CARD
-    state, and the rule picks the grade of its mode."""
+    state, and the primary mode picks the reported grade."""
     cases = list(_truth())
     expected = {(s, tuple(p.values())): g for s, p, g in cases}
     states = list(gr.CARD_STATES)
@@ -213,9 +213,9 @@ def test_truth_table_through_both_modes(rule):
                      "allele_aware_reasons": "", "homolog_only_state": other,
                      "homolog_only_reasons": ""})
         bits[i] = "".join("1" if passed[layer] else "0" for layer in gr.LAYERS)
-    g = gr.grade_patterns(pd.DataFrame(rows), _layers(bits), rule).set_index("pattern_id")
+    g = gr.grade_patterns(pd.DataFrame(rows), _layers(bits), primary).set_index("pattern_id")
     for i, (state, passed, want) in enumerate(cases):
         other = states[(states.index(state) + 1) % 3]
         assert g.loc[i, "allele_aware_grade"] == want
         assert g.loc[i, "homolog_only_grade"] == expected[(other, tuple(passed.values()))]
-        assert g.loc[i, "grade"] == g.loc[i, f"{rule}_grade"]
+        assert g.loc[i, "grade"] == g.loc[i, f"{primary}_grade"]
