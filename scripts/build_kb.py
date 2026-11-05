@@ -161,6 +161,62 @@ def genomes_of(org: str, config: dict,
 
 
 # ---- one model -------------------------------------------------------------------
+# Settings the build adds to the parameter table beside lib.knowledge_base.PARAMETERS:
+# the genome quality gate, read from 02d's summary, and the lineage clustering, from
+# config.yaml and the registry's overrides (as 02c merges them): (name, key, what it sets).
+QC_SETTINGS = (
+    ("qc.completeness_min", "completeness_min",
+     "CheckM2 completeness (%) at or above which a genome passes quality control"),
+    ("qc.contamination_max", "contamination_max",
+     "CheckM2 contamination (%) at or below which a genome passes quality control"))
+LINEAGE_SETTINGS = (
+    ("lineage.model", "model", "PopPUNK model fitted to the core and accessory distances"),
+    ("lineage.refine", "refine", "Whether a boundary refinement follows the PopPUNK fit"),
+    ("lineage.min_k", "min_k", "Smallest k-mer length of the PopPUNK sketches"),
+    ("lineage.max_k", "max_k", "Largest k-mer length of the PopPUNK sketches"),
+    ("lineage.k_step", "k_step", "Step between the k-mer lengths of the PopPUNK sketches"),
+    ("lineage.sketch_size", "sketch_size", "Sketch size of PopPUNK"),
+    ("lineage.qc", "qc", "Whether PopPUNK's quality control of the sketches runs"),
+    ("lineage.max_a_dist", "max_a_dist",
+     "PopPUNK quality control: largest accessory distance permitted"),
+    ("lineage.length_sigma", "length_sigma",
+     "PopPUNK quality control: standard deviations of the length distribution beyond which a "
+     "genome is removed"),
+    ("lineage.prop_n", "prop_n", "PopPUNK quality control: largest proportion of ambiguous bases"),
+    ("lineage.length_range", "length_range",
+     "PopPUNK quality control: permitted genome length in bp, [min, max] (null: none)"))
+
+
+def _setting(values: dict) -> str:
+    """One value when every organism has it, else a JSON object by organism."""
+    def one(v):
+        return v if isinstance(v, str) else json.dumps(v)
+    distinct = {json.dumps(v, sort_keys=True) for v in values.values()}
+    if len(distinct) == 1:
+        return one(next(iter(values.values())))
+    return json.dumps(values, sort_keys=True)
+
+
+def settings(config: dict, orgs: list[str], src: Sources) -> list[tuple[str, str, str]]:
+    """The parameter rows of the quality gate and of the lineage clustering."""
+    rows = []
+    qc = {org: src.json(resolve_path("genome_qc_dir", organism=org, config=config)
+                        / f"02d_genome_qc_summary_{org}.json")["thresholds"] for org in orgs}
+    for name, key, what in QC_SETTINGS:
+        rows.append((name, _setting({o: qc[o][key] for o in orgs}), what))
+    lineage = {}
+    for org in orgs:
+        p = dict(config.get("lineage") or {})
+        try:
+            p.update(registry.get_organism(org).get("lineage") or {})
+        except KeyError:            # not in the registry: the globals, as in 02c
+            pass
+        lineage[org] = p
+    for name, key, what in LINEAGE_SETTINGS:
+        rows.append((name, _setting({o: lineage[o].get(key) for o in orgs}), what))
+    return rows
+
+
 def model_tables(org: str, ab: str, config: dict, src: Sources) -> dict[str, pd.DataFrame]:
     def path(key):
         return resolve_path(key, organism=org, antibiotic=ab, config=config)
@@ -389,8 +445,8 @@ def build(config: dict, out_file: Path, *, kb_version: str, allow_missing_contex
         if vs.nunique() > 1:
             raise ValueError(f"models were built with different {tool} versions: {sorted(set(vs))}")
         tools[tool] = vs.iloc[0]
-    frames["parameter"] = pd.DataFrame(kb.parameters(config),
-                                       columns=["name", "value", "protocol_section"])
+    frames["parameter"] = pd.DataFrame(kb.parameters(config) + settings(config, orgs, src),
+                                       columns=["name", "value", "description"])
     manifest = src.json(resolve_path("databases_manifest", config=config))
     frames["reference_database"] = pd.DataFrame([{
         "name": n, "version": e["version"], "downloaded_on": e["downloaded_on"],
@@ -421,7 +477,6 @@ def build(config: dict, out_file: Path, *, kb_version: str, allow_missing_contex
             kb.insert(conn, "release", pd.DataFrame([{
                 "kb_version": kb_version, "schema_version": kb.SCHEMA_VERSION,
                 "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                "protocol_version": protocol["version"], "protocol_sha256": protocol["sha256"],
                 "config_sha256": hashlib.sha256(Path(CONFIG_FILE).read_bytes()).hexdigest(),
                 "code_commit": git_commit_hash(), "code_dirty": git_is_dirty(),
                 "card_version": next(iter(cards)) if cards else None,

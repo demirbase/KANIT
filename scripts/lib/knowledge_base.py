@@ -18,7 +18,7 @@ import sqlite3
 
 import pandas as pd
 
-from lib import grading
+from lib import card_layer, grading
 from lib.card_layer import revcomp
 
 SCHEMA_VERSION = "1.0"
@@ -29,14 +29,12 @@ CREATE TABLE release (
     kb_version        TEXT NOT NULL,
     schema_version    TEXT NOT NULL,
     created_at        TEXT NOT NULL,
-    protocol_version  TEXT NOT NULL,
-    protocol_sha256   TEXT NOT NULL,      -- checksum of the protocol text in force
     config_sha256     TEXT NOT NULL,
     code_commit       TEXT,
     code_dirty        INTEGER CHECK (code_dirty IN (0, 1)),
     card_version      TEXT,
     tools             TEXT NOT NULL,      -- JSON {tool: version}
-    license           TEXT,               -- data licence (decided in F8.2)
+    license           TEXT,               -- data licence, an SPDX identifier
     doi               TEXT
 );
 CREATE TABLE source_file (              -- every step output the build read
@@ -44,7 +42,7 @@ CREATE TABLE source_file (              -- every step output the build read
     sha256  TEXT NOT NULL,
     bytes   INTEGER NOT NULL
 );
-CREATE TABLE data_snapshot (            -- BV-BRC snapshot of each organism (00a, §2.1)
+CREATE TABLE data_snapshot (            -- the BV-BRC snapshot of each organism
     organism_id   TEXT PRIMARY KEY REFERENCES organism,
     source        TEXT NOT NULL,            -- the API queried
     api_version   TEXT NOT NULL,
@@ -54,7 +52,7 @@ CREATE TABLE data_snapshot (            -- BV-BRC snapshot of each organism (00a
     n_genomes     INTEGER NOT NULL,         -- phenotyped genomes whose assembly passed
     sha256        TEXT NOT NULL             -- of snapshot.json (file checksums inside)
 );
-CREATE TABLE reference_database (       -- databases.py manifest (§13)
+CREATE TABLE reference_database (       -- the reference databases of the run
     name           TEXT PRIMARY KEY,
     version        TEXT NOT NULL,           -- read from the database itself
     downloaded_on  TEXT NOT NULL,
@@ -62,10 +60,10 @@ CREATE TABLE reference_database (       -- databases.py manifest (§13)
     n_files        INTEGER NOT NULL,
     sha256         TEXT NOT NULL            -- of the sorted per-file checksums
 );
-CREATE TABLE parameter (                -- every threshold of the protocol
-    name              TEXT PRIMARY KEY,
-    value             TEXT NOT NULL,
-    protocol_section  TEXT NOT NULL
+CREATE TABLE parameter (                -- every threshold and setting of the analysis
+    name         TEXT PRIMARY KEY,
+    value        TEXT NOT NULL,       -- JSON object by organism when the organisms differ
+    description  TEXT NOT NULL
 );
 
 -- Reference data ------------------------------------------------------------
@@ -79,7 +77,7 @@ CREATE TABLE organism (
 CREATE TABLE antibiotic (
     antibiotic_id      TEXT PRIMARY KEY,  -- canonical registry name
     drug_class         TEXT,              -- registry class; NULL when not registered
-    card_drug_classes  TEXT NOT NULL,     -- CARD terms of the class (Appendix A), ';'-joined
+    card_drug_classes  TEXT NOT NULL,     -- CARD terms of the class, ';'-joined
     who_aware          TEXT CHECK (who_aware IN ('Access', 'Watch', 'Reserve'))
 );
 CREATE TABLE aro (                      -- CARD terms hit by RGI (version in release)
@@ -114,7 +112,7 @@ CREATE TABLE phenotype (
 );
 
 -- Panel and models ----------------------------------------------------------
-CREATE TABLE panel_decision (           -- every organism x antibiotic pair (§3)
+CREATE TABLE panel_decision (           -- every organism x antibiotic pair
     organism_id    TEXT NOT NULL REFERENCES organism,
     antibiotic_id  TEXT NOT NULL,
     decision       TEXT NOT NULL CHECK (decision IN ('included', 'excluded', 'blocked')),
@@ -123,7 +121,7 @@ CREATE TABLE panel_decision (           -- every organism x antibiotic pair (§3
     n_susceptible  INTEGER NOT NULL,
     PRIMARY KEY (organism_id, antibiotic_id)
 );
-CREATE TABLE model (                    -- one included pair (§3–§6)
+CREATE TABLE model (                    -- one included pair
     model_id               TEXT PRIMARY KEY,   -- organism__antibiotic
     organism_id            TEXT NOT NULL REFERENCES organism,
     antibiotic_id          TEXT NOT NULL REFERENCES antibiotic,
@@ -132,7 +130,7 @@ CREATE TABLE model (                    -- one included pair (§3–§6)
     n_susceptible          INTEGER NOT NULL,
     n_lineages             INTEGER NOT NULL,
     largest_lineage_share  REAL NOT NULL,
-    n_unitigs              INTEGER NOT NULL,   -- after the frequency filter (§4)
+    n_unitigs              INTEGER NOT NULL,   -- after the frequency filter
     n_patterns             INTEGER NOT NULL,
     evaluable              INTEGER NOT NULL CHECK (evaluable IN (0, 1)),
     final_n_trees          INTEGER,
@@ -148,7 +146,7 @@ CREATE TABLE model_genome (
     PRIMARY KEY (model_id, genome_id),
     UNIQUE (model_id, row_index)
 );
-CREATE TABLE model_metric (             -- pooled out-of-fold metrics (§6.3)
+CREATE TABLE model_metric (             -- pooled out-of-fold metrics
     model_id  TEXT NOT NULL REFERENCES model,
     arm       TEXT NOT NULL CHECK (arm IN ('lineage_aware', 'lineage_blind',
                                            'lineage_blind_minus_lineage_aware')),
@@ -158,7 +156,7 @@ CREATE TABLE model_metric (             -- pooled out-of-fold metrics (§6.3)
     ci_high   REAL,
     PRIMARY KEY (model_id, arm, metric)
 );
-CREATE TABLE label_permutation (        -- §8.6
+CREATE TABLE label_permutation (        -- label permutation test of each model
     model_id        TEXT PRIMARY KEY REFERENCES model,
     auc_observed    REAL NOT NULL,
     null_mean       REAL NOT NULL,
@@ -176,7 +174,7 @@ CREATE TABLE unitig (
     sequence   TEXT NOT NULL UNIQUE,        -- canonical orientation
     length     INTEGER NOT NULL
 );
-CREATE TABLE pattern (                  -- presence pattern of a model (§4)
+CREATE TABLE pattern (                  -- presence/absence pattern of a model
     model_id    TEXT NOT NULL REFERENCES model,
     pattern_id  INTEGER NOT NULL,           -- valid within the model only
     n_members   INTEGER NOT NULL,
@@ -191,7 +189,7 @@ CREATE TABLE pattern_member (           -- unitigs of the graded patterns
     PRIMARY KEY (model_id, pattern_id, unitig_id),
     FOREIGN KEY (model_id, pattern_id) REFERENCES pattern
 );
-CREATE TABLE candidate (                -- graded patterns: §7 (model), §14 item 6 (association)
+CREATE TABLE candidate (                -- graded patterns and their route
     model_id    TEXT NOT NULL,
     pattern_id  INTEGER NOT NULL,
     route       TEXT NOT NULL CHECK (route IN ('model', 'association')),
@@ -204,7 +202,7 @@ CREATE TABLE candidate (                -- graded patterns: §7 (model), §14 it
 );
 
 -- Evidence layers (measurements) ---------------------------------------------
-CREATE TABLE prevalence_result (        -- §8.2, graded patterns
+CREATE TABLE prevalence_result (        -- prevalence layer, graded patterns
     model_id             TEXT NOT NULL,
     pattern_id           INTEGER NOT NULL,
     present_resistant    INTEGER NOT NULL,
@@ -219,7 +217,7 @@ CREATE TABLE prevalence_result (        -- §8.2, graded patterns
     PRIMARY KEY (model_id, pattern_id),
     FOREIGN KEY (model_id, pattern_id) REFERENCES candidate
 );
-CREATE TABLE mda_result (               -- §8.3, graded patterns
+CREATE TABLE mda_result (               -- permutation importance layer, graded patterns
     model_id                TEXT NOT NULL,
     pattern_id              INTEGER NOT NULL,
     n_fold_models_using     INTEGER NOT NULL,
@@ -233,7 +231,7 @@ CREATE TABLE mda_result (               -- §8.3, graded patterns
     PRIMARY KEY (model_id, pattern_id),
     FOREIGN KEY (model_id, pattern_id) REFERENCES candidate
 );
-CREATE TABLE mda_cluster (              -- §8.3 sensitivity analysis, graded patterns
+CREATE TABLE mda_cluster (              -- its sensitivity analysis, graded patterns
     model_id          TEXT NOT NULL,
     pattern_id        INTEGER NOT NULL,
     cluster           INTEGER NOT NULL,
@@ -246,7 +244,7 @@ CREATE TABLE mda_cluster (              -- §8.3 sensitivity analysis, graded pa
     PRIMARY KEY (model_id, pattern_id),
     FOREIGN KEY (model_id, pattern_id) REFERENCES candidate
 );
-CREATE TABLE cpss_result (              -- §8.4, prefilter and graded patterns
+CREATE TABLE cpss_result (              -- stability selection layer, prefilter and graded patterns
     model_id      TEXT NOT NULL,
     pattern_id    INTEGER NOT NULL,
     in_prefilter  INTEGER NOT NULL CHECK (in_prefilter IN (0, 1)),
@@ -257,7 +255,7 @@ CREATE TABLE cpss_result (              -- §8.4, prefilter and graded patterns
     PRIMARY KEY (model_id, pattern_id),
     FOREIGN KEY (model_id, pattern_id) REFERENCES pattern
 );
-CREATE TABLE pyseer_result (            -- §8.5, every tested pattern
+CREATE TABLE pyseer_result (            -- association layer, every tested pattern
     model_id    TEXT NOT NULL,
     pattern_id  INTEGER NOT NULL,
     af          REAL,
@@ -269,13 +267,13 @@ CREATE TABLE pyseer_result (            -- §8.5, every tested pattern
     PRIMARY KEY (model_id, pattern_id),
     FOREIGN KEY (model_id, pattern_id) REFERENCES pattern
 );
-CREATE TABLE card_hit (                 -- §8.1: RGI hits overlapping a graded unitig
+CREATE TABLE card_hit (                 -- RGI hits overlapping a graded unitig
     model_id       TEXT NOT NULL REFERENCES model,
     unitig_id      TEXT NOT NULL REFERENCES unitig,
     aro_accession  TEXT NOT NULL REFERENCES aro,
     PRIMARY KEY (model_id, unitig_id, aro_accession)
 );
-CREATE TABLE card_annotation (          -- §8.1: CARD state of every graded unitig
+CREATE TABLE card_annotation (          -- CARD state of every graded unitig
     model_id         TEXT NOT NULL REFERENCES model,
     unitig_id        TEXT NOT NULL REFERENCES unitig,
     mode             TEXT NOT NULL CHECK (mode IN ('allele_aware', 'homolog_only')),
@@ -287,7 +285,7 @@ CREATE TABLE card_annotation (          -- §8.1: CARD state of every graded uni
 );
 
 -- Inference ---------------------------------------------------------------------
-CREATE TABLE grade (                    -- §9, both modes
+CREATE TABLE grade (                    -- evidence grade, both modes
     model_id       TEXT NOT NULL,
     pattern_id     INTEGER NOT NULL,
     mode           TEXT NOT NULL CHECK (mode IN ('allele_aware', 'homolog_only')),
@@ -302,7 +300,7 @@ CREATE TABLE grade (                    -- §9, both modes
     FOREIGN KEY (model_id, pattern_id) REFERENCES candidate
 );
 
--- Context (not evidence; §12) -------------------------------------------------------
+-- Context (not evidence) -------------------------------------------------------------
 CREATE TABLE unitig_context (           -- NCBI nt, searched within the organism
     unitig_id       TEXT NOT NULL REFERENCES unitig,
     organism_id     TEXT NOT NULL REFERENCES organism,
@@ -321,8 +319,8 @@ CREATE TABLE unitig_context (           -- NCBI nt, searched within the organism
     PRIMARY KEY (unitig_id, organism_id, source)
 );
 
--- Comparison with genotype-based prediction (§11) ------------------------------------
-CREATE TABLE external_call (            -- AMRFinderPlus calls, the reference of H7 and H6
+-- Comparison with genotype-based prediction -----------------------------------------
+CREATE TABLE external_call (            -- AMRFinderPlus calls of every genome
     genome_id       TEXT NOT NULL REFERENCES genome,
     call_index      INTEGER NOT NULL,
     element_symbol  TEXT NOT NULL,
@@ -380,14 +378,14 @@ SELECT c.model_id, m.organism_id, m.antibiotic_id, c.pattern_id, c.route, p.n_me
   JOIN pyseer_result py ON py.model_id = c.model_id AND py.pattern_id = c.pattern_id;
 
 CREATE VIEW v_unitig AS
-SELECT u.unitig_id, u.sequence, u.length, pm.model_id, pm.pattern_id, c.route, g.grade,
-       ca.state AS card_state_allele_aware, ca.reasons AS card_reasons_allele_aware
+SELECT u.unitig_id, u.sequence, u.length, pm.model_id, pm.pattern_id, c.route,
+       g.mode AS primary_mode, g.grade, ca.state AS card_state, ca.reasons AS card_reasons
   FROM pattern_member pm
   JOIN unitig u ON u.unitig_id = pm.unitig_id
   JOIN candidate c ON c.model_id = pm.model_id AND c.pattern_id = pm.pattern_id
   JOIN grade g ON g.model_id = pm.model_id AND g.pattern_id = pm.pattern_id AND g.primary_mode = 1
   JOIN card_annotation ca ON ca.model_id = pm.model_id AND ca.unitig_id = pm.unitig_id
-                         AND ca.mode = 'allele_aware';
+                         AND ca.mode = g.mode;
 
 CREATE VIEW v_model AS
 SELECT m.model_id, m.organism_id, m.antibiotic_id, m.n_genomes, m.n_resistant, m.n_susceptible,
@@ -426,39 +424,62 @@ SELECT n.*, c.best_title AS context_best_title, c.gene AS context_gene,
                             AND c.organism_id = n.organism_id;
 """
 
-# The protocol's thresholds: (parameter name, config path, protocol section).
+# The analysis settings of the parameter table: (name, config path, what it sets). The
+# genome quality gate and the lineage settings are added by the build (build_kb.py).
 PARAMETERS = (
-    ("panel.min_minority", ("panel", "min_minority"), "§3"),
-    ("unitig.k", ("unitig", "k"), "§4"),
-    ("unitig.min_support", ("unitig", "min_support"), "§4"),
-    ("hpo.n_trials", ("hpo", "n_trials"), "§5"),
-    ("hpo.search_max_genomes", ("hpo", "search_max_genomes"), "§5"),
-    ("hpo.early_stopping_rounds", ("hpo", "early_stopping_rounds"), "§5"),
-    ("hpo.max_rounds", ("hpo", "max_rounds"), "§5"),
-    ("cv.n_repeats", ("cv", "n_repeats"), "§6.1"),
-    ("cv.n_folds", ("cv", "n_folds"), "§6.1"),
-    ("cv.min_minority_per_test_fold", ("cv", "min_minority_per_test_fold"), "§6.2"),
-    ("cv.threshold", ("cv", "threshold"), "§6.3"),
-    ("cv.n_bootstrap", ("cv", "n_bootstrap"), "§6.3"),
-    ("candidates.top_gain", ("candidates", "top_gain"), "§7"),
-    ("card.near_universal", ("card", "near_universal"), "§8.1"),
-    ("card.max_located_genomes", ("card", "max_located_genomes"), "§8.1"),
-    ("card.min_overlap", ("card", "min_overlap"), "§8.1"),
-    ("prevalence.min_delta", ("prevalence", "min_delta"), "§8.2"),
-    ("prevalence.alpha", ("prevalence", "alpha"), "§8.2"),
-    ("mda.n_permutations", ("mda", "n_permutations"), "§8.3"),
-    ("mda.alpha", ("mda", "alpha"), "§8.3"),
-    ("mda.cluster_r", ("mda", "cluster_r"), "§8.3"),
-    ("cpss.prefilter", ("cpss", "prefilter"), "§8.4"),
-    ("cpss.n_pairs", ("cpss", "n_pairs"), "§8.4"),
-    ("cpss.q", ("cpss", "q"), "§8.4"),
-    ("cpss.pi_threshold", ("cpss", "pi_threshold"), "§8.4"),
-    ("pyseer.kinship_every", ("pyseer", "kinship_every"), "§8.5"),
-    ("pyseer.alpha", ("pyseer", "alpha"), "§8.5"),
-    ("label_permutation.n_permutations", ("label_permutation", "n_permutations"), "§8.6"),
-    ("label_permutation.alpha", ("label_permutation", "alpha"), "§8.6"),
-    ("grading.primary_mode", ("grading", "primary_mode"), "§9"),
-    ("association.max_patterns", ("association", "max_patterns"), "§14 item 6"),
+    ("panel.min_minority", ("panel", "min_minority"),
+     "Smallest number of genomes in the minority phenotype class for a pair to be modelled"),
+    ("unitig.k", ("unitig", "k"), "k-mer length of the compacted de Bruijn graph"),
+    ("unitig.min_support", ("unitig", "min_support"),
+     "A unitig is kept when it is present in at least and absent from at least this many genomes"),
+    ("hpo.n_trials", ("hpo", "n_trials"), "Trials of the hyperparameter search"),
+    ("hpo.search_max_genomes", ("hpo", "search_max_genomes"),
+     "Largest number of genomes the hyperparameter search uses"),
+    ("hpo.early_stopping_rounds", ("hpo", "early_stopping_rounds"),
+     "Boosting rounds without improvement after which early stopping ends training"),
+    ("hpo.max_rounds", ("hpo", "max_rounds"), "Largest number of boosting rounds"),
+    ("cv.n_repeats", ("cv", "n_repeats"), "Repeats of the cross-validation in each arm"),
+    ("cv.n_folds", ("cv", "n_folds"), "Outer folds of each repeat"),
+    ("cv.min_minority_per_test_fold", ("cv", "min_minority_per_test_fold"),
+     "Smallest number of minority-class genomes in every test fold of a repeat"),
+    ("cv.threshold", ("cv", "threshold"),
+     "Predicted probability at or above which a genome is called resistant"),
+    ("cv.n_bootstrap", ("cv", "n_bootstrap"),
+     "Lineage-cluster bootstrap resamples of the ROC-AUC interval"),
+    ("candidates.top_gain", ("candidates", "top_gain"),
+     "Patterns of the final model with the highest total gain that become candidates"),
+    ("card.near_universal", ("card", "near_universal"),
+     "Share of a model's genomes at or above which a gene gives no b by homology"),
+    ("card.max_located_genomes", ("card", "max_located_genomes"),
+     "Largest number of carrier genomes in which a candidate unitig is located"),
+    ("card.min_overlap", ("card", "min_overlap"),
+     "Share of the unitig's length that must overlap an RGI hit"),
+    ("prevalence.min_delta", ("prevalence", "min_delta"),
+     "Smallest absolute difference between the prevalences in resistant and susceptible genomes"),
+    ("prevalence.alpha", ("prevalence", "alpha"),
+     "Benjamini–Hochberg q of the Fisher exact test below which the prevalence layer passes"),
+    ("mda.n_permutations", ("mda", "n_permutations"), "Permutations of each graded pattern"),
+    ("mda.alpha", ("mda", "alpha"),
+     "Benjamini–Hochberg q below which the permutation importance layer passes"),
+    ("mda.cluster_r", ("mda", "cluster_r"),
+     "Sensitivity analysis: |r| at or above which graded patterns are permuted together"),
+    ("cpss.prefilter", ("cpss", "prefilter"),
+     "Patterns with the largest χ² over all genomes of the model that each fit uses"),
+    ("cpss.n_pairs", ("cpss", "n_pairs"), "Pairs of disjoint half-samples"),
+    ("cpss.q", ("cpss", "q"), "Patterns each fit selects, those with the highest total gain"),
+    ("cpss.pi_threshold", ("cpss", "pi_threshold"),
+     "Selection frequency at or above which a pattern is stable"),
+    ("pyseer.kinship_every", ("pyseer", "kinship_every"),
+     "One in this many unitigs of the model enters the kinship matrix"),
+    ("pyseer.alpha", ("pyseer", "alpha"),
+     "Family-wise error rate of the Bonferroni threshold (alpha / patterns tested)"),
+    ("label_permutation.n_permutations", ("label_permutation", "n_permutations"),
+     "Label permutations of each model"),
+    ("label_permutation.alpha", ("label_permutation", "alpha"),
+     "Benjamini–Hochberg q across models below which a model passes the label permutation test"),
+    ("grading.primary_mode", ("grading", "primary_mode"), "CARD mode whose grade is the reported grade"),
+    ("association.max_patterns", ("association", "max_patterns"),
+     "pyseer-significant non-candidate patterns, smallest p first, that are graded by association"),
 )
 
 
@@ -473,8 +494,8 @@ def unitig_id(sequence: str) -> tuple[str, str]:
 
 def parameters(config: dict) -> list[tuple[str, str, str]]:
     rows = []
-    for name, (section, key), where in PARAMETERS:
-        rows.append((name, str(config[section][key]), where))
+    for name, (section, key), description in PARAMETERS:
+        rows.append((name, str(config[section][key]), description))
     return rows
 
 
@@ -496,7 +517,8 @@ def insert(conn: sqlite3.Connection, table: str, df: pd.DataFrame) -> int:
 
 
 def validate(conn: sqlite3.Connection) -> dict:
-    """Structural checks of a built knowledge base; raises on the first failure."""
+    """Structural checks of a built knowledge base. Every check runs; when any fails, one
+    error lists all the failures."""
     problems = []
     if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
         problems.append("SQLite integrity check failed")
@@ -529,23 +551,60 @@ def validate(conn: sqlite3.Connection) -> dict:
                        "external_comparison e WHERE e.model_id = m.model_id) != 5").fetchone()[0]
     if bad:
         problems.append(f"{bad} model(s) without the five rows of the external comparison")
-    missing = conn.execute(
-        "SELECT count(*) FROM pattern_member pm WHERE NOT EXISTS (SELECT 1 FROM card_annotation ca "
-        "WHERE ca.model_id = pm.model_id AND ca.unitig_id = pm.unitig_id)").fetchone()[0]
-    if missing:
-        problems.append(f"{missing} candidate unitig(s) without a CARD annotation")
-    # the grades follow from the stored layers and CARD states (lib.grading)
+    bad = conn.execute(
+        "SELECT count(*) FROM (SELECT DISTINCT model_id, unitig_id FROM pattern_member) pm "
+        "WHERE (SELECT count(*) FROM card_annotation ca WHERE ca.model_id = pm.model_id "
+        "AND ca.unitig_id = pm.unitig_id) != 2").fetchone()[0]
+    if bad:
+        problems.append(f"{bad} candidate unitig(s) without a CARD annotation in each mode")
+    # the stored summaries agree with what they summarise
+    bad = conn.execute("""
+        WITH s AS (SELECT model_id, count(*) AS n, sum(resistant) AS r,
+                          count(DISTINCT lineage_cluster) AS l
+                     FROM model_genome GROUP BY model_id),
+             b AS (SELECT model_id, max(k) AS big
+                     FROM (SELECT model_id, count(*) AS k FROM model_genome
+                            GROUP BY model_id, lineage_cluster) GROUP BY model_id)
+        SELECT count(*) FROM model m LEFT JOIN s USING (model_id) LEFT JOIN b USING (model_id)
+         WHERE s.n IS NULL OR m.n_genomes != s.n OR m.n_resistant != s.r
+            OR m.n_susceptible != s.n - s.r OR m.n_lineages != s.l
+            OR abs(m.largest_lineage_share - 1.0 * b.big / s.n) > 1e-9""").fetchone()[0]
+    if bad:
+        problems.append(f"{bad} model(s) whose genome or lineage counts disagree with model_genome")
+    bad = conn.execute(
+        "SELECT count(*) FROM candidate c JOIN pattern p USING (model_id, pattern_id) "
+        "WHERE p.carriers IS NULL OR p.n_members != (SELECT count(*) FROM pattern_member pm "
+        "WHERE pm.model_id = c.model_id AND pm.pattern_id = c.pattern_id)").fetchone()[0]
+    if bad:
+        problems.append(f"{bad} graded pattern(s) without carriers or with a member count "
+                        "that disagrees with pattern_member")
+    bad = sum(int.from_bytes(blob, "big").bit_count() != n for n, blob in conn.execute(
+        "SELECT n_present, carriers FROM pattern WHERE carriers IS NOT NULL"))
+    if bad:
+        problems.append(f"{bad} pattern(s) whose carrier count disagrees with their carriers")
+    # a pattern's CARD state follows from those of its unitigs (lib.card_layer), and its
+    # grade from the stored layers and that state (lib.grading)
+    members: dict[tuple, list[str]] = {}
+    for key_mid, key_pid, key_mode, st in conn.execute(
+            "SELECT pm.model_id, pm.pattern_id, ca.mode, ca.state FROM pattern_member pm "
+            "JOIN card_annotation ca ON ca.model_id = pm.model_id AND ca.unitig_id = pm.unitig_id"):
+        members.setdefault((key_mid, key_pid, key_mode), []).append(st)
     q = """SELECT g.model_id, g.pattern_id, g.mode, g.card_state, g.grade, g.n_layers,
-                  pr.passes, md.passes, cs.passes, py.passes
+                  g.layers_passed, pr.passes, md.passes, cs.passes, py.passes
              FROM grade g
              JOIN prevalence_result pr USING (model_id, pattern_id)
              JOIN mda_result md USING (model_id, pattern_id)
              JOIN cpss_result cs USING (model_id, pattern_id)
              JOIN pyseer_result py USING (model_id, pattern_id)"""
     n_checked = 0
-    for mid, pid, mode, state, g, n_layers, *passes in conn.execute(q):
+    for mid, pid, mode, state, g, n_layers, layers_passed, *passes in conn.execute(q):
         layers = dict(zip(grading.LAYERS, (bool(x) for x in passes), strict=True))
-        if grading.grade(state, layers) != g or grading.n_passed(layers) != n_layers:
+        if card_layer.pattern_state(members.get((mid, pid, mode), [])) != state:
+            problems.append(f"CARD state of {mid} pattern {pid} ({mode}) does not follow its "
+                            "unitigs")
+            break
+        if (grading.grade(state, layers) != g or grading.n_passed(layers) != n_layers
+                or (layers_passed or "") != ";".join(k for k, v in layers.items() if v)):
             problems.append(f"grade of {mid} pattern {pid} ({mode}) does not follow its layers")
             break
         n_checked += 1

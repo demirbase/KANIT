@@ -88,7 +88,7 @@ def describe(conn: sqlite3.Connection, dictionary: dict) -> tuple[list[dict], li
         if name not in said["table"]:
             continue
         d = said["table"][name]
-        problems += [f"{name}: no {k}" for k in ("group", "section", "description") if k not in d]
+        problems += [f"{name}: no {k}" for k in ("group", "description") if k not in d]
         described = d.get("columns") or {}
         names = [c[1] for c in cols]
         problems += [f"{name}.{c} is not described" for c in names if not described.get(c)]
@@ -114,7 +114,7 @@ def describe(conn: sqlite3.Connection, dictionary: dict) -> tuple[list[dict], li
         columns = [{"name": c[1], "sql_type": c[2].upper(), "not_null": bool(c[3]),
                     "enum": enums.get(c[1]), "range": ranges.get(c[1]),
                     "description": d["columns"][c[1]]} for c in _columns(conn, name)]
-        tables.append({"name": name, "group": d["group"], "section": d["section"],
+        tables.append({"name": name, "group": d["group"],
                        "description": d["description"], "primary_key": pks[name],
                        "foreign_keys": foreign, "columns": columns})
     views = [{"name": n, "description": said["view"][n], "sql": sql.strip(),
@@ -292,8 +292,7 @@ def data_dictionary(rel: dict, tables: list[dict], views: list[dict], stats: dic
             group = t["group"]
             out.append(f"## {group}\n")
         out.append(f"### {t['name']}\n")
-        section = f" Protocol {t['section']}." if t["section"] else ""
-        out.append(f"{t['description']}{section} Rows: {stats[t['name']]['rows']:,}.\n")
+        out.append(f"{t['description']} Rows: {stats[t['name']]['rows']:,}.\n")
         refs = {f: f"→ `{k['resource']}`" for k in t["foreign_keys"] for f in k["fields"]}
         out += ["| Column | Type | NOT NULL | Key | Allowed values | Description |",
                 "|:--|:--|:-:|:--|:--|:--|"]
@@ -347,7 +346,6 @@ def readme(rel: dict, cite: dict, tables: list[dict]) -> str:
             "From Python: `pandas.read_sql_query(sql, sqlite3.connect('kanit.sqlite'))`. "
             "From R: `DBI::dbGetQuery(DBI::dbConnect(RSQLite::SQLite(), 'kanit.sqlite'), sql)`.\n",
             "## Provenance\n",
-            f"- Protocol {rel['protocol_version']}, SHA-256 `{rel['protocol_sha256']}`",
             f"- Configuration SHA-256 `{rel['config_sha256']}`",
             f"- Code commit `{rel['code_commit'] or 'unknown'}`"
             + (" (with uncommitted changes)" if rel["code_dirty"] else ""),

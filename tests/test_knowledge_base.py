@@ -176,6 +176,9 @@ def built(tmp_path_factory):
                   "pass_contamination": True, "pass_n50": True, "pass_contigs": True,
                   "pass_overall": True}).to_csv(p["genome_qc_dir"] / f"02d_genome_qc_{ORG}.csv",
                                                 index=False)
+    (p["genome_qc_dir"] / f"02d_genome_qc_summary_{ORG}.json").write_text(json.dumps(
+        {"thresholds": {"completeness_min": 95.0, "contamination_max": 5.0, "n50_min": 50000,
+                        "max_contigs": 500}}))
     pd.DataFrame({"Genome ID": ids, "Cluster": np.arange(n) // 5}).to_csv(
         p["lineage_dir"] / "poppunk_clusters.csv", index=False)
     pd.DataFrame([{"organism": ORG, "antibiotic": AB, "drug_class": "quinolones", "n_tested": n,
@@ -307,8 +310,15 @@ def test_build_loads_every_layer_and_rechecks_the_grades(built):
     assert t["panel_decision"] == 2 and t["genome"] == 150 and t["pyseer_result"] >= n_cand
     with sqlite3.connect(out) as conn:
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
-        rel = conn.execute("SELECT protocol_version, card_version, tools FROM release").fetchone()
-        assert rel[0] == "1.0" and rel[1] == "4.0.1" and "pyseer" in json.loads(rel[2])
+        rel = conn.execute("SELECT schema_version, card_version, tools FROM release").fetchone()
+        assert rel[0] == kb.SCHEMA_VERSION and rel[1] == "4.0.1" and "pyseer" in json.loads(rel[2])
+        par = dict(conn.execute("SELECT name, value FROM parameter").fetchall())
+        assert par["qc.completeness_min"] == "95.0" and par["qc.contamination_max"] == "5.0"
+        assert "lineage.model" in par and par["cpss.pi_threshold"] == "0.6"
+        assert conn.execute("SELECT count(*) FROM parameter WHERE description = ''").fetchone() \
+            == (0,)
+        assert conn.execute("SELECT count(*) FROM v_unitig WHERE primary_mode != 'allele_aware' "
+                            "OR card_state IS NULL").fetchone() == (0,)
         assert conn.execute("SELECT count(*) FROM v_biomarker").fetchone()[0] == n
         auc = conn.execute("SELECT roc_auc_lineage_aware, flag, n_candidates, n_association "
                            "FROM v_model").fetchone()
@@ -422,6 +432,25 @@ def test_a_grade_that_does_not_follow_its_layers_stops_the_build(built, tmp_path
     finally:
         g.write_text(original)
     assert sha256_file(out) == before                      # the old file is kept
+    d = pd.read_csv(g, keep_default_na=False)               # a CARD state its unitigs do not give
+    d.loc[0, "allele_aware_card_state"] = ("card_hit_without_b"
+                                           if d.loc[0, "allele_aware_card_state"] != "card_hit_without_b"
+                                           else "no_card_hit")
+    d.to_csv(g, index=False)
+    try:
+        with pytest.raises(ValueError, match="does not follow its unitigs"):
+            _script("build_kb.py").build(config, out, kb_version="bad")
+    finally:
+        g.write_text(original)
+    design = p["cv_dir"] / "cv_design.json"                 # a count that disagrees with its rows
+    kept = design.read_text()
+    design.write_text(json.dumps({**json.loads(kept), "n_lineages": json.loads(kept)["n_lineages"] + 1}))
+    try:
+        with pytest.raises(ValueError, match="lineage counts disagree"):
+            _script("build_kb.py").build(config, out, kb_version="bad")
+    finally:
+        design.write_text(kept)
+    assert sha256_file(out) == before
     shutil.move(p["layers_dir"] / "mda.csv", tmp_path / "mda.csv")
     try:
         with pytest.raises(FileNotFoundError, match="mda.csv"):

@@ -71,8 +71,8 @@ def _kb(path: Path, license=None, doi=None) -> Path:
                          "'prevalence;cpss', 'candidate')",
                          [(MID, "allele_aware", 1), (MID, "homolog_only", 0)])
         conn.execute("INSERT INTO release VALUES ('1.0.0-test', ?, '2026-11-03T09:00:00+00:00', "
-                     "'1.0', ?, ?, 'abc123', 0, '4.0.1', '{\"pyseer\": \"1.3.12\"}', ?, ?)",
-                     (kb.SCHEMA_VERSION, "a" * 64, "b" * 64, license, doi))
+                     "?, 'abc123', 0, '4.0.1', '{\"pyseer\": \"1.3.12\"}', ?, ?)",
+                     (kb.SCHEMA_VERSION, "b" * 64, license, doi))
     conn.close()
     (path.parent / "kb_report.json").write_text(json.dumps({"sha256": sha256_file(path)}))
     return path

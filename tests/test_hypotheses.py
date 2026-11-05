@@ -93,7 +93,7 @@ def _kb(path: Path) -> sqlite3.Connection:
                 ins(conn, "card_hit", pd.DataFrame([{"model_id": mid, "unitig_id": uid,
                                                      "aro_accession": f"ARO:{a}"}]))
     ins(conn, "parameter", pd.DataFrame({"name": ["cpss.q", "cpss.pi_threshold"],
-                                         "value": ["50", "0.6"], "protocol_section": "§8.4"}))
+                                         "value": ["50", "0.6"], "description": "d"}))
     conn.commit()
     return conn
 
@@ -247,7 +247,7 @@ def test_script_end_to_end(tmp_path, monkeypatch):
     with sqlite3.connect(tmp_path / "kanit.sqlite") as c:
         kb.insert(c, "release", pd.DataFrame([{
             "kb_version": "t", "schema_version": kb.SCHEMA_VERSION, "created_at": "now",
-            "protocol_version": "1.0", "protocol_sha256": "x", "config_sha256": "y",
+            "config_sha256": "y",
             "tools": "{}"}]))
     (tmp_path / "card").mkdir()
     pd.DataFrame({"ARO Name": ["QnrS1", "TEM-1"], "CARD Short Name": ["QnrS1", "TEM-1"],
