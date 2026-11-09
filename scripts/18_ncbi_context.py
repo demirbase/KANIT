@@ -6,7 +6,9 @@ Subcommands:
 
   query  searches the unitigs that are not yet in the cache (remote blastn, then
          Entrez for the best hit of each); it needs internet, so it runs on a
-         login node, and it can be stopped and run again
+         login node, and it can be stopped and run again; a batch that NCBI keeps
+         failing is left for a second pass after the others, and the step fails
+         only if that pass fails too
   build  the context table from the cache alone (unitig_context.csv)
   all    query and build
 
@@ -61,6 +63,19 @@ def blast_params(organism: str, cfg: dict) -> dict:
             "HITLIST_SIZE": cfg["max_target_seqs"], "EXPECT": cfg["evalue"]}
 
 
+def search(client: nc.Ncbi, cache: Path, batch: pd.DataFrame, params: dict) -> bool:
+    """Searches one batch; False when NCBI kept failing, so that it is tried again later."""
+    try:
+        nc.query_batch(client, cache, batch, params)
+    except Exception as e:
+        if not (nc.transient(e) or isinstance(e, nc.SearchFailed)):
+            raise
+        print(f"  ✗ BLAST: {type(e).__name__}: {e}; {len(batch)} unitigs left for later",
+              flush=True)
+        return False
+    return True
+
+
 def query(organism: str, config: dict, out_dir: Path, client: nc.Ncbi) -> dict:
     cfg = config["context"]
     params = blast_params(organism, cfg)
@@ -71,9 +86,17 @@ def query(organism: str, config: dict, out_dir: Path, client: nc.Ncbi) -> dict:
         done |= set(json.loads(meta.read_text())["unitig_ids"])
     pending = todo[~todo["unitig_id"].isin(done)]
     size = cfg["batch_size"]
-    for s in range(0, len(pending), size):
-        nc.query_batch(client, cache, pending.iloc[s:s + size], params)
-        print(f"  ✓ BLAST {min(s + size, len(pending))}/{len(pending)}")
+    left = [pending.iloc[s:s + size] for s in range(0, len(pending), size)]
+    n_done = 0
+    for _ in range(2):                  # the batches NCBI failed get a second pass
+        failed = []
+        for batch in left:
+            if search(client, cache, batch, params):
+                n_done += len(batch)
+                print(f"  ✓ BLAST {n_done}/{len(pending)}", flush=True)
+            else:
+                failed.append(batch)
+        left = failed
     n_fetched = 0
     for meta in sorted((cache / "blast").glob("*/meta.json")):
         hits = nc.parse_xml((meta.parent / "report.xml").read_text())
@@ -84,6 +107,9 @@ def query(organism: str, config: dict, out_dir: Path, client: nc.Ncbi) -> dict:
                 f.parent.mkdir(parents=True, exist_ok=True)
                 f.write_text(client.genbank(acc, int(a), int(b)))
                 n_fetched += 1
+    if left:
+        sys.exit(f"ERROR: NCBI failed {sum(map(len, left))} unitig(s) of {organism} twice; "
+                 f"the others are cached: run the CONTEXT entry again with -resume.")
     return {"n_unitigs": len(todo), "n_searched_now": len(pending), "n_genbank_now": n_fetched}
 
 

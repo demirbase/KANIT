@@ -9,9 +9,14 @@ at the best hit come from the GenBank record through Entrez. Every response is
 cached as received and the context table is built from the cache alone, so the
 knowledge base is rebuilt without querying NCBI. Requests follow NCBI's usage
 rules: one at a time, at least 10 s apart (Entrez: 3 per second, 10 with a key),
-a RID polled at most once a minute, with the tool name and e-mail. A request that
-fails on the network or with HTTP 429 or 5xx is sent again up to ten times,
-1, 2, 4 and 8 min later and then every 15 min; any other error ends the step.
+a RID polled at most once a minute, with the tool name and e-mail, and a new
+search only on weekends or between 21:00 and 05:00 US Eastern time on weekdays,
+as NCBI asks of anyone who submits more than 50 searches; a search already
+submitted is followed to its end. A request that fails on the network or with
+HTTP 429 or 5xx is sent again up to ten times, 1, 2, 4 and 8 min later and then
+every 15 min; any other error ends the step. Each such failure is logged with
+the time, the request (submit, status, XML or text report, GenBank record) and
+the RID.
 """
 from __future__ import annotations
 
@@ -26,8 +31,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -35,6 +41,7 @@ BLAST_URL = "https://blast.ncbi.nlm.nih.gov/Blast.cgi"
 EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 SOURCE = "ncbi_nt_remote"
 TOOL = "kanit"
+EASTERN = ZoneInfo("America/New_York")
 
 
 def select_unitigs(members: pd.DataFrame, max_members: int) -> pd.DataFrame:
@@ -52,6 +59,10 @@ def select_unitigs(members: pd.DataFrame, max_members: int) -> pd.DataFrame:
 TRANSIENT_HTTP = {429, 500, 502, 503, 504}
 
 
+class SearchFailed(RuntimeError):
+    """NCBI returned no RID for a search, or the search ended without a report."""
+
+
 def transient(e: Exception) -> bool:
     """A network failure or an HTTP status that asks for the request again later."""
     if isinstance(e, urllib.error.HTTPError):
@@ -60,17 +71,30 @@ def transient(e: Exception) -> bool:
                           TimeoutError))
 
 
+def until_off_hours(t: datetime) -> float:
+    """Seconds from ``t`` to the hours in which NCBI takes more than 50 searches from
+    one user: weekends, and 21:00 to 05:00 US Eastern time on weekdays."""
+    t = t.astimezone(EASTERN)
+    if t.weekday() >= 5 or t.hour >= 21 or t.hour < 5:
+        return 0.0
+    return (t.replace(hour=21, minute=0, second=0, microsecond=0) - t).total_seconds()
+
+
 class Ncbi:
-    """Sequential NCBI client; ``fetch(url, data)`` and ``sleep`` can be replaced."""
+    """Sequential NCBI client; ``fetch(url, data)``, ``sleep``, ``clock`` and ``now``
+    (the time of day) can be replaced."""
 
     def __init__(self, email: str, api_key: str = "", *, fetch=None, sleep=time.sleep,
-                 clock=time.monotonic, blast_interval: float = 10.0, poll_interval: float = 60.0,
-                 retries: int = 10, retry_wait: float = 60.0, retry_max: float = 900.0):
+                 clock=time.monotonic, now=None, blast_interval: float = 10.0,
+                 poll_interval: float = 60.0, retries: int = 10, retry_wait: float = 60.0,
+                 retry_max: float = 900.0, off_hours_only: bool = True):
         if not email:
             raise ValueError("NCBI requires an e-mail address (config ncbi.entrez_email)")
         self.email, self.api_key = email, api_key
         self.fetch = fetch or self._urlopen
         self.sleep, self.clock = sleep, clock
+        self.now = now or (lambda: datetime.now(timezone.utc))
+        self.off_hours_only = off_hours_only
         self.blast_interval, self.poll_interval = blast_interval, poll_interval
         self.retries, self.retry_wait, self.retry_max = retries, retry_wait, retry_max
         self.entrez_interval = 0.11 if api_key else 0.34
@@ -82,11 +106,28 @@ class Ncbi:
         with urllib.request.urlopen(req, timeout=300) as r:
             return r.read().decode("utf-8", errors="replace")
 
-    def _call(self, kind: str, url: str, params: dict, post: bool = False) -> str:
+    def _log(self, message: str) -> None:
+        print(f"  {self.now().astimezone():%d.%m %H:%M:%S} {message}", file=sys.stderr,
+              flush=True)
+
+    def _wait_for_off_hours(self) -> None:
+        while (wait := until_off_hours(self.now())) > 0:
+            until = (self.now() + timedelta(seconds=wait)).astimezone()
+            self._log(f"NCBI takes large BLAST jobs on weekends and 21:00-05:00 US Eastern "
+                      f"time on weekdays; the next search waits until {until:%d.%m %H:%M} "
+                      f"({wait / 3600:.1f} h)")
+            self.sleep(wait)
+
+    def _call(self, kind: str, url: str, params: dict, post: bool = False, what: str = "",
+              new_search: bool = False) -> str:
+        """One request; ``what`` names it in the log, and a ``new_search`` waits for
+        NCBI's hours."""
         gap = (self.blast_interval if kind == "blast" else self.entrez_interval)
         body = urllib.parse.urlencode(params)
         attempt = 0
         while True:
+            if new_search and self.off_hours_only:
+                self._wait_for_off_hours()
             wait = self._last[kind] + gap - self.clock()
             if wait > 0:
                 self.sleep(wait)
@@ -100,41 +141,48 @@ class Ncbi:
                     raise
                 pause = min(self.retry_wait * 2 ** attempt, self.retry_max)
                 attempt += 1
-                print(f"  NCBI {kind}: {type(e).__name__}: {e}; attempt {attempt + 1} of "
-                      f"{self.retries + 1} in {pause:.0f} s", file=sys.stderr, flush=True)
+                self._log(f"NCBI {kind} {what}: {type(e).__name__}: {e}; attempt {attempt + 1} "
+                          f"of {self.retries + 1} in {pause:.0f} s")
                 self.sleep(pause)
 
     def blast(self, fasta: str, params: dict) -> tuple[str, str, str]:
         """(rid, XML report, text report) of one search."""
         put = self._call("blast", BLAST_URL, {"CMD": "Put", "PROGRAM": "blastn", "DATABASE": "nt",
                                               "QUERY": fasta, **params, "TOOL": TOOL,
-                                              "EMAIL": self.email}, post=True)
-        rid = re.search(r"RID = (\S+)", put)
+                                              "EMAIL": self.email}, post=True,
+                         what="submit", new_search=True)
+        found = re.search(r"RID = (\S+)", put)
         rtoe = re.search(r"RTOE = (\d+)", put)
-        if not rid:
-            raise RuntimeError("BLAST did not return a request id")
-        self.sleep(max(int(rtoe.group(1)) if rtoe else 30, 10))
+        if not found:
+            said = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", put)).strip()[:200]
+            raise SearchFailed(f"BLAST did not return a request id: {said}")
+        rid = found.group(1)
+        wait = max(int(rtoe.group(1)) if rtoe else 30, 10)
+        self._log(f"BLAST {rid} submitted; NCBI expects it in {wait} s")
+        self.sleep(wait)
         while True:
             info = self._call("blast", BLAST_URL, {"CMD": "Get", "FORMAT_OBJECT": "SearchInfo",
-                                                   "RID": rid.group(1)})
+                                                   "RID": rid}, what=f"status {rid}")
             status = re.search(r"Status=(\w+)", info)
             state = status.group(1) if status else "UNKNOWN"
             if state == "READY":
                 break
             if state in ("FAILED", "UNKNOWN"):
-                raise RuntimeError(f"BLAST search {rid.group(1)} ended with status {state}")
+                raise SearchFailed(f"BLAST search {rid} ended with status {state}")
             self.sleep(self.poll_interval)
-        get = {"CMD": "Get", "RID": rid.group(1)}
-        xml = self._call("blast", BLAST_URL, {**get, "FORMAT_TYPE": "XML"})
-        text = self._call("blast", BLAST_URL, {**get, "FORMAT_TYPE": "Text", "ALIGNMENTS": "0"})
-        return rid.group(1), xml, text
+        get = {"CMD": "Get", "RID": rid}
+        xml = self._call("blast", BLAST_URL, {**get, "FORMAT_TYPE": "XML"},
+                         what=f"XML report {rid}")
+        text = self._call("blast", BLAST_URL, {**get, "FORMAT_TYPE": "Text", "ALIGNMENTS": "0"},
+                          what=f"text report {rid}")
+        return rid, xml, text
 
     def genbank(self, accession: str, start: int, stop: int) -> str:
         params = {"db": "nuccore", "id": accession, "rettype": "gb", "retmode": "text",
                   "seq_start": start, "seq_stop": stop, "tool": TOOL, "email": self.email}
         if self.api_key:
             params["api_key"] = self.api_key
-        return self._call("entrez", EFETCH_URL, params)
+        return self._call("entrez", EFETCH_URL, params, what=f"GenBank {accession}")
 
 
 # ---- cache ---------------------------------------------------------------------------
