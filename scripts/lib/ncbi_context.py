@@ -9,15 +9,20 @@ at the best hit come from the GenBank record through Entrez. Every response is
 cached as received and the context table is built from the cache alone, so the
 knowledge base is rebuilt without querying NCBI. Requests follow NCBI's usage
 rules: one at a time, at least 10 s apart (Entrez: 3 per second, 10 with a key),
-a RID polled at most once a minute, with the tool name and e-mail.
+a RID polled at most once a minute, with the tool name and e-mail. A request that
+fails on the network or with HTTP 429 or 5xx is sent again up to five times,
+1, 2, 4, 8 and 16 min later; any other error ends the step.
 """
 from __future__ import annotations
 
 import hashlib
+import http.client
 import io
 import json
 import re
+import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -44,17 +49,30 @@ def select_unitigs(members: pd.DataFrame, max_members: int) -> pd.DataFrame:
         "unitig_id", ignore_index=True)
 
 
+TRANSIENT_HTTP = {429, 500, 502, 503, 504}
+
+
+def transient(e: Exception) -> bool:
+    """A network failure or an HTTP status that asks for the request again later."""
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code in TRANSIENT_HTTP
+    return isinstance(e, (urllib.error.URLError, http.client.HTTPException, ConnectionError,
+                          TimeoutError))
+
+
 class Ncbi:
     """Sequential NCBI client; ``fetch(url, data)`` and ``sleep`` can be replaced."""
 
     def __init__(self, email: str, api_key: str = "", *, fetch=None, sleep=time.sleep,
-                 clock=time.monotonic, blast_interval: float = 10.0, poll_interval: float = 60.0):
+                 clock=time.monotonic, blast_interval: float = 10.0, poll_interval: float = 60.0,
+                 retries: int = 5, retry_wait: float = 60.0):
         if not email:
             raise ValueError("NCBI requires an e-mail address (config ncbi.entrez_email)")
         self.email, self.api_key = email, api_key
         self.fetch = fetch or self._urlopen
         self.sleep, self.clock = sleep, clock
         self.blast_interval, self.poll_interval = blast_interval, poll_interval
+        self.retries, self.retry_wait = retries, retry_wait
         self.entrez_interval = 0.11 if api_key else 0.34
         self._last = {"blast": -1e9, "entrez": -1e9}
 
@@ -66,14 +84,25 @@ class Ncbi:
 
     def _call(self, kind: str, url: str, params: dict, post: bool = False) -> str:
         gap = (self.blast_interval if kind == "blast" else self.entrez_interval)
-        wait = self._last[kind] + gap - self.clock()
-        if wait > 0:
-            self.sleep(wait)
         body = urllib.parse.urlencode(params)
-        self._last[kind] = self.clock()
-        if post:
-            return self.fetch(url, body.encode())
-        return self.fetch(f"{url}?{body}", None)
+        attempt = 0
+        while True:
+            wait = self._last[kind] + gap - self.clock()
+            if wait > 0:
+                self.sleep(wait)
+            self._last[kind] = self.clock()
+            try:
+                if post:
+                    return self.fetch(url, body.encode())
+                return self.fetch(f"{url}?{body}", None)
+            except Exception as e:
+                if attempt >= self.retries or not transient(e):
+                    raise
+                pause = self.retry_wait * 2 ** attempt
+                attempt += 1
+                print(f"  NCBI {kind}: {type(e).__name__}: {e}; attempt {attempt + 1} of "
+                      f"{self.retries + 1} in {pause:.0f} s", file=sys.stderr, flush=True)
+                self.sleep(pause)
 
     def blast(self, fasta: str, params: dict) -> tuple[str, str, str]:
         """(rid, XML report, text report) of one search."""

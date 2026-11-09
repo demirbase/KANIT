@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """NCBI context (lib.ncbi_context, 18_ncbi_context.py) with a fake NCBI: no network."""
+import http.client
 import importlib.util
 import io
 import json
 import sys
+import urllib.error
 import urllib.parse
 from pathlib import Path
 
@@ -100,6 +102,46 @@ def test_client_keeps_ncbi_rules():
     assert put["PROGRAM"] == "blastn" and put["DATABASE"] == "nt" and put["EMAIL"] == "me@example.org"
     with pytest.raises(ValueError):
         nc.Ncbi("")
+
+
+class Flaky(FakeNcbi):
+    """Drops the connection the first ``n`` times the XML report is asked for."""
+
+    def __init__(self, xml, n, error=None):
+        super().__init__(xml)
+        self.n, self.error = n, error
+
+    def fetch(self, url, data):
+        params = dict(urllib.parse.parse_qsl(data.decode() if data else url.split("?", 1)[1]))
+        if params.get("FORMAT_TYPE") == "XML" and self.n > 0:
+            self.n -= 1
+            self.calls.append((self.t, params))
+            raise self.error or http.client.RemoteDisconnected("closed")
+        return super().fetch(url, data)
+
+
+def test_client_sends_again_after_a_dropped_connection():
+    fake = Flaky(_xml([]), 2)
+    c = nc.Ncbi("me@example.org", fetch=fake.fetch, sleep=fake.sleep, clock=fake.clock)
+    rid, xml, text = c.blast(">q\nACGT\n", {"WORD_SIZE": 11})
+    assert rid == "R1" and xml == _xml([]) and text == TEXT
+    gets = [t for t, p in fake.calls if p.get("FORMAT_TYPE") == "XML"]
+    assert len(gets) == 3 and gets[1] - gets[0] >= 60 and gets[2] - gets[1] >= 120
+    assert sum(p.get("CMD") == "Put" for t, p in fake.calls) == 1      # the search is kept
+
+
+def test_client_gives_up():
+    c = nc.Ncbi("me@example.org", fetch=Flaky(_xml([]), 9).fetch, sleep=lambda s: None,
+                retries=2)
+    with pytest.raises(http.client.RemoteDisconnected):
+        c.blast(">q\nACGT\n", {})
+    bad = urllib.error.HTTPError("u", 400, "Bad Request", None, None)  # type: ignore[arg-type]
+    fake = Flaky(_xml([]), 1, bad)
+    c = nc.Ncbi("me@example.org", fetch=fake.fetch, sleep=fake.sleep, clock=fake.clock)
+    with pytest.raises(urllib.error.HTTPError):
+        c.blast(">q\nACGT\n", {})
+    assert sum(p.get("FORMAT_TYPE") == "XML" for t, p in fake.calls) == 1
+    assert nc.transient(urllib.error.HTTPError("u", 503, "x", None, None))  # type: ignore[arg-type]
 
 
 def test_parsing():
