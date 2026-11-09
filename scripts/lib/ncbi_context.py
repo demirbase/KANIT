@@ -10,8 +10,8 @@ cached as received and the context table is built from the cache alone, so the
 knowledge base is rebuilt without querying NCBI. Requests follow NCBI's usage
 rules: one at a time, at least 10 s apart (Entrez: 3 per second, 10 with a key),
 a RID polled at most once a minute, with the tool name and e-mail. A request that
-fails on the network or with HTTP 429 or 5xx is sent again up to five times,
-1, 2, 4, 8 and 16 min later; any other error ends the step.
+fails on the network or with HTTP 429 or 5xx is sent again up to ten times,
+1, 2, 4 and 8 min later and then every 15 min; any other error ends the step.
 """
 from __future__ import annotations
 
@@ -65,14 +65,14 @@ class Ncbi:
 
     def __init__(self, email: str, api_key: str = "", *, fetch=None, sleep=time.sleep,
                  clock=time.monotonic, blast_interval: float = 10.0, poll_interval: float = 60.0,
-                 retries: int = 5, retry_wait: float = 60.0):
+                 retries: int = 10, retry_wait: float = 60.0, retry_max: float = 900.0):
         if not email:
             raise ValueError("NCBI requires an e-mail address (config ncbi.entrez_email)")
         self.email, self.api_key = email, api_key
         self.fetch = fetch or self._urlopen
         self.sleep, self.clock = sleep, clock
         self.blast_interval, self.poll_interval = blast_interval, poll_interval
-        self.retries, self.retry_wait = retries, retry_wait
+        self.retries, self.retry_wait, self.retry_max = retries, retry_wait, retry_max
         self.entrez_interval = 0.11 if api_key else 0.34
         self._last = {"blast": -1e9, "entrez": -1e9}
 
@@ -98,7 +98,7 @@ class Ncbi:
             except Exception as e:
                 if attempt >= self.retries or not transient(e):
                     raise
-                pause = self.retry_wait * 2 ** attempt
+                pause = min(self.retry_wait * 2 ** attempt, self.retry_max)
                 attempt += 1
                 print(f"  NCBI {kind}: {type(e).__name__}: {e}; attempt {attempt + 1} of "
                       f"{self.retries + 1} in {pause:.0f} s", file=sys.stderr, flush=True)

@@ -128,6 +128,11 @@ def test_client_sends_again_after_a_dropped_connection():
     gets = [t for t, p in fake.calls if p.get("FORMAT_TYPE") == "XML"]
     assert len(gets) == 3 and gets[1] - gets[0] >= 60 and gets[2] - gets[1] >= 120
     assert sum(p.get("CMD") == "Put" for t, p in fake.calls) == 1      # the search is kept
+    fake = Flaky(_xml([]), 7)
+    c = nc.Ncbi("me@example.org", fetch=fake.fetch, sleep=fake.sleep, clock=fake.clock)
+    c.blast(">q\nACGT\n", {})
+    gets = [t for t, p in fake.calls if p.get("FORMAT_TYPE") == "XML"]
+    assert len(gets) == 8 and max(b - a for a, b in zip(gets, gets[1:], strict=False)) <= 900
 
 
 def test_client_gives_up():
