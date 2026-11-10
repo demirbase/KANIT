@@ -69,11 +69,17 @@ class Tables:
             return None
         if not p.exists():
             return None
+        # Genome IDs stay text: read as numbers, "1352.20830" becomes 1352.2083 and merges
+        # with genome 1352.2083, so counts of distinct genomes come out short.
+        read_csv["dtype"] = {**GENOME_ID_DTYPE, **read_csv.get("dtype", {})}
         return pd.read_csv(p, keep_default_na=True, low_memory=False, **read_csv)
 
     def json(self, location, file, organism=None, antibiotic=None) -> dict | None:
         p = contract.output_path(location, file, self.config, organism, antibiotic)
         return json.loads(p.read_text()) if p.exists() else None
+
+
+GENOME_ID_DTYPE = {"genome_id": str, "Genome ID": str}
 
 
 def _save(fig, path: Path) -> Path:
@@ -658,9 +664,16 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                 "Largest minority class of the included pairs")
     comparisons: list[pd.DataFrame] = []
     genomes_qc_pass = 0
+    flow = {"phenotyped": 0, "downloaded": 0, "with_lineage": 0, "eligible": 0}   # the genome funnel
     for org in organisms:
+        snap = t.json("metadata_file", "snapshot.json", org)
+        if snap is not None:
+            put(f"{org}.n_genomes_downloaded", int(snap["n_genomes"]), "snapshot", "n_genomes",
+                "Phenotyped genomes whose assembly was downloaded")
+            flow["downloaded"] += int(snap["n_genomes"])
         long = t.get("phenotypes_long", org)
         if long is not None:
+            flow["phenotyped"] += int(long["genome_id"].nunique())
             put(f"{org}.n_genomes_phenotyped", int(long["genome_id"].nunique()), "phenotypes_long",
                 "genome_id", "Genomes with a phenotype")
             put(f"{org}.n_antibiotics", int(long["antibiotic"].nunique()), "phenotypes_long",
@@ -671,6 +684,17 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
             put(f"{org}.n_genomes_qc_pass", n_pass, "genome_qc",
                 "pass_overall", "Genomes that pass QC")
             genomes_qc_pass += n_pass
+        clusters = t.get("lineage_clusters", org)
+        if clusters is not None:
+            n_lin = int(clusters["Genome ID"].nunique())
+            put(f"{org}.n_genomes_with_lineage", n_lin, "lineage_clusters", "Genome ID",
+                "Genomes assigned to a lineage (PopPUNK, after its own QC)")
+            flow["with_lineage"] += n_lin
+            if qc is not None:
+                n_el = len(panel.eligible_genomes(qc, clusters))
+                put(f"{org}.n_genomes_eligible", n_el, "genome_qc", "pass_overall",
+                    "Genomes that pass QC and have a lineage")
+                flow["eligible"] += n_el
         if dec is not None:
             mine = dec[dec["organism"] == org]
             if len(mine):
@@ -867,6 +891,16 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
     if genomes_qc_pass:
         put("all.n_genomes_qc_pass", genomes_qc_pass, "genome_qc", "pass_overall",
             "Genomes that pass QC, summed over organisms")
+    flow_source = {"phenotyped": ("phenotypes_long", "genome_id", "Genomes with a phenotype"),
+                   "downloaded": ("snapshot", "n_genomes",
+                                  "Phenotyped genomes whose assembly was downloaded"),
+                   "with_lineage": ("lineage_clusters", "Genome ID",
+                                    "Genomes assigned to a lineage (PopPUNK, after its own QC)"),
+                   "eligible": ("genome_qc", "pass_overall", "Genomes that pass QC and have a lineage")}
+    for name, n in flow.items():
+        if n:
+            src, col, desc = flow_source[name]
+            put(f"all.n_genomes_{name}", n, src, col, f"{desc}, summed over organisms")
     if comparisons:
         comp_all = pd.concat(comparisons, ignore_index=True)
         ba = comp_all.pivot_table(index="model_id", columns="tool",
