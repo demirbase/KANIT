@@ -319,6 +319,8 @@ context:                    # 18_ncbi_context.py, lib/ncbi_context.py (protocol 
   evalue: 10
   max_members: 10           # a pattern with more members contributes its longest
   batch_size: 100           # unitigs per BLAST submission
+  off_hours_only: false     # true: new BLAST searches only on weekends and 21:00-05:00 US Eastern
+                            # on weekdays, the hours in which NCBI takes more than 50 searches
 
 packing:                    # lib/packing.py: CV units / permutation chunks of one model per SLURM job
   max_per_job: 56           # a hamsi node; a unit keeps about one core busy, whatever its threads (pilot)

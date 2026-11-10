@@ -148,7 +148,9 @@ def main():
     print(f"NCBI CONTEXT — {args.organism} — {args.command}")
     if args.command in ("query", "all"):
         n = config["ncbi"]
-        print(f"  {query(args.organism, config, out_dir, nc.Ncbi(n['entrez_email'], n.get('api_key') or ''))}")
+        client = nc.Ncbi(n['entrez_email'], n.get('api_key') or '',
+                         off_hours_only=config["context"]["off_hours_only"])
+        print(f"  {query(args.organism, config, out_dir, client)}")
     if args.command in ("build", "all"):
         t = build(args.organism, out_dir, config, allow_incomplete=args.allow_incomplete)
         print(f"  {len(t)} unitigs, {int((t['n_hits'] > 0).sum())} with a hit")
