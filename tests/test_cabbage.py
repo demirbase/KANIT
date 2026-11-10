@@ -196,6 +196,17 @@ def test_fetch_checks_taxon_and_assembly(tmp_path):
     m.fetch(config, workers=2, api=api)                                # S1 is not fetched again
     assert sum("/download" in c for c in fake.calls) == n_downloads + 1   # only S3 again
 
+    # a fetch stopped before writing its report (the login node's CPU limit) resumes from the
+    # partial report: S1's row is there, so S1 is not fetched again
+    out = tmp_path / "out"
+    rep = pd.read_csv(out / "cabbage_download_report.csv", dtype=str, keep_default_na=False)
+    rep[rep["biosample_id"] == "S1"].to_csv(out / "cabbage_download_report.partial.csv", index=False)
+    (out / "cabbage_download_report.csv").unlink()
+    n_downloads = sum("/download" in c for c in fake.calls)
+    m.fetch(config, workers=2, api=api)
+    assert sum("/download" in c for c in fake.calls) == n_downloads + 1   # only S3 again
+    assert not (out / "cabbage_download_report.partial.csv").exists()     # removed once complete
+
 
 # ---- the final models on the external isolates (lib/cabbage_predict.py) --------------
 

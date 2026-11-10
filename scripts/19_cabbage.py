@@ -40,13 +40,15 @@ Subcommands:
             (cabbage_comparison.csv)
 """
 import argparse
+import csv
 import hashlib
 import importlib.util
 import json
+import multiprocessing
 import os
 import sys
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -167,19 +169,34 @@ def fetch_one(api, base: dict, contigs: str, length: str, genomes_dir: Path) -> 
             "bytes": len(data), "sha256": bvbrc.sha256_bytes(data)}
 
 
+_WORKER_API = None
+
+
+def _worker_init() -> None:
+    global _WORKER_API
+    _WORKER_API = ncbi_datasets.Datasets()
+
+
+def _fetch_in_worker(task) -> dict:
+    return fetch_one(_WORKER_API, *task)
+
+
 def fetch(config: dict, *, workers: int, api=None) -> pd.DataFrame:
     out = resolve_path("cabbage_dir", config=config)
     iso_file = out / "cabbage_isolates.csv"
     if not iso_file.exists():
         sys.exit(f"ERROR: no {iso_file}; run `19_cabbage.py select` first")
     iso = pd.read_csv(iso_file, dtype=str, keep_default_na=False)
-    api = api or ncbi_datasets.Datasets()
+    injected, api = api is not None, api or ncbi_datasets.Datasets()
     reports = api.genome_reports(iso["assembly_id"])
     numbers = {a: ncbi_datasets.report_numbers(r) for a, r in reports.items()}
     lineages = api.lineages({n[2] for n in numbers.values() if n[2] is not None})
     report_file = out / "cabbage_download_report.csv"
-    before = (pd.read_csv(report_file, dtype=str, keep_default_na=False).set_index("biosample_id")
-              if report_file.exists() else pd.DataFrame())
+    partial_file = out / "cabbage_download_report.partial.csv"   # rows of a fetch that was stopped
+    frames = [pd.read_csv(f, dtype=str, keep_default_na=False) for f in (report_file, partial_file)
+              if f.exists() and f.stat().st_size]
+    before = (pd.concat(frames).drop_duplicates("biosample_id", keep="last").set_index("biosample_id")
+              if frames else pd.DataFrame())
     organisms = registry.load_organisms()
     rows, todo = [], []
     for r in iso.itertuples(index=False):
@@ -202,13 +219,29 @@ def fetch(config: dict, *, workers: int, api=None) -> pd.DataFrame:
             continue
         todo.append((base, contigs, length, genomes_dir))
     print(f"  {len(iso)} isolates: {len(todo)} to fetch")
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        rows += list(ex.map(lambda t: fetch_one(api, *t), todo))
+    # Each genome's row reaches the partial report as soon as it is written, so a fetch that is
+    # stopped resumes where it stopped: the login node kills a process after 360 s of CPU, and
+    # the whole download takes more. Real downloads run in worker processes for the same reason
+    # (the limit is per process); an injected client (the tests) is used from threads.
+    pool = (ThreadPoolExecutor(max_workers=workers) if injected
+            else ProcessPoolExecutor(max_workers=workers, initializer=_worker_init,
+                                     mp_context=multiprocessing.get_context("fork")))
+    with pool as ex, open(partial_file, "a", newline="") as pf:
+        w = csv.DictWriter(pf, fieldnames=REPORT_COLUMNS, extrasaction="ignore")
+        if pf.tell() == 0:
+            w.writeheader()
+        jobs = (ex.map(lambda t: fetch_one(api, *t), todo) if injected
+                else ex.map(_fetch_in_worker, todo, chunksize=4))
+        for row in jobs:
+            rows.append(row)
+            w.writerow(row)
+            pf.flush()
     report = pd.DataFrame(rows).reindex(columns=REPORT_COLUMNS).sort_values(
         ["organism", "biosample_id"], ignore_index=True)
     for c in ("tax_id", "sequences", "length", "bytes"):
         report[c] = pd.to_numeric(report[c], errors="coerce").astype("Int64")
     report.to_csv(report_file, index=False)
+    partial_file.unlink(missing_ok=True)
     status = report.groupby(["organism", "status"]).size().unstack(fill_value=0)
     (out / "cabbage_fetch.json").write_text(json.dumps({
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
