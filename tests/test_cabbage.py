@@ -283,10 +283,11 @@ def test_external_metrics_and_bootstrap():
     assert big["assessed"] and "intervals" in big and big["balanced_accuracy"] == pytest.approx(2 / 3)
 
 
-def test_prepare_and_predict(trained, tmp_path):
+def test_prepare_and_predict(trained, tmp_path, monkeypatch):
     import importlib.util
     import json
 
+    from lib import cabbage_predict as cp
     from lib.config import load_config
     mm, store, booster = trained
     spec = importlib.util.spec_from_file_location("amrtest_19b", PROJECT_ROOT / "scripts" / "19_cabbage.py")
@@ -325,12 +326,19 @@ def test_prepare_and_predict(trained, tmp_path):
     assert s["n_qc_passed"] == 23 and s["models"] == ["ciprofloxacin"]
     assert len((out / "refs.txt").read_text().splitlines()) == 23
     assert {"ACGTSIGA", "ACGTSIGB"} <= set((out / "unitigs.txt").read_text().split())
-    # what unitig-caller and poppunk_assign would write
-    called = ext[:23]
-    with open(out / "calls.rtab", "w") as f:
-        f.write("Unitig_sequence\t" + "\t".join(called) + "\n")
-        for u in ("ACGTSIGA", "ACGTSIGB"):
-            f.write(u + "\t" + "\t".join("1" if int(b[1:]) < 12 else "0" for b in called) + "\n")
+    # unitig-caller --simple as it really behaves: it ignores --rtab, writes <out>.pyseer and
+    # leaves out a unitig found in no genome (E12–E23 carry neither signal unitig)
+    fake = tmp_path / "unitig-caller"
+    fake.write_text(f"#!{sys.executable}\nimport sys\na = sys.argv\n"
+                    "open(a[a.index('--out') + 1] + '.pyseer', 'w').write(''.join(\n"
+                    "    u + ' | ' + ' '.join(f'E{i}:1' for i in range(12)) + '\\n'\n"
+                    "    for u in ('ACGTSIGA', 'ACGTSIGB')))\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("AMR_UNITIG_CALLER_BIN", str(fake))
+    rtab = cp.read_rtab(m.call("ecoli", config, threads=1))
+    assert sorted(rtab.columns) == sorted(ext[:23])
+    assert len(rtab) == len((out / "unitigs.txt").read_text().split())
+    assert rtab.loc["ACGTSIGA"].sum() == 12 and rtab.drop(["ACGTSIGA", "ACGTSIGB"]).sum().sum() == 0
     (out / "poppunk").mkdir()
     pd.DataFrame({"Taxon": ext[:22], "Cluster": [str(i % 4) if i % 2 else "999" for i in range(22)]}
                  ).to_csv(out / "poppunk" / "poppunk_clusters.csv", index=False)

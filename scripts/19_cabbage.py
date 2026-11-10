@@ -286,11 +286,14 @@ def call(organism: str, config: dict, *, threads: int) -> Path:
     tool = resolve_tool("unitig-caller")
     if not tool:
         sys.exit("ERROR: unitig-caller not found on PATH (or set AMR_UNITIG_CALLER_BIN).")
+    # simple mode ignores --rtab and writes calls.pyseer, so the Rtab is built from it
     run_logged([tool, "--simple", "--refs", out / "refs.txt", "--unitigs", out / "unitigs.txt",
-                "--rtab", "--out", out / "calls", "--threads", threads], out / "unitig_caller.log")
-    rtab = out / "calls.rtab"
-    if not rtab.exists():
-        sys.exit(f"ERROR: unitig-caller wrote no {rtab}")
+                "--out", out / "calls", "--threads", threads], out / "unitig_caller.log")
+    pyseer, rtab = out / "calls.pyseer", out / "calls.rtab"
+    if not pyseer.exists():
+        sys.exit(f"ERROR: unitig-caller wrote no {pyseer}")
+    genomes = [Path(p).stem for p in (out / "refs.txt").read_text().split()]
+    cp.pyseer_to_rtab(pyseer, (out / "unitigs.txt").read_text().split(), genomes, rtab)
     return rtab
 
 

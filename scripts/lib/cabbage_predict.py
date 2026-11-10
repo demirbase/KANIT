@@ -62,6 +62,27 @@ def read_rtab(path) -> pd.DataFrame:
     return pd.read_csv(path, sep="\t", index_col=0, dtype={g: np.uint8 for g in genomes})
 
 
+def pyseer_to_rtab(pyseer, unitigs: list[str], genomes: list[str], rtab) -> None:
+    """unitig-caller in simple mode writes only its pyseer format, ``seq | genome:count ...``,
+    and leaves out a unitig found in no genome. The Rtab lists every query unitig and every
+    genome, so a unitig or genome without a hit is 0 rather than missing."""
+    row = {u: i for i, u in enumerate(unitigs)}
+    col = {g: j for j, g in enumerate(genomes)}
+    hits = np.zeros((len(unitigs), len(genomes)), dtype=np.uint8)
+    with open(pyseer, encoding="utf-8") as f:
+        for line in f:
+            seq, _, calls = line.rstrip("\n").partition(" | ")
+            if seq not in row:
+                raise ValueError(f"{pyseer}: {seq[:40]} is not a query unitig")
+            for call in calls.split():
+                genome, _, count = call.rpartition(":")
+                if genome not in col:
+                    raise ValueError(f"{pyseer}: {genome} is not a query genome")
+                hits[row[seq], col[genome]] = int(count) > 0
+    pd.DataFrame(hits, index=pd.Index(unitigs, name="Unitig_sequence"), columns=genomes).to_csv(
+        rtab, sep="\t")
+
+
 def pattern_presence(query: pd.DataFrame, rtab: pd.DataFrame) -> pd.DataFrame:
     """pattern × genome 0/1 from the unitig calls; a member the Rtab does not list is absent."""
     hits = rtab.reindex(query["sequence"].to_numpy()).fillna(0).to_numpy(dtype=np.float64)
