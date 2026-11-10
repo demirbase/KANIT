@@ -16,15 +16,20 @@ submitted is followed to its end. A request that fails on the network or with
 HTTP 429 or 5xx is sent again up to ten times, 1, 2, 4 and 8 min later and then
 every 15 min; any other error ends the step. Each such failure is logged with
 the time, the request (submit, status, XML or text report, GenBank record) and
-the RID.
+the RID. Requests go through curl when it is installed: on 10.11.2026 NCBI's BLAST
+server closed every HTTPS request Python itself made from the TRUBA login node
+without a response, while it answered curl from the same node (Entrez answered both).
 """
 from __future__ import annotations
 
+import email.message
 import hashlib
 import http.client
 import io
 import json
 import re
+import shutil
+import subprocess
 import sys
 import time
 import urllib.error
@@ -71,6 +76,29 @@ def transient(e: Exception) -> bool:
                           TimeoutError))
 
 
+CURL_MARK = "\n__kanit_http_status__"
+
+
+def curl(url: str, data: bytes | None, *, run=subprocess.run) -> str:
+    """One request through curl (POST when ``data`` is given). A network failure,
+    including a connection closed without a response, raises ConnectionError and an
+    HTTP status of 400 or above raises HTTPError, so ``transient`` judges them as it
+    judges urllib's."""
+    cmd = ["curl", "-sS", "-m", "300", "-A", TOOL, "-w", CURL_MARK + "%{http_code}", url]
+    if data is not None:
+        cmd[1:1] = ["--data-binary", "@-"]
+    r = run(cmd, input=data, capture_output=True, timeout=330)
+    out = r.stdout.decode("utf-8", errors="replace")
+    if r.returncode != 0:
+        err = r.stderr.decode("utf-8", errors="replace").strip()
+        raise ConnectionError(f"curl exit {r.returncode}: {err}")
+    body, _, code = out.rpartition(CURL_MARK)
+    status = int(code) if code.strip().isdigit() else 0
+    if status >= 400 or status == 0:
+        raise urllib.error.HTTPError(url, status, f"HTTP {status}", email.message.Message(), None)
+    return body
+
+
 def until_off_hours(t: datetime) -> float:
     """Seconds from ``t`` to the hours in which NCBI takes more than 50 searches from
     one user: weekends, and 21:00 to 05:00 US Eastern time on weekdays."""
@@ -102,6 +130,8 @@ class Ncbi:
 
     @staticmethod
     def _urlopen(url: str, data: bytes | None) -> str:
+        if shutil.which("curl"):
+            return curl(url, data)
         req = urllib.request.Request(url, data=data, headers={"User-Agent": TOOL})
         with urllib.request.urlopen(req, timeout=300) as r:
             return r.read().decode("utf-8", errors="replace")

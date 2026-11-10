@@ -278,3 +278,31 @@ def test_step_end_to_end(tmp_path, monkeypatch):
     row = t.iloc[0]
     assert row["unitig_id"] == uid and row["nt_release"] == "Oct 1, 2026"
     assert row["gene"] == "gyrA" and row["plasmid_share"] == 1.0 and row["source"] == nc.SOURCE
+
+
+class _Done:
+    def __init__(self, rc, out=b"", err=b""):
+        self.returncode, self.stdout, self.stderr = rc, out, err
+
+
+def test_curl_returns_the_body_and_sends_post_data():
+    seen = {}
+
+    def run(cmd, input, capture_output, timeout):
+        seen["cmd"], seen["input"] = cmd, input
+        return _Done(0, b"RID = ABC" + nc.CURL_MARK.encode() + b"200")
+    assert nc.curl("https://x/Blast.cgi", b"CMD=Put", run=run) == "RID = ABC"
+    assert seen["cmd"][:3] == ["curl", "--data-binary", "@-"] and seen["input"] == b"CMD=Put"
+    assert "-A" in seen["cmd"] and seen["cmd"][seen["cmd"].index("-A") + 1] == nc.TOOL
+
+
+def test_curl_failures_are_judged_like_urllib():
+    with pytest.raises(ConnectionError) as e:                 # 52: empty reply, the 10.11 failure
+        nc.curl("https://x", None, run=lambda *a, **k: _Done(52, err=b"Empty reply from server"))
+    assert nc.transient(e.value)
+    with pytest.raises(urllib.error.HTTPError) as e:
+        nc.curl("https://x", None, run=lambda *a, **k: _Done(0, b"busy" + nc.CURL_MARK.encode() + b"503"))
+    assert e.value.code == 503 and nc.transient(e.value)
+    with pytest.raises(urllib.error.HTTPError) as e:
+        nc.curl("https://x", None, run=lambda *a, **k: _Done(0, b"no" + nc.CURL_MARK.encode() + b"400"))
+    assert not nc.transient(e.value)
