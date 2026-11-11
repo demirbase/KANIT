@@ -140,6 +140,10 @@
                     "pattern": "^[A-Za-z0-9,\\[\\]-]*$",
                     "description": "Nodes the jobs must not run on (sbatch --exclude), e.g. barbun45,barbun46,hamsi20."
                 },
+                "exclude_nodes_file": {
+                    "type": "string",
+                    "description": "File of further nodes to exclude, one per line, read at every submission; jobs write a node into it when Apptainer cannot start there."
+                },
                 "containers_dir": {
                     "type": "string",
                     "description": "Directory of the Apptainer images."
