@@ -326,6 +326,15 @@ def test_prepare_and_predict(trained, tmp_path, monkeypatch):
     assert s["n_qc_passed"] == 23 and s["models"] == ["ciprofloxacin"]
     assert len((out / "refs.txt").read_text().splitlines()) == 23
     assert {"ACGTSIGA", "ACGTSIGB"} <= set((out / "unitigs.txt").read_text().split())
+    # an organism without a final model has no unitig store; prepare records no models
+    (tmp_path / "cab" / "kpneumoniae" / "checkm2").mkdir(parents=True)
+    pd.DataFrame({"Name": ["K0"], "Completeness": 99.0, "Contamination": 1.0}).to_csv(
+        tmp_path / "cab" / "kpneumoniae" / "checkm2" / "quality_report.tsv", sep="\t", index=False)
+    no_store = {**config, "paths_organism": {**config["paths_organism"],
+                                             "unitig_store_dir": str(tmp_path / "missing")}}
+    k = m.prepare("kpneumoniae", no_store)
+    assert k["models"] == [] and k["n_unitigs"] == 0
+    assert json.loads((tmp_path / "cab" / "kpneumoniae" / "cabbage_prepare.json").read_text())["models"] == []
     # unitig-caller --simple as it really behaves: it ignores --rtab, writes <out>.pyseer and
     # leaves out a unitig found in no genome (E12–E23 carry neither signal unitig)
     fake = tmp_path / "unitig-caller"

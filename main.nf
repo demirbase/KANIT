@@ -84,6 +84,17 @@ def organisms(String entry) {
     wanted
 }
 
+// the final models CABBAGE_PREPARE found for an organism (cabbage_prepare.json); a stub
+// run writes no summary and keeps every organism
+def cabbageModels(String org) {
+    if (workflow.stubRun) {
+        return ['stub']
+    }
+    def dir = kanitConfig().paths_organism.cabbage_organism_dir.toString().replace('{organism}', org)
+    def summary = new File(dir.startsWith('/') ? dir : "${projectDir}/${dir}", 'cabbage_prepare.json')
+    new groovy.json.JsonSlurper().parse(summary).models as List
+}
+
 workflow.onComplete {
     runManifestComplete(workflow, params)
 }
@@ -126,7 +137,8 @@ workflow CABBAGE {
     CABBAGE_QC_PATHS(orgs.combine(CABBAGE_FETCH.out.done))
     CABBAGE_CHECKM2(CABBAGE_QC_PATHS.out.paths)
     CABBAGE_PREPARE(CABBAGE_CHECKM2.out.done.map { org, r -> [org, 'prepare', r] })
-    def prepared = CABBAGE_PREPARE.out.done                    // organism, receipt
+    // organism, receipt; an organism without a final model stops here
+    def prepared = CABBAGE_PREPARE.out.done.filter { org, r -> cabbageModels(org) }
     CABBAGE_ASSIGN(prepared.map { org, r -> [org, 'assign', r] })
     CABBAGE_CALL(prepared.map { org, r -> [org, 'call', r] })
     CABBAGE_PREDICT(CABBAGE_ASSIGN.out.done.join(CABBAGE_CALL.out.done)

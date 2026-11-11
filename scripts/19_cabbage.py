@@ -326,9 +326,11 @@ def prepare(organism: str, config: dict) -> dict:
     (out / "refs.txt").write_text("".join(f"{(genomes_dir / f'{b}.fna').resolve()}\n" for b in passed))
     (out / "poppunk_query.txt").write_text(
         "".join(f"{b}\t{(genomes_dir / f'{b}.fna').resolve()}\n" for b in passed))
-    store = Store(resolve_path("unitig_store_dir", organism=organism, config=config))
     members, sequences = {}, set()
     abs_ = models_of(organism, config)
+    # an organism without a final model has no unitig store and nothing to predict: the
+    # empty model list makes the workflow skip it after this step (main.nf, cabbageModels)
+    store = Store(resolve_path("unitig_store_dir", organism=organism, config=config)) if abs_ else None
     for ab in abs_:
         cv = resolve_path("cv_dir", organism=organism, antibiotic=ab, config=config)
         mm = ModelMatrix(resolve_path("matrix_dir", organism=organism, antibiotic=ab, config=config))
@@ -336,7 +338,7 @@ def prepare(organism: str, config: dict) -> dict:
         m = mm.members()
         members[ab] = m[m["pattern_id"].isin(set(used.tolist()))]
     wanted = sorted({int(i) for m in members.values() for i in m["unitig_index"]})
-    seq_of = dict(zip(wanted, store.sequences(wanted), strict=True))
+    seq_of = dict(zip(wanted, store.sequences(wanted), strict=True)) if store else {}
     for ab, m in members.items():
         q = m.assign(sequence=m["unitig_index"].map(seq_of)).sort_values("unitig_index")
         q.to_csv(out / f"query_{ab}.csv", index=False)
