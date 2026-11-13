@@ -213,3 +213,34 @@ def test_python_output_is_unbuffered_on_truba(tmp_path):
                        cwd=tmp_path, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     assert "env.PYTHONUNBUFFERED = '1'" in r.stdout
+
+
+@pytest.mark.parametrize("arm", ["B", "C"])
+def test_m3_entry(tmp_path, arm):
+    """Makale 3: every included pair of the main run's panel once, from the budget to the
+    grades; the k-mer store once per organism in arm C only; nothing of RGI, the label
+    permutation test or the association set; the run's accounting at the end."""
+    panel = PROJECT_ROOT / "tests" / "data" / "stub_panel_decisions.csv"
+    r, trace = _run(tmp_path, "-entry", "M3", "--organisms", "ecoli,kpneumoniae",
+                    "--stub_panel", str(panel),
+                    "--config_overlay", str(PROJECT_ROOT / "config" / f"m3_{arm}.yml"))
+    assert r.returncode == 0, r.stdout + r.stderr
+    t = pd.read_csv(trace, sep="\t")
+    assert (t["status"] == "COMPLETED").all()
+    n = t["process"].str.split(":").str[-1].value_counts().to_dict()
+    d = pd.read_csv(panel)
+    d = d[(d["decision"] == "included") & d["organism"].isin(["ecoli", "kpneumoniae"])]
+    for p in ("M3_BUDGET", "CV_PACKING", "CV_FINAL", "CV_METRICS", "CPSS_PREFILTER",
+              "CPSS_SELECT", "PREVALENCE", "MDA", "CARD_LAYER", "PYSEER_POST", "GRADING"):
+        assert n.get(p) == len(d), p
+    assert n.get("M3_KMER_STORE", 0) == (d["organism"].nunique() if arm == "C" else 0)
+    for p in ("RGI_RUN", "RGI_COLLECT", "LP_CHUNKS", "ASSOCIATION_SET", "MODEL_MATRIX",
+              "CV_FOLDS", "REPORTS"):
+        assert p not in n, p
+    assert n["SACCT_DUMP"] == 1 and n["RUN_RESOURCES"] == 1
+
+
+def test_m3_entry_needs_an_arm(tmp_path):
+    r, _ = _run(tmp_path, "-entry", "M3", "--organisms", "ecoli", "--stub_panel",
+                str(PROJECT_ROOT / "tests" / "data" / "stub_panel_decisions.csv"))
+    assert r.returncode != 0 and "config_overlay" in r.stdout + r.stderr

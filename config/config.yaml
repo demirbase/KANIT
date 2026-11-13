@@ -57,6 +57,9 @@ paths_organism:
   # ── Organism + antibiotic-scoped ───────────────────────────────────────────
   # Organism unitig store and per-model pattern matrices (03u, lib/matrix_store.py).
   unitig_store_dir:     "data/processed/{organism}/unitig_store"
+  # Makale 3, arm C: the organism's canonical k-mers in the unitig store's format
+  # (m3_kmer_store.py, lib/kmers.py).
+  kmer_store_dir:       "data/processed/{organism}/kmer_store"
   matrix_dir:           "data/processed/{organism}/{antibiotic}/model_matrix"
   # Nested cross-validation and final model of one pair (04_nested_cv.py).
   cv_dir:               "results/{organism}/{antibiotic}/cv"

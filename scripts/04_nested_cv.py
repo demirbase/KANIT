@@ -38,7 +38,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from lib import folds, oof_metrics, packing, train  # noqa: E402
+from lib import budget, folds, oof_metrics, packing, train  # noqa: E402
 from lib.config import get_target, load_config, resolve_path  # noqa: E402
 from lib.matrix_store import ModelMatrix  # noqa: E402
 from lib.run_metadata import peak_rss_gb  # noqa: E402
@@ -126,6 +126,14 @@ def _save(result, unit_dir, extra):
 
 def _design_evaluable(out_dir) -> bool:
     return bool(json.loads((out_dir / "cv_design.json").read_text())["evaluable"])
+
+
+def unit_matrix(mm, arm, repeat, fold):
+    """The matrix an outer fold trains on: the model matrix or, under a feature budget
+    (Makale 3, arms B and C; lib/budget.py), the features its own training set chose."""
+    if budget.has_budget(mm.dir):
+        return budget.unit_matrix(mm.dir, folds.unit_name(arm, repeat, fold))
+    return mm
 
 
 def _unit_inputs(mm, out_dir, arm, repeat, fold):
@@ -285,6 +293,8 @@ def main():
                     print(s.arm, int(s.repeat), k)
         return
     print(f"NESTED CV — {args.organism} / {args.antibiotic} — {args.command}")
+    if args.command in ("folds", "all") and budget.has_budget(mm.dir):
+        sys.exit("ERROR: a budgeted model shares arm A's folds; m3_budget.py copies them.")
     if args.command in ("folds", "all"):
         d = run_folds(mm, out_dir, cv)
         print(f"  evaluable: {d['evaluable']}; largest lineage {d['largest_lineage_share']:.1%}")
@@ -292,16 +302,18 @@ def main():
         if args.arm is None or args.repeat is None or args.fold is None:
             sys.exit("ERROR: `unit` needs --arm, --repeat and --fold.")
         unit = out_dir / "units" / folds.unit_name(args.arm, args.repeat, args.fold)
-        if args.skip_done and unit_is_current(mm, out_dir, args.arm, args.repeat, args.fold, hpo):
+        um = unit_matrix(mm, args.arm, args.repeat, args.fold)
+        if args.skip_done and unit_is_current(um, out_dir, args.arm, args.repeat, args.fold, hpo):
             print(f"  ✓ {unit.name} finished before with the same inputs; kept (--skip-done)")
         else:
-            run_unit(mm, out_dir, args.arm, args.repeat, args.fold, hpo, args.threads)
+            run_unit(um, out_dir, args.arm, args.repeat, args.fold, hpo, args.threads)
     if args.command == "all":
         seeds = pd.read_csv(out_dir / "seeds.csv")
         for s in seeds.itertuples():
             if s.evaluable:
                 for k in range(cv["n_folds"]):
-                    run_unit(mm, out_dir, s.arm, int(s.repeat), k, hpo, args.threads)
+                    run_unit(unit_matrix(mm, s.arm, int(s.repeat), k), out_dir, s.arm,
+                             int(s.repeat), k, hpo, args.threads)
                     print(f"  ✓ {folds.unit_name(s.arm, int(s.repeat), k)}")
     if args.command == "final" and args.skip_done and final_is_current(mm, out_dir, hpo):
         print("  ✓ final model finished before with the same inputs; kept (--skip-done)")

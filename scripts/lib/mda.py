@@ -30,7 +30,7 @@ import xgboost as xgb
 from scipy.sparse.csgraph import connected_components
 from scipy.stats import false_discovery_control, rankdata
 
-from lib import folds, train
+from lib import budget, folds, train
 
 _TOL = 1e-12        # float slack when comparing AUCs and thresholds
 
@@ -54,6 +54,9 @@ class FoldModel:
     booster: xgb.Booster
     used: np.ndarray            # patterns the model splits on
     csr: sp.csr_matrix          # test genomes × all patterns; the used ones stored
+    # the used patterns' ids in the model matrix whose patterns are permuted, when the fold
+    # model saw other columns (Makale 3's budget, lib/budget.py); -1: not among them
+    ids: np.ndarray | None = None
 
     @property
     def values(self) -> np.ndarray:
@@ -105,8 +108,14 @@ def load_fold_models(mm, cv_dir) -> list[FoldModel]:
             rows = rows.to_numpy(dtype=np.int64)
             if not (labels[rows] == oof["y"].to_numpy(dtype=int)).all():
                 raise ValueError(f"{unit}: labels differ from the model matrix")
-            out.append(fold_model(mm, unit, rows, oof["p"].to_numpy(dtype=float), repeat,
-                                  fold))
+            if budget.has_budget(mm.dir):   # the fold model saw its own training set's choice
+                um = budget.unit_matrix(mm.dir, folds.unit_name(folds.LINEAGE_AWARE, repeat,
+                                                                fold))
+                fm = fold_model(um, unit, rows, oof["p"].to_numpy(dtype=float), repeat, fold)
+                fm.ids = budget.final_pattern_ids(mm.dir, um, fm.used)
+            else:
+                fm = fold_model(mm, unit, rows, oof["p"].to_numpy(dtype=float), repeat, fold)
+            out.append(fm)
     return out
 
 
@@ -145,7 +154,7 @@ def _effect(fm: FoldModel, group: np.ndarray):
     """(codes, preds) when the fold model splits on the group, else None: codes[i]
     is test genome i's value vector of the group among the fold's distinct vectors,
     preds[c] the predictions of every test genome with the group set to vector c."""
-    pos = np.flatnonzero(np.isin(fm.used, group))
+    pos = np.flatnonzero(np.isin(fm.used if fm.ids is None else fm.ids, group))
     if not pos.size:
         return None
     view = fm.values

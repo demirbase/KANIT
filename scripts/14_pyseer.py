@@ -35,11 +35,13 @@ from lib.matrix_store import ModelMatrix  # noqa: E402
 
 
 def prep(mm, out_dir: Path, cfg, *, prefilter_file: Path, candidates_file: Path,
-         cpu: int) -> dict:
+         cpu: int, structure=None) -> dict:
     tested = set(pd.read_csv(prefilter_file)["pattern_id"].astype(int))
     tested |= set(pd.read_csv(candidates_file)["pattern_id"].astype(int))
     info = pl.write_inputs(mm, out_dir, tested, every=cfg["kinship_every"],
-                           background_max=cfg["background_max"])
+                           background_max=cfg["background_max"], structure=structure)
+    if structure is not None:
+        info["structure_matrix"] = str(structure.dir)
     script = out_dir / "run_pyseer.sh"
     script.write_text(pl.command(out_dir, cpu))
     script.chmod(0o755)
@@ -109,9 +111,12 @@ def main():
         print("Model not evaluable (see 04's seeds.csv): no pyseer.")
         sys.exit(folds.NOT_EVALUABLE)
     if args.command in ("prep", "all"):
+        # Makale 3's budgeted arms: population structure from arm A's full matrix
+        structure = ModelMatrix(path("source_matrix_dir")) if config.get("m3") else None
         info = prep(ModelMatrix(path("matrix_dir")), out_dir, cfg,
                     prefilter_file=path("cpss_dir") / "prefilter.csv",
-                    candidates_file=path("candidates_file"), cpu=args.threads)
+                    candidates_file=path("candidates_file"), cpu=args.threads,
+                    structure=structure)
         print(f"  inputs: {info['n_tested']} tested, {info['n_background']} background, "
               f"kinship of {info['n_kinship_unitigs']} unitigs")
     if args.command in ("lmm", "all"):

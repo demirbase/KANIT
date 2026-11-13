@@ -12,6 +12,9 @@
  *   -entry KB         the knowledge base, the hypothesis tests and its release package
  *   -entry CABBAGE    external validation of the final models on CABBAGE isolates
  *                     (secondary analysis, protocol §14 item 4; after the primary run)
+ *   -entry M3         Makale 3, arm B or C (--config_overlay config/m3_B.yml or
+ *                     config/m3_C.yml): the main run's pairs with a feature budget of
+ *                     unitig patterns or k-mers, written under m3/<arm>/
  *
  * The steps write into the shared results tree; every task emits a receipt that
  * the tasks depending on it take as input.
@@ -38,8 +41,9 @@ include { CABBAGE_LIGHT as CABBAGE_PREPARE; CABBAGE_LIGHT as CABBAGE_EXTERNAL_CO
 include { CONTEXT_QUERY; CONTEXT_BUILD } from './modules/local/context'
 include { BUILD_KB; HYPOTHESES; KB_PACKAGE } from './modules/local/kb'
 include { FINISH } from './subworkflows/local/finish'
-include { runManifestStart; runManifestComplete } from './modules/local/run'
-include { kanitConfig } from './modules/local/common'
+include { M3_ARM } from './subworkflows/local/m3'
+include { runManifestStart; runManifestComplete; SACCT_DUMP; RUN_RESOURCES } from './modules/local/run'
+include { kanitConfig; meta } from './modules/local/common'
 
 // the organisms asked for, every one of them in the registry; writes the run manifest
 // (modules/local/run.nf) and stops a run on a tree with uncommitted changes
@@ -176,3 +180,26 @@ workflow KB {
     KB_PACKAGE(HYPOTHESES.out.done)        // last, so that its failure cannot stop the tests
     FINISH(KB_PACKAGE.out.done.collect(), 'KB')
 }
+
+// Makale 3, arm B or C (subworkflows/local/m3.nf): the included pairs of the main run's
+// panel, read from its decisions (a stub run reads --stub_panel). It ends with SLURM's
+// accounting and the resource report of the run (the arm's cost, Makale 3 §3.5), not with
+// FINISH: the reports, the output contract and the backup are the main run's.
+workflow M3 {
+    def cfg = kanitConfig()
+    if (!cfg.m3) {
+        error "-entry M3 needs --config_overlay config/m3_B.yml or config/m3_C.yml"
+    }
+    def wanted = organisms('M3') as Set
+    def panel = workflow.stubRun ? params.stub_panel :
+        "${projectDir}/${cfg.paths_organism.panel_dir}/panel_decisions.csv"
+    pairs = Channel.fromPath(panel, checkIfExists: true)
+        .splitCsv(header: true)
+        .filter { row -> row.decision == 'included' && row.organism in wanted }
+        .map { row -> meta(row.organism, row.antibiotic) }
+    M3_ARM(pairs)
+    SACCT_DUMP(M3_ARM.out.grading.map { m, r -> r }
+                   .mix(M3_ARM.out.metrics.map { m, r -> r }).collect().ifEmpty([]))
+    RUN_RESOURCES(SACCT_DUMP.out.done)
+}
+

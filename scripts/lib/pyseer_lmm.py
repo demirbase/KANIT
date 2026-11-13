@@ -69,8 +69,16 @@ def write_rtab(path, names, genome_ids, bits) -> None:
             f.write(name.encode() + b"\t" + row.tobytes())
 
 
-def write_inputs(mm, out_dir, tested, *, every: int, background_max: int) -> dict:
-    """phenotypes.tsv, tested.Rtab, background.Rtab and kinship.tsv for pyseer."""
+def write_inputs(mm, out_dir, tested, *, every: int, background_max: int,
+                 structure=None) -> dict:
+    """phenotypes.tsv, tested.Rtab, background.Rtab and kinship.tsv for pyseer.
+
+    ``structure`` is the model matrix the kinship and the background patterns come from,
+    by default ``mm``. Makale 3's budgeted arms pass arm A's: their own matrix holds only
+    the K chosen features, too few and too label-bound to describe population structure."""
+    structure = mm if structure is None else structure
+    if list(structure.genomes["Genome ID"].astype(str)) != list(mm.genomes["Genome ID"].astype(str)):
+        raise ValueError("the structure matrix must hold the model's genomes in its order")
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     ids = sample_names(mm.genomes["Genome ID"].astype(str))
@@ -78,11 +86,11 @@ def write_inputs(mm, out_dir, tested, *, every: int, background_max: int) -> dic
         out / "phenotypes.tsv", sep="\t", index=False)
     tested = np.asarray(sorted(set(int(p) for p in tested)), dtype=np.int64)
     pd.DataFrame({"pattern_id": tested}).to_csv(out / "tested_patterns.csv", index=False)
-    kin_ids, bg = unitig_samples(mm, every, background_max)
-    for name, pats in (("tested", tested), ("background", bg)):
-        write_rtab(out / f"{name}.Rtab", [f"p{p}" for p in pats], ids, mm.columns(pats).T)
-    pd.DataFrame(kinship(mm, kin_ids), index=ids, columns=ids).to_csv(out / "kinship.tsv",
-                                                                     sep="\t")
+    kin_ids, bg = unitig_samples(structure, every, background_max)
+    for name, pats, src in (("tested", tested, mm), ("background", bg, structure)):
+        write_rtab(out / f"{name}.Rtab", [f"p{p}" for p in pats], ids, src.columns(pats).T)
+    pd.DataFrame(kinship(structure, kin_ids), index=ids, columns=ids).to_csv(
+        out / "kinship.tsv", sep="\t")
     return {"n_tested": int(tested.size), "n_background": int(bg.size),
             "n_kinship_unitigs": int(kin_ids.size)}
 

@@ -1,0 +1,26 @@
+# Makale 3, arm C: canonical 31-mers of the organism's k-mer store, not collapsed,
+# K = 5000 features chosen by χ² inside every training set (scripts/m3_budget.py,
+# lib/budget.py). Arm A is the main run and stays untouched: every result of this arm is
+# written under m3/C/, and arm A's matrices and folds are read through source_*.
+#
+#   KANIT_CONFIG_OVERLAY=config/m3_C.yml python scripts/m3_budget.py --organism ... --antibiotic ...
+#   nextflow run main.nf ... --config_overlay config/m3_C.yml
+m3:
+  arm: C
+  representation: kmer
+  feature_budget: 5000
+
+paths_prefix: m3/C
+# shared inputs: read where arm A reads them
+paths_prefix_exclude: [data_dir, dir_global_exploration, genome_qc_dir, panel_dir,
+  raw_genomes_dir, metadata_file, lineage_dir, unitig_store_dir, kmer_store_dir,
+  source_unitig_store_dir, source_matrix_dir, source_cv_dir,
+  rgi_db_dir, rgi_dir, external_dir, context_dir, cabbage_data_dir, cabbage_genomes_dir,
+  databases_manifest]
+
+paths_organism:
+  source_matrix_dir: "data/processed/{organism}/{antibiotic}/model_matrix"
+  source_cv_dir:     "results/{organism}/{antibiotic}/cv"
+  # the steps after the budget read the k-mers' sequences where they read the unitigs'
+  unitig_store_dir:        "data/processed/{organism}/kmer_store"
+  source_unitig_store_dir: "data/processed/{organism}/unitig_store"
