@@ -214,3 +214,24 @@ process CABBAGE_RGI {
     stub:
     stubReceipt(task, 'cabbage_rgi', "${org} ${shard}/${n}")
 }
+
+// KANIT lookup (added 2026-11-13): the primary rule from the training counts of every
+// organism (19_cabbage.py lookup-select, lib/cabbage_lookup.py)
+process CABBAGE_LOOKUP_SELECT {
+    label 'light'
+
+    input:
+    path deps, stageAs: 'dep*.json'
+
+    output:
+    path 'receipt.json', emit: done
+
+    script:
+    """
+    ${py('19_cabbage.py')} lookup-select
+    ${receipt(task, 'cabbage_lookup_select', 'cabbage')}
+    """
+
+    stub:
+    stubReceipt(task, 'cabbage_lookup_select', 'cabbage')
+}

@@ -38,6 +38,19 @@ Subcommands:
   compare   the genotype-based predictors of §11 and the model on the isolates the model was
             assessed on, with the same rules and lineage-cluster bootstrap intervals
             (cabbage_comparison.csv)
+
+KANIT lookup (added during the study, 2026-11-13; lib/cabbage_lookup.py):
+
+  lookup-prepare  per organism: the member unitigs of every model's markers (graded weak or
+                  better), lookup_query_<antibiotic>.csv; those not in unitigs.txt go to
+                  lookup_unitigs.txt (the final models do not use every graded pattern)
+  lookup-call     per organism: unitig-caller in simple mode, lookup_unitigs.txt in the same
+                  assemblies (calls_lookup.rtab)
+  lookup          per organism, after predict: every lookup rule on the training genomes
+                  (counts) and on the isolates the model was predicted on, with the same
+                  intervals (cabbage_lookup_predictions.csv, cabbage_lookup_metrics.json)
+  lookup-select   the primary rule from the training counts of every organism
+                  (cabbage_dir/cabbage_lookup_selection.json)
 """
 import argparse
 import csv
@@ -57,7 +70,8 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from lib import bvbrc, cabbage, card_layer, folds, ncbi_datasets, panel, registry  # noqa: E402
+from lib import bvbrc, cabbage, card_layer, contract, folds, ncbi_datasets, panel, registry  # noqa: E402
+from lib import cabbage_lookup as cl  # noqa: E402
 from lib import cabbage_predict as cp  # noqa: E402
 from lib import external as ex  # noqa: E402
 from lib.config import load_config, resolve_path  # noqa: E402
@@ -488,19 +502,126 @@ def compare(organism: str, config: dict) -> pd.DataFrame:
     return table
 
 
+# ---- KANIT lookup -------------------------------------------------------------------------
+def _markers(organism: str, ab: str, config: dict) -> pd.DataFrame:
+    return cl.markers(pd.read_csv(contract.table_path("grades_patterns", config, organism, ab)),
+                      pd.read_csv(contract.table_path("prevalence_layer", config, organism, ab)))
+
+
+def lookup_prepare(organism: str, config: dict) -> dict:
+    from lib.matrix_store import ModelMatrix, Store
+    out = resolve_path("cabbage_organism_dir", organism=organism, config=config)
+    known = set((out / "unitigs.txt").read_text().split())
+    store = Store(resolve_path("unitig_store_dir", organism=organism, config=config))
+    new, models = set(), {}
+    for ab in models_of(organism, config):
+        mk = _markers(organism, ab, config)
+        mm = ModelMatrix(resolve_path("matrix_dir", organism=organism, antibiotic=ab, config=config))
+        q = cp.query_table(mm, store, mk["pattern_id"])
+        q.to_csv(out / f"lookup_query_{ab}.csv", index=False)
+        extra = set(q["sequence"]) - known
+        new |= extra
+        models[ab] = {"n_markers": len(mk), "n_unitigs": len(q), "n_unitigs_not_called": len(extra)}
+    (out / "lookup_unitigs.txt").write_text("".join(f"{u}\n" for u in sorted(new)))
+    summary = {"organism": organism, "n_unitigs_to_call": len(new), "models": models}
+    (out / "lookup_prepare.json").write_text(json.dumps(summary, indent=2) + "\n")
+    return summary
+
+
+def lookup_call(organism: str, config: dict, *, threads: int) -> Path:
+    """As ``call``, for the markers' unitigs the first call did not search."""
+    from lib.config import resolve_tool
+    from lib.io_utils import run_logged
+    out = resolve_path("cabbage_organism_dir", organism=organism, config=config)
+    unitigs = (out / "lookup_unitigs.txt").read_text().split()
+    genomes = [Path(p).stem for p in (out / "refs.txt").read_text().split()]
+    pyseer, rtab = out / "calls_lookup.pyseer", out / "calls_lookup.rtab"
+    if unitigs:
+        tool = resolve_tool("unitig-caller")
+        if not tool:
+            sys.exit("ERROR: unitig-caller not found on PATH (or set AMR_UNITIG_CALLER_BIN).")
+        run_logged([tool, "--simple", "--refs", out / "refs.txt", "--unitigs",
+                    out / "lookup_unitigs.txt", "--out", out / "calls_lookup", "--threads", threads],
+                   out / "unitig_caller_lookup.log")
+        if not pyseer.exists():
+            sys.exit(f"ERROR: unitig-caller wrote no {pyseer}")
+    else:
+        pyseer.write_text("")
+    cp.pyseer_to_rtab(pyseer, unitigs, genomes, rtab)
+    return rtab
+
+
+def lookup(organism: str, config: dict) -> dict:
+    from lib.matrix_store import ModelMatrix
+    out = resolve_path("cabbage_organism_dir", organism=organism, config=config)
+    pred = pd.read_csv(out / "cabbage_predictions.csv", dtype={"biosample_id": str, "lineage": str})
+    rtab = pd.concat([cp.read_rtab(out / "calls.rtab"), cp.read_rtab(out / "calls_lookup.rtab")])
+    rtab = rtab[~rtab.index.duplicated()]
+    kw = {"min_per_class": int(config["cabbage"]["min_per_class"]),
+          "n_boot": int(config["cv"]["n_bootstrap"]), "threshold": 0.5}
+    rows, training, pairs = [], {}, {}
+    for ab in models_of(organism, config):
+        mk = _markers(organism, ab, config)
+        mm = ModelMatrix(resolve_path("matrix_dir", organism=organism, antibiotic=ab, config=config))
+        ids = mk["pattern_id"].to_numpy()
+        train = pd.DataFrame(mm.columns(ids).T, index=ids, columns=mm.genomes["Genome ID"])
+        training[ab] = {r: cl.counts(mm.labels, cl.predict(train, mk, r)) for r in cl.RULES}
+        d = pred[pred["antibiotic"] == ab]
+        q = pd.read_csv(out / f"lookup_query_{ab}.csv")
+        presence = cp.pattern_presence(q, rtab[d["biosample_id"].tolist()])
+        r_ = {"n_markers": int(len(mk)), "n_markers_R": int((mk["direction"] == "R").sum())}
+        for rule in cl.RULES + (cl.SCORE,):
+            p = cl.score(presence, mk) if rule == cl.SCORE else cl.predict(presence, mk, rule)
+            p = p.reindex(d["biosample_id"]).to_numpy(dtype=float)
+            rows.append(d.assign(rule=rule, prediction=p)[
+                ["organism", "antibiotic", "biosample_id", "rule", "prediction", "y", "lineage",
+                 "lineage_seen"]])
+            seen = d["lineage_seen"].astype(bool).to_numpy()
+            r_[rule] = {"all": cp.assess(d["y"], p, d["lineage"], **kw),
+                        "lineage_seen": cp.assess(d["y"][seen], p[seen], d["lineage"][seen], **kw),
+                        "lineage_unseen": cp.assess(d["y"][~seen], p[~seen], d["lineage"][~seen], **kw)}
+        pairs[ab] = r_
+    cols = ["organism", "antibiotic", "biosample_id", "rule", "prediction", "y", "lineage", "lineage_seen"]
+    (pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(columns=cols)).to_csv(
+        out / "cabbage_lookup_predictions.csv", index=False)
+    summary = {"created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+               "organism": organism, "rules": list(cl.RULES) + [cl.SCORE],
+               "training": training, "pairs": pairs}
+    (out / "cabbage_lookup_metrics.json").write_text(json.dumps(summary, indent=2, default=float) + "\n")
+    return summary
+
+
+def lookup_select(config: dict) -> dict:
+    per_model, n_orgs = [], 0
+    for org in sorted(registry.load_organisms()):
+        f = resolve_path("cabbage_organism_dir", organism=org, config=config) / "cabbage_lookup_metrics.json"
+        if f.exists():
+            n_orgs += 1
+            per_model += list(json.loads(f.read_text())["training"].values())
+    pooled = cl.pooled(per_model)
+    summary = {"created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+               "n_organisms": n_orgs, "n_models": len(per_model), "pooled_training_counts": pooled,
+               "balanced_accuracy": {r: cl.balanced_accuracy(c) for r, c in pooled.items()},
+               "primary_rule": cl.select(pooled)}
+    out = resolve_path("cabbage_dir", config=config) / "cabbage_lookup_selection.json"
+    out.write_text(json.dumps(summary, indent=2) + "\n")
+    return summary
+
+
 def main():
     config = load_config()
     ap = argparse.ArgumentParser(description="External validation on CABBAGE.")
     ap.add_argument("command", choices=["download", "select", "fetch", "qc-paths", "prepare",
                                         "assign", "call", "predict", "external-prep",
-                                        "external-collect", "rgi", "rgi-collect", "compare"])
+                                        "external-collect", "rgi", "rgi-collect", "compare",
+                                        "lookup-prepare", "lookup-call", "lookup", "lookup-select"])
     ap.add_argument("--workers", type=int, default=4, help="assemblies fetched at once")
     ap.add_argument("--organism", help="the organism of the per-organism commands")
     ap.add_argument("--threads", type=int, default=1)
     ap.add_argument("--shard", type=int, default=0, help="rgi: this shard (0-based)")
     ap.add_argument("--shards", type=int, default=1, help="rgi: number of shards")
     args = ap.parse_args()
-    if args.command not in ("download", "select", "fetch") and not args.organism:
+    if args.command not in ("download", "select", "fetch", "lookup-select") and not args.organism:
         sys.exit(f"ERROR: {args.command} needs --organism")
     if args.command == "qc-paths":                       # its output is a shell file
         print(qc_paths(args.organism, config), end="")
@@ -539,6 +660,20 @@ def main():
             resolve_path("rgi_db_dir", config=config), threads=args.threads)
     elif args.command == "rgi-collect":
         print(f"  {len(rgi_collect(args.organism, config))} RGI hits")
+    elif args.command == "lookup-prepare":
+        s = lookup_prepare(args.organism, config)
+        print(f"  {len(s['models'])} models, {s['n_unitigs_to_call']} marker unitigs to call")
+    elif args.command == "lookup-call":
+        print(f"  ✓ {lookup_call(args.organism, config, threads=args.threads)}")
+    elif args.command == "lookup":
+        s = lookup(args.organism, config)
+        for ab, r in s["pairs"].items():
+            a = r["upto_weak"]["all"]
+            ba = f"BA {a['balanced_accuracy']:.3f}" if a["assessed"] else "not assessed"
+            print(f"  {ab:32s} {r['n_markers']:4d} markers  upto_weak {ba}")
+    elif args.command == "lookup-select":
+        s = lookup_select(config)
+        print(f"  {s['n_models']} models; primary rule {s['primary_rule']}")
     elif args.command == "compare":
         t = compare(args.organism, config)
         if not t.empty:

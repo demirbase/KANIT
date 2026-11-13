@@ -28,11 +28,13 @@ include { EVIDENCE } from './subworkflows/local/evidence'
 include { COMPARISON } from './subworkflows/local/comparison'
 include { DOWNLOAD_BVBRC } from './modules/local/download'
 include { CABBAGE_DOWNLOAD; CABBAGE_SELECT; CABBAGE_FETCH; CABBAGE_QC_PATHS; CABBAGE_CHECKM2;
-          CABBAGE_EXTERNAL_PREP; CABBAGE_EXTERNAL_RUN; CABBAGE_RGI } from './modules/local/cabbage'
+          CABBAGE_EXTERNAL_PREP; CABBAGE_EXTERNAL_RUN; CABBAGE_RGI;
+          CABBAGE_LOOKUP_SELECT } from './modules/local/cabbage'
 include { CABBAGE_LIGHT as CABBAGE_PREPARE; CABBAGE_LIGHT as CABBAGE_EXTERNAL_COLLECT;
           CABBAGE_LIGHT as CABBAGE_RGI_COLLECT; CABBAGE_LIGHT as CABBAGE_COMPARE;
           CABBAGE_HEAVY as CABBAGE_ASSIGN; CABBAGE_HEAVY as CABBAGE_CALL;
-          CABBAGE_HEAVY as CABBAGE_PREDICT } from './modules/local/cabbage'
+          CABBAGE_HEAVY as CABBAGE_PREDICT; CABBAGE_LIGHT as CABBAGE_LOOKUP_PREPARE;
+          CABBAGE_HEAVY as CABBAGE_LOOKUP_CALL; CABBAGE_HEAVY as CABBAGE_LOOKUP } from './modules/local/cabbage'
 include { CONTEXT_QUERY; CONTEXT_BUILD } from './modules/local/context'
 include { BUILD_KB; HYPOTHESES; KB_PACKAGE } from './modules/local/kb'
 include { FINISH } from './subworkflows/local/finish'
@@ -156,7 +158,14 @@ workflow CABBAGE {
     CABBAGE_COMPARE(CABBAGE_PREDICT.out.done.join(CABBAGE_EXTERNAL_COLLECT.out.done)
                     .join(CABBAGE_RGI_COLLECT.out.done)
                     .map { org, a, b, c -> [org, 'compare', [a, b, c]] })
-    FINISH(CABBAGE_COMPARE.out.done.map { o, r -> r }.collect(), 'CABBAGE')
+    // KANIT lookup (added 2026-11-13): the knowledge base as a catalogue on the same isolates
+    CABBAGE_LOOKUP_PREPARE(prepared.map { org, r -> [org, 'lookup-prepare', r] })
+    CABBAGE_LOOKUP_CALL(CABBAGE_LOOKUP_PREPARE.out.done.map { org, r -> [org, 'lookup-call', r] })
+    CABBAGE_LOOKUP(CABBAGE_LOOKUP_CALL.out.done.join(CABBAGE_PREDICT.out.done)
+                   .map { org, a, b -> [org, 'lookup', [a, b]] })
+    CABBAGE_LOOKUP_SELECT(CABBAGE_LOOKUP.out.done.map { o, r -> r }.collect())
+    FINISH(CABBAGE_COMPARE.out.done.map { o, r -> r }.mix(CABBAGE_LOOKUP_SELECT.out.done).collect(),
+           'CABBAGE')
 }
 
 workflow KB {
