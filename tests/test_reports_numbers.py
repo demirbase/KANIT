@@ -54,6 +54,12 @@ EVIDENCE = {
         "gain_rank": [1], "cpss_stable": [True]},
 }
 
+# The sign of each pattern's prevalence difference, in the order of PATTERNS; the
+# strong_novel pattern is the one susceptible-direction case that must be counted twice.
+DIRECTION = {("ecoli", "ampicillin"): ["R", "R"],
+             ("ecoli", "ciprofloxacin"): ["S", "R", "R"],
+             ("kpneumoniae", "meropenem"): ["S"]}
+
 
 # One win, one tie and one loss against the tool, spread over two organisms.
 COMPARISON = {
@@ -90,6 +96,9 @@ class FakeTables:
             e = EVIDENCE[key]
             d.update({k: v for k, v in e.items() if k not in ("gain_rank", "cpss_stable")})
             return pd.DataFrame(d)
+        if tid == "prevalence_layer" and key in DIRECTION:
+            return pd.DataFrame({"pattern_id": range(len(DIRECTION[key])),
+                                 "direction": DIRECTION[key]})
         if tid == "candidates" and key in PATTERNS:
             e = EVIDENCE[key]
             return pd.DataFrame({"pattern_id": range(len(PATTERNS[key])),
@@ -413,3 +422,11 @@ def test_the_determinant_overlap_counts_b_aros_per_model():
 
 def test_no_overlap_keys_without_the_association_path():
     assert not any(k.startswith("assoc_overlap.") for k in _numbers())
+
+
+def test_direction_counts_every_candidate_and_the_strong_novel_ones():
+    """Direction is reported next to the grade, not inside it: all candidates, and the
+    strong_novel ones separately."""
+    n = _numbers()
+    assert n["all.n_direction_r"] == 4 and n["all.n_direction_s"] == 2
+    assert n["all.n_strong_novel_direction_r"] == 0 and n["all.n_strong_novel_direction_s"] == 1

@@ -366,6 +366,16 @@ def _evidence_numbers(ev: pd.DataFrame, put) -> None:
             put(f"all.n_strong_novel_layers_{k}", int((novel["n_layers_passed"] == k).sum()),
                 "grades_patterns", "passes", f"strong_novel patterns passing {k} layers")
 
+    # direction: the sign of the prevalence difference; the grade does not depend on it
+    if "direction" in ev:
+        for d, name, where in (("R", "r", "resistant"), ("S", "s", "susceptible")):
+            put(f"all.n_direction_{name}", int((ev["direction"] == d).sum()), "prevalence_layer",
+                "direction", f"Candidates more frequent in the {where} genomes")
+            put(f"all.n_strong_novel_direction_{name}",
+                int(((ev["grade"] == "strong_novel") & (ev["direction"] == d)).sum()),
+                "prevalence_layer", "direction",
+                f"strong_novel patterns more frequent in the {where} genomes")
+
     # H2: the share of every model's stable patterns that reach b = 1
     stable = ev[F._bool(ev["cpss_stable"])] if "cpss_stable" in ev else ev.iloc[:0]
     if len(stable):
@@ -785,9 +795,12 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
                 "Patterns the stability selection picked at least once")
         cands = t.get("candidates", org, ab)
         if grades is not None and cands is not None and "grade" in grades:
-            evidence.append(grades.merge(cands, on="pattern_id", how="left")
-                            .assign(model=mid, organism=org,
-                                    drug_class=drug_class.get(mid, "unmapped")))
+            e = grades.merge(cands, on="pattern_id", how="left")
+            prev = t.get("prevalence_layer", org, ab)
+            if prev is not None and "direction" in prev:
+                e = e.merge(prev[["pattern_id", "direction"]], on="pattern_id", how="left")
+            evidence.append(e.assign(model=mid, organism=org,
+                                     drug_class=drug_class.get(mid, "unmapped")))
         assoc = t.get("association_grades_patterns", org, ab)
         if assoc is not None:
             put(f"{mid}.association.n_patterns", len(assoc), "association_grades_patterns",
