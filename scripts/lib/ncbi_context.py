@@ -115,7 +115,8 @@ class Ncbi:
     def __init__(self, email: str, api_key: str = "", *, fetch=None, sleep=time.sleep,
                  clock=time.monotonic, now=None, blast_interval: float = 10.0,
                  poll_interval: float = 60.0, retries: int = 10, retry_wait: float = 60.0,
-                 retry_max: float = 900.0, off_hours_only: bool = True):
+                 retry_max: float = 900.0, off_hours_only: bool = True,
+                 max_search_wait: float = 6 * 3600):
         if not email:
             raise ValueError("NCBI requires an e-mail address (config ncbi.entrez_email)")
         self.email, self.api_key = email, api_key
@@ -125,6 +126,9 @@ class Ncbi:
         self.off_hours_only = off_hours_only
         self.blast_interval, self.poll_interval = blast_interval, poll_interval
         self.retries, self.retry_wait, self.retry_max = retries, retry_wait, retry_max
+        # NCBI has kept a search WAITING for more than a day (E. coli, 2026-11-12) while
+        # the others took minutes; past this the search counts as failed and is sent again
+        self.max_search_wait = max_search_wait
         self.entrez_interval = 0.11 if api_key else 0.34
         self._last = {"blast": -1e9, "entrez": -1e9}
 
@@ -189,6 +193,7 @@ class Ncbi:
         rid = found.group(1)
         wait = max(int(rtoe.group(1)) if rtoe else 30, 10)
         self._log(f"BLAST {rid} submitted; NCBI expects it in {wait} s")
+        submitted = self.clock()
         self.sleep(wait)
         while True:
             info = self._call("blast", BLAST_URL, {"CMD": "Get", "FORMAT_OBJECT": "SearchInfo",
@@ -199,6 +204,9 @@ class Ncbi:
                 break
             if state in ("FAILED", "UNKNOWN"):
                 raise SearchFailed(f"BLAST search {rid} ended with status {state}")
+            if self.clock() - submitted >= self.max_search_wait:
+                raise SearchFailed(f"BLAST search {rid} still {state} after "
+                                   f"{(self.clock() - submitted) / 3600:.1f} h")
             self.sleep(self.poll_interval)
         get = {"CMD": "Get", "RID": rid}
         xml = self._call("blast", BLAST_URL, {**get, "FORMAT_TYPE": "XML"},

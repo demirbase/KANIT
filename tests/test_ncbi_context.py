@@ -187,6 +187,16 @@ def test_client_gives_up():
         client(fake).blast(">q\nACGT\n", {})
 
 
+
+def test_a_search_left_waiting_fails_after_the_limit():
+    fake = FakeNcbi(_xml([]))
+    fake.polls = -10 ** 6                       # NCBI answers WAITING for good
+    with pytest.raises(nc.SearchFailed, match="still WAITING after 2.0 h"):
+        client(fake, max_search_wait=2 * 3600).blast(">q\nACGT\n", {})
+    assert 2 * 3600 <= fake.t < 2 * 3600 + 120
+    assert not any(p.get("FORMAT_TYPE") == "XML" for t, p in fake.calls)
+
+
 def test_parsing():
     hits = nc.parse_xml(_xml([("KU1", [("CP000001", "E. coli plasmid pX", 39),
                                         ("CP000002", "E. coli chromosome", 40)]), ("KU2", [])]))
