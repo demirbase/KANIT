@@ -132,3 +132,23 @@ def test_run_checks(tmp_path):
     r = subprocess.run([sys.executable, str(PROJECT_ROOT / "scripts" / "completeness.py"), "gate",
                         "--out-dir", str(out)], capture_output=True, text=True)
     assert r.returncode == 1 and "INCOMPLETE RUN" in r.stderr
+
+
+def test_cabbage_model_steps_skip_an_organism_without_models(tmp_path):
+    """E. cloacae has no pair in the panel: there is no model to predict, compare or look up
+    with, so its CABBAGE model steps are not owed (the gate failed on them, 14.11.2026)."""
+    m = _script()
+    c = contract.load()
+    config = {"paths_organism": {k: str(tmp_path / v)
+                                 for k, v in load_config()["paths_organism"].items()}}
+    panel_path = contract.table_path("panel_decisions", config)
+    panel_path.parent.mkdir(parents=True)
+    base = {f["name"]: _value(f) for f in c["tables"]["panel_decisions"]["fields"]}
+    pd.DataFrame([{**base, "organism": "ecoli", "antibiotic": "ampicillin",
+                   "decision": "included"},
+                  {**base, "organism": "enterobacter_cloacae", "antibiotic": "cefoxitin",
+                   "decision": "excluded"}]).to_csv(panel_path, index=False)
+    t = m.run_checks("CABBAGE", ["ecoli", "enterobacter_cloacae"], config)
+    steps = {"cabbage_predict", "cabbage_compare", "cabbage_lookup"}
+    assert set(t.loc[t["step"].isin(steps), "unit"]) == {"ecoli"}
+    assert "enterobacter_cloacae" in set(t["unit"])       # its tool steps are still owed

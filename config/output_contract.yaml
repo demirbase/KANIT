@@ -1089,7 +1089,7 @@ steps:
   cabbage_predict:
     script: 19_cabbage.py
     entry: CABBAGE
-    level: organism
+    level: modelled_organism
     main: cabbage_predictions
     tables: [cabbage_predictions]
     summary: {location: cabbage_organism_dir, file: cabbage_metrics.json}
@@ -1097,14 +1097,14 @@ steps:
   cabbage_compare:
     script: 19_cabbage.py
     entry: CABBAGE
-    level: organism
+    level: modelled_organism
     main: cabbage_comparison
     tables: [cabbage_comparison]
     figure: null
   cabbage_lookup:
     script: 19_cabbage.py
     entry: CABBAGE
-    level: organism
+    level: modelled_organism
     main: cabbage_lookup_predictions
     tables: [cabbage_lookup_predictions]
     summary: {location: cabbage_organism_dir, file: cabbage_lookup_metrics.json}
