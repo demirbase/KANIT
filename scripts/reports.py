@@ -883,6 +883,234 @@ def _kb_case_numbers(con: sqlite3.Connection, ctx: pd.DataFrame, put) -> None:
                 break
 
 
+# ---- the independent external isolates (CABBAGE) -------------------------------------
+# Predictors: the final model, the KANIT lookup (one row per rule; "lookup" alone is the
+# primary rule chosen on the training genomes) and the catalogue tools. A predictor is scored
+# on a pair it can assess (a tool covers the antibiotic) that has at least min_per_class
+# resistant and susceptible isolates. Pairs are compared as in the training set: median paired
+# difference in balanced accuracy, organism-clustered bootstrap, and a sign test.
+# The score rule is left out until the lookup step is rerun with 86dde3c: its counts were
+# unsigned, and a genome with more S than R markers scored about 2^64.
+CABBAGE_LOOKUP_RULES = ("upto_confirmed", "upto_strong_novel", "upto_candidate", "upto_weak",
+                        "b1")
+CABBAGE_TOOLS = ("amrfinderplus", "resfinder", "rgi_all", "rgi_without_near_universal")
+_CABBAGE_STATS = {"balanced_accuracy": "ba", "sensitivity": "sensitivity",
+                  "specificity": "specificity", "very_major_error_rate": "vme",
+                  "major_error_rate": "me"}
+
+
+def _cabbage_json(t: Tables, location: str, file: str, organism=None):
+    """A CABBAGE summary file, None when absent or when the configuration has no such path."""
+    try:
+        return t.json(location, file, organism)
+    except KeyError:
+        return None
+
+
+def _cabbage_scores(t: Tables, organisms: list[str], min_per_class: int):
+    """One row per pair and predictor (scored pairs only), the lineage-split rows of the model
+    and the primary lookup rule, and the primary rule."""
+    rows, split = [], []
+    sel = _cabbage_json(t, "cabbage_dir", "cabbage_lookup_selection.json") or {}
+    primary = sel.get("primary_rule")
+    for org in organisms:
+        comp = t.get("cabbage_comparison", org)
+        if comp is not None:
+            for r in comp.itertuples():
+                n_r, n = r.n_resistant, r.n
+                if r.assessable == 1 and n_r >= min_per_class and n - n_r >= min_per_class:
+                    rows.append({"model_id": r.model_id, "organism": org, "predictor": r.tool,
+                                 **{k: getattr(r, c) for c, k in _CABBAGE_STATS.items()}})
+        look = _cabbage_json(t, "cabbage_organism_dir", "cabbage_lookup_metrics.json", org) or {}
+        for ab, p in look.get("pairs", {}).items():
+            for rule in CABBAGE_LOOKUP_RULES:
+                for part in ("all", "lineage_seen", "lineage_unseen"):
+                    x = p.get(rule, {}).get(part, {})
+                    if not x.get("assessed"):
+                        continue
+                    row = {"model_id": f"{org}__{ab}", "organism": org,
+                           "predictor": f"lookup_{rule}",
+                           **{k: x.get(c) for c, k in _CABBAGE_STATS.items()}}
+                    if part == "all":
+                        rows.append(row)
+                    elif rule == primary:
+                        split.append({**row, "predictor": "lookup", "part": part})
+        mm = _cabbage_json(t, "cabbage_organism_dir", "cabbage_metrics.json", org) or {}
+        for ab, p in mm.get("pairs", {}).items():
+            for part in ("all", "lineage_seen", "lineage_unseen"):
+                x = p.get(part, {})
+                if x.get("assessed"):
+                    split.append({"model_id": f"{org}__{ab}", "organism": org,
+                                  "predictor": "model", "part": part,
+                                  "ba": x.get("balanced_accuracy"), "roc_auc": x.get("roc_auc"),
+                                  "internal_roc_auc": p.get("internal_lineage_aware", {})
+                                  .get("roc_auc")})
+    scores = pd.DataFrame(rows)
+    if primary and len(scores):
+        scores = pd.concat([scores, scores[scores["predictor"] == f"lookup_{primary}"]
+                            .assign(predictor="lookup")], ignore_index=True)
+    return scores, pd.DataFrame(split), primary, sel
+
+
+def _cabbage_flow_numbers(t: Tables, organisms: list[str], sel: dict, put) -> None:
+    left = (_cabbage_json(t, "cabbage_dir", "cabbage_selection.json") or {}).get("isolates_left", {})
+    n_sel = sum(int(v.get("assembly", 0)) for v in left.values())
+    if n_sel:
+        put("cabbage.n_isolates_selected", n_sel, "cabbage_selection", "isolates_left",
+            "External isolates left after every selection step, with an assembly")
+    fetched = passed = used = 0
+    for org in organisms:
+        prep = _cabbage_json(t, "cabbage_organism_dir", "cabbage_prepare.json", org) or {}
+        fetched += int(prep.get("n_fetched", 0))
+        passed += int(prep.get("n_qc_passed", 0))
+        pred = t.get("cabbage_predictions", org, dtype={"biosample_id": str})
+        if pred is not None:
+            used += int(pred["biosample_id"].nunique())
+    if fetched:
+        put("cabbage.n_isolates_fetched", fetched, "cabbage_prepare", "n_fetched",
+            "External isolates whose assembly was downloaded")
+        put("cabbage.n_isolates_qc_pass", passed, "cabbage_prepare", "n_qc_passed",
+            "Of them, isolates that pass the CheckM2 gate of the training genomes")
+    if used:
+        put("cabbage.n_isolates_predicted", used, "cabbage_predictions", "biosample_id",
+            "External isolates with a phenotype for a modelled pair, predicted")
+    for rule, ba in sel.get("balanced_accuracy", {}).items():
+        put(f"cabbage.lookup.training_ba.{rule}", float(ba), "cabbage_lookup_selection",
+            "balanced_accuracy", f"Pooled training balanced accuracy of the lookup rule {rule}")
+
+
+def _cabbage_compare(scores: pd.DataFrame, a: str, b: str, put, n_boot: int) -> None:
+    ba = scores.pivot_table(index="model_id", columns="predictor", values="ba", aggfunc="first")
+    if a not in ba or b not in ba:
+        return
+    both = ba[[a, b]].dropna()
+    if both.empty:
+        return
+    d = both[a] - both[b]
+    s = concordance.sign_test(d)
+    pd_ = concordance.paired_difference(d, [i.split("__")[0] for i in d.index], n_boot=n_boot)
+    pre, src = f"cabbage.compare.{a}__{b}", "cabbage_comparison"
+    put(f"{pre}.n_pairs", len(both), src, "balanced_accuracy", f"Pairs both {a} and {b} score")
+    put(f"{pre}.median_a", float(both[a].median()), src, "balanced_accuracy",
+        f"Median balanced accuracy of {a} on those pairs")
+    put(f"{pre}.median_b", float(both[b].median()), src, "balanced_accuracy",
+        f"Median balanced accuracy of {b} on those pairs")
+    put(f"{pre}.median_diff", pd_["median"], src, "balanced_accuracy",
+        f"Median paired difference in balanced accuracy, {a} minus {b}")
+    put(f"{pre}.ci_low", pd_["ci_low"], src, "balanced_accuracy",
+        "Lower 95% bound of that difference, organism-clustered bootstrap")
+    put(f"{pre}.ci_high", pd_["ci_high"], src, "balanced_accuracy",
+        "Upper 95% bound of that difference, organism-clustered bootstrap")
+    put(f"{pre}.n_organisms", pd_["n_clusters"], src, "model_id", "Organisms behind those pairs")
+    put(f"{pre}.n_a_better", s["n_positive"], src, "balanced_accuracy", f"Pairs where {a} wins")
+    put(f"{pre}.n_b_better", s["n_negative"], src, "balanced_accuracy", f"Pairs where {b} wins")
+    put(f"{pre}.n_tied", s["n_tied"], src, "balanced_accuracy", "Pairs where they tie")
+    if s["p_value"] is not None:
+        put(f"{pre}.p", _four_significant(s["p_value"]), src, "balanced_accuracy",
+            f"Two-sided sign test, {a} vs {b}, ties dropped", digits=None)
+
+
+def _cabbage_numbers(t: Tables, organisms: list[str], put) -> None:
+    min_per_class = int(t.config.get("cabbage", {}).get("min_per_class", 10))
+    n_boot = int(t.config["cv"]["n_bootstrap"])
+    scores, split, primary, sel = _cabbage_scores(t, organisms, min_per_class)
+    _cabbage_flow_numbers(t, organisms, sel, put)
+    if scores.empty:
+        return
+    if primary:
+        put("cabbage.lookup.primary_rule", primary, "cabbage_lookup_selection", "primary_rule",
+            "Lookup rule chosen on the training genomes", digits=None)
+    src = "cabbage_comparison"
+    model_pairs = scores.loc[scores["predictor"] == "model", "model_id"]
+    put("cabbage.n_pairs_scored", int(model_pairs.nunique()), src, "model_id",
+        f"Pairs with at least {min_per_class} resistant and susceptible external isolates")
+    put("cabbage.n_organisms_scored", int(model_pairs.str.split("__").str[0].nunique()), src,
+        "model_id", "Organisms with such a pair")
+    for p, s in scores.groupby("predictor"):
+        pre = f"cabbage.{p}"
+        put(f"{pre}.n_pairs", len(s), src, "assessable", f"Pairs {p} scores")
+        for k in ("ba", "sensitivity", "specificity", "vme", "me"):
+            v = pd.to_numeric(s[k], errors="coerce").dropna()
+            if len(v):
+                put(f"{pre}.median_{k}", float(v.median()), src, k, f"Median {k} of {p}")
+        v = pd.to_numeric(s["ba"], errors="coerce").dropna()
+        if len(v):
+            put(f"{pre}.min_ba", float(v.min()), src, "balanced_accuracy", f"Lowest, {p}")
+            put(f"{pre}.max_ba", float(v.max()), src, "balanced_accuracy", f"Highest, {p}")
+            if p.startswith("rgi"):
+                put(f"{pre}.n_ba_half", int((v == 0.5).sum()), src, "balanced_accuracy",
+                    f"Pairs where {p} scores 0.5 (one class called for every isolate)")
+    for tool in CABBAGE_TOOLS:
+        _cabbage_compare(scores, "lookup", tool, put, n_boot)
+        _cabbage_compare(scores, "model", tool, put, n_boot)
+    _cabbage_compare(scores, "lookup", "lookup_b1", put, n_boot)
+    _cabbage_compare(scores, "model", "lookup", put, n_boot)
+    # the pairs every predictor scores
+    wide = scores.pivot_table(index="model_id", columns="predictor", values="ba", aggfunc="first")
+    cols = [c for c in ("model", "lookup", "lookup_b1", *CABBAGE_TOOLS) if c in wide]
+    common = wide[cols].dropna()
+    put("cabbage.common.n_pairs", len(common), src, "model_id",
+        "Pairs every predictor (model, lookup, lookup b1, four tools) scores")
+    for c in cols:
+        if len(common):
+            put(f"cabbage.common.{c}.median_ba", float(common[c].median()), src,
+                "balanced_accuracy", f"Median balanced accuracy of {c} on those pairs")
+    if split.empty:
+        return
+    # the model's ROC-AUC beside the internal lineage-aware one
+    m = split[(split["predictor"] == "model") & (split["part"] == "all")]
+    auc = pd.to_numeric(m["roc_auc"], errors="coerce")
+    if auc.notna().any():
+        put("cabbage.model.median_roc_auc", float(auc.median()), "cabbage_metrics", "roc_auc",
+            "Median external ROC-AUC of the models")
+        put("cabbage.model.min_roc_auc", float(auc.min()), "cabbage_metrics", "roc_auc", "Lowest")
+        put("cabbage.model.max_roc_auc", float(auc.max()), "cabbage_metrics", "roc_auc", "Highest")
+        by_org = m.assign(auc=auc).groupby("organism")["auc"].median()
+        put("cabbage.model.roc_auc_median_by_organism_min", float(by_org.min()),
+            "cabbage_metrics", "roc_auc", "Lowest organism median of the external ROC-AUC")
+        put("cabbage.model.roc_auc_median_by_organism_max", float(by_org.max()),
+            "cabbage_metrics", "roc_auc", "Highest organism median of the external ROC-AUC")
+        inner = pd.to_numeric(m["internal_roc_auc"], errors="coerce")
+        ok = auc.notna() & inner.notna()
+        if ok.any():
+            gap = (auc - inner)[ok]
+            put("cabbage.model.median_internal_roc_auc", float(inner[ok].median()),
+                "cabbage_metrics", "roc_auc", "Median internal lineage-aware ROC-AUC, same pairs")
+            put("cabbage.model.median_auc_external_minus_internal", float(gap.median()),
+                "cabbage_metrics", "roc_auc", "Median of external minus internal ROC-AUC")
+            put("cabbage.model.n_external_above_internal", int((gap > 0).sum()),
+                "cabbage_metrics", "roc_auc", "Pairs whose external ROC-AUC is the higher")
+            for org, g in m.assign(gap=auc - inner)[ok].groupby("organism"):
+                put(f"cabbage.{org}.model_median_auc_external_minus_internal",
+                    float(g["gap"].median()), "cabbage_metrics", "roc_auc",
+                    "Median of external minus internal ROC-AUC, this organism")
+    # seen and unseen lineages, on the pairs scored in both
+    for p in ("model", "lookup"):
+        s = split[split["predictor"] == p]
+        w = s.pivot_table(index="model_id", columns="part", values="ba", aggfunc="first")
+        if not {"lineage_seen", "lineage_unseen"} <= set(w.columns):
+            continue
+        w = w[["lineage_seen", "lineage_unseen"]].dropna()
+        if w.empty:
+            continue
+        d = w["lineage_unseen"] - w["lineage_seen"]
+        pd_ = concordance.paired_difference(d, [i.split("__")[0] for i in d.index],
+                                            n_boot=n_boot)
+        pre = f"cabbage.lineage.{p}"
+        put(f"{pre}.n_pairs", len(w), "cabbage_metrics", "lineage_seen",
+            "Pairs scored on both seen and unseen lineages")
+        put(f"{pre}.median_ba_seen", float(w["lineage_seen"].median()), "cabbage_metrics",
+            "balanced_accuracy", "Median balanced accuracy, isolates of lineages the model saw")
+        put(f"{pre}.median_ba_unseen", float(w["lineage_unseen"].median()), "cabbage_metrics",
+            "balanced_accuracy", "Median balanced accuracy, isolates of unseen lineages")
+        put(f"{pre}.median_diff", pd_["median"], "cabbage_metrics", "balanced_accuracy",
+            "Median paired difference, unseen minus seen")
+        put(f"{pre}.ci_low", pd_["ci_low"], "cabbage_metrics", "balanced_accuracy",
+            "Lower 95% bound, organism-clustered bootstrap")
+        put(f"{pre}.ci_high", pd_["ci_high"], "cabbage_metrics", "balanced_accuracy",
+            "Upper 95% bound, organism-clustered bootstrap")
+
+
 def _kb_numbers(db: Path, put) -> None:
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
@@ -1312,6 +1540,7 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
         kb = None
     if kb is not None and kb.exists():
         _kb_numbers(kb, put)
+    _cabbage_numbers(t, organisms, put)
     return pd.DataFrame(rows, columns=["key", "value", "source_table", "column", "description"])
 
 
