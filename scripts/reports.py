@@ -640,7 +640,7 @@ SELECT DISTINCT g.model_id, g.pattern_id, m.organism_id, a.aro_accession, a.gene
   JOIN aro a ON a.aro_accession = h.aro_accession{_KB_WHERE} AND g.card_state = 'b'"""
 # a pattern's context is that of its longest member with a context row, as in v_novel
 KB_CONTEXT = f"""
-SELECT g.model_id, g.pattern_id, x.n_hits, x.plasmid_share, x.gene
+SELECT g.model_id, g.pattern_id, x.unitig_id, x.n_hits, x.plasmid_share, x.gene
 {_KB_FROM}
   JOIN unitig_context x ON x.organism_id = m.organism_id AND x.unitig_id = (
        SELECT pm.unitig_id FROM pattern_member pm
@@ -730,6 +730,159 @@ def _kb_context_numbers(graded: pd.DataFrame, ctx: pd.DataFrame, put) -> None:
                   f"graded {grade}, direction {d}")
 
 
+# The three case studies of the knowledge base paper, chosen by a rule written before their
+# results were read. Case 1: a confirmed pattern of a model that AMRFinderPlus assesses.
+# Case 2 and case 3: a strong_novel pattern towards R, then towards S, whose longest searched
+# member has a hit in nt. Each case comes from an organism the earlier cases did not take. The
+# order: π, then the total gain in the final model (a pattern without one, from stability
+# selection alone, ranks below those with one), then |Δ|. |Δ| was added on 14.11.2026, when
+# the gain left case 2 tied; the lowest pyseer p and the highest MDA are reported beside it.
+KB_CASE_POOL = """
+SELECT b.model_id, b.organism_id, b.pattern_id, b.grade, b.direction, b.n_members, b.pi,
+       c.total_gain, b.delta, b.prevalence_q, b.mda, b.mda_q, b.pyseer_p, b.n_layers,
+       pr.present_resistant, pr.present_susceptible, pr.prev_resistant, pr.prev_susceptible,
+       m.n_genomes, m.n_resistant, m.n_susceptible,
+       (SELECT e.assessable FROM external_comparison e
+         WHERE e.model_id = b.model_id AND e.tool = 'amrfinderplus') AS amrfinderplus,
+       (SELECT mm.value FROM model_metric mm WHERE mm.model_id = b.model_id
+           AND mm.arm = 'lineage_aware' AND mm.metric = 'roc_auc') AS roc_auc
+  FROM v_biomarker b
+  JOIN candidate c ON c.model_id = b.model_id AND c.pattern_id = b.pattern_id
+  JOIN prevalence_result pr ON pr.model_id = b.model_id AND pr.pattern_id = b.pattern_id
+  JOIN model m ON m.model_id = b.model_id
+ WHERE b.route = 'model' AND b.grade IN ('confirmed', 'strong_novel')"""
+_CASES = (("confirmed", None), ("strong_novel", "R"), ("strong_novel", "S"))
+_RC = str.maketrans("ACGT", "TGCA")
+
+
+def _carriers(con: sqlite3.Connection, model: str, pattern: int, n: int) -> int:
+    """pattern.carriers as an integer whose n bits are the genomes, row 0 the highest bit."""
+    blob = con.execute("SELECT carriers FROM pattern WHERE model_id = ? AND pattern_id = ?",
+                       (model, int(pattern))).fetchone()[0]
+    return int.from_bytes(blob, "big") >> (8 * len(blob) - n)
+
+
+def _one_base_apart(a: str, b: str) -> bool:
+    """Equal length and one mismatch, on either strand (stored sequences are canonical)."""
+    def ham1(x: str, y: str) -> bool:
+        return len(x) == len(y) and sum(i != j for i, j in zip(x, y, strict=True)) == 1
+    return ham1(a, b) or ham1(a.translate(_RC)[::-1], b)
+
+
+def _pick_case(pool: pd.DataFrame) -> tuple[pd.Series, pd.DataFrame]:
+    """The chosen pattern and the patterns tied with it before |Δ|."""
+    s = pool.assign(_gain=pd.to_numeric(pool["total_gain"], errors="coerce").fillna(-math.inf),
+                    _abs_delta=pool["delta"].abs())
+    s = s.sort_values(["pi", "_gain", "_abs_delta", "model_id", "pattern_id"],
+                      ascending=[False, False, False, True, True])
+    top = s.iloc[0]
+    return top, s[(s["pi"] == top["pi"]) & (s["_gain"] == top["_gain"])]
+
+
+def _kb_case_numbers(con: sqlite3.Connection, ctx: pd.DataFrame, put) -> None:
+    pool = pd.read_sql_query(KB_CASE_POOL, con)
+    hit = ctx[pd.to_numeric(ctx["n_hits"], errors="coerce") > 0].drop_duplicates(_PATTERN)
+    pool = pool.merge(hit[_PATTERN + ["unitig_id", "n_hits", "plasmid_share"]], on=_PATTERN,
+                      how="left")
+    taken: list[str] = []
+    for k, (grade, direction) in enumerate(_CASES, start=1):
+        s = pool[(pool["grade"] == grade) & ~pool["organism_id"].isin(taken)]
+        if direction is None:
+            s = s[s["amrfinderplus"] == 1]
+        else:
+            s = s[(s["direction"] == direction) & s["unitig_id"].notna()]
+        if s.empty:
+            continue
+        top, tied = _pick_case(s)
+        taken.append(top["organism_id"])
+        pre, m, p = f"kb.case{k}", top["model_id"], int(top["pattern_id"])
+        what = f"case {k} ({grade}{', direction ' + direction if direction else ''})"
+        put(f"{pre}.model_id", m, "model", "model_id", f"Model of {what}", digits=None)
+        put(f"{pre}.pattern_id", str(p), "pattern", "pattern_id", f"Pattern of {what}",
+            digits=None)
+        put(f"{pre}.n_eligible", len(s), "grade", "grade",
+            f"Patterns eligible for {what}, after the organisms of the earlier cases")
+        put(f"{pre}.n_tied", len(tied), "cpss_result", "pi",
+            f"Eligible patterns with the π and the total gain of {what} (|Δ| breaks the tie)")
+        if len(tied) > 1:
+            same = (tied.loc[tied["pyseer_p"].idxmin(), "pattern_id"] == p
+                    and tied.loc[tied["mda"].idxmax(), "pattern_id"] == p
+                    and tied.loc[tied["pyseer_p"].idxmin(), "model_id"] == m
+                    and tied.loc[tied["mda"].idxmax(), "model_id"] == m)
+            put(f"{pre}.alternatives_agree", int(same), "pyseer_result", "lrt_p",
+                f"1 when the lowest pyseer p and the highest MDA among the tied patterns also "
+                f"choose {what}")
+        for col, table in (("n_members", "pattern"), ("present_resistant", "prevalence_result"),
+                           ("present_susceptible", "prevalence_result"),
+                           ("n_resistant", "model"), ("n_susceptible", "model"),
+                           ("n_layers", "grade")):
+            put(f"{pre}.{col}", int(top[col]), table, col, f"{col} of {what}")
+        for col, label in (("prev_resistant", "resistant"), ("prev_susceptible", "susceptible")):
+            put(f"{pre}.{col}", float(top[col]), "prevalence_result", col,
+                f"Share (0-1) of the {label} genomes of the model that carry {what}")
+        put(f"{pre}.pi", float(top["pi"]), "cpss_result", "pi", f"π of {what}")
+        if pd.notna(top["total_gain"]):
+            put(f"{pre}.total_gain", float(top["total_gain"]), "candidate", "total_gain",
+                f"Total gain of {what} in the final model")
+        for col, table in (("prevalence_q", "prevalence_result"), ("mda", "mda_result"),
+                           ("mda_q", "mda_result"), ("pyseer_p", "pyseer_result")):
+            put(f"{pre}.{col}", _four_significant(float(top[col])), table, col,
+                f"{col} of {what}", digits=None)
+        if pd.notna(top["roc_auc"]):
+            put(f"{pre}.roc_auc", float(top["roc_auc"]), "model_metric", "value",
+                f"Lineage-aware ROC-AUC of the model of {what}")
+        members = con.execute(
+            "SELECT pm.unitig_id, u.length, u.sequence, ca.state FROM pattern_member pm "
+            "JOIN unitig u ON u.unitig_id = pm.unitig_id "
+            "JOIN grade g ON g.model_id = pm.model_id AND g.pattern_id = pm.pattern_id "
+            " AND g.primary_mode = 1 "
+            "LEFT JOIN card_annotation ca ON ca.model_id = pm.model_id "
+            " AND ca.unitig_id = pm.unitig_id AND ca.mode = g.mode "
+            "WHERE pm.model_id = ? AND pm.pattern_id = ?", (m, p)).fetchall()
+        put(f"{pre}.n_members_b", sum(r[3] == "b" for r in members), "card_annotation", "state",
+            f"Members of {what} with b = 1")
+        if pd.notna(top["unitig_id"]):
+            put(f"{pre}.unitig_id", top["unitig_id"], "unitig_context", "unitig_id",
+                f"Longest searched member of {what}", digits=None)
+            put(f"{pre}.unitig_length", int(next(r[1] for r in members
+                                                 if r[0] == top["unitig_id"])),
+                "unitig", "length", f"Length (nt) of that member of {what}")
+            put(f"{pre}.context_n_hits", int(top["n_hits"]), "unitig_context", "n_hits",
+                f"nt hits of that member of {what}")
+            put(f"{pre}.context_plasmid_share", float(top["plasmid_share"]), "unitig_context",
+                "plasmid_share", f"Share (0-1) of those hits on plasmid records, {what}")
+        # carriage beside the model's confirmed patterns, and a confirmed pattern one base away
+        n = int(top["n_genomes"])
+        mine = _carriers(con, m, p, n)
+        put(f"{pre}.n_carriers", mine.bit_count(), "pattern", "carriers",
+            f"Genomes of the model that carry {what}")
+        others = [int(x) for (x,) in con.execute(
+            "SELECT g.pattern_id FROM grade g JOIN candidate c ON c.model_id = g.model_id "
+            "AND c.pattern_id = g.pattern_id WHERE g.model_id = ? AND g.primary_mode = 1 "
+            "AND c.route = 'model' AND g.grade = 'confirmed' AND g.pattern_id <> ?", (m, p))]
+        union = 0
+        for q in others:
+            union |= _carriers(con, m, q, n)
+        put(f"{pre}.n_carriers_with_confirmed", (mine & union).bit_count(), "pattern",
+            "carriers", f"Of them, genomes that also carry another confirmed pattern of the "
+            f"model, {what}")
+        seqs = [r[2] for r in members]
+        for q in others:
+            near = [r[0] for r in con.execute(
+                "SELECT u.sequence FROM pattern_member pm JOIN unitig u USING (unitig_id) "
+                "WHERE pm.model_id = ? AND pm.pattern_id = ?", (m, q))]
+            if any(_one_base_apart(a, b) for a in seqs for b in near):
+                theirs = _carriers(con, m, q, n)
+                put(f"{pre}.neighbour_pattern_id", str(q), "pattern", "pattern_id",
+                    f"Confirmed pattern of the model with a unitig one base from a member of "
+                    f"{what}", digits=None)
+                put(f"{pre}.neighbour_n_carriers", theirs.bit_count(), "pattern", "carriers",
+                    f"Genomes that carry that confirmed pattern, {what}")
+                put(f"{pre}.n_carriers_with_neighbour", (mine & theirs).bit_count(), "pattern",
+                    "carriers", f"Genomes that carry both {what} and that confirmed pattern")
+                break
+
+
 def _kb_numbers(db: Path, put) -> None:
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
@@ -752,6 +905,7 @@ def _kb_numbers(db: Path, put) -> None:
         graded = pd.read_sql_query(KB_GRADED, con)
         b = pd.read_sql_query(KB_B_AROS, con)
         ctx = pd.read_sql_query(KB_CONTEXT, con)
+        _kb_case_numbers(con, ctx, put)
     finally:
         con.close()
     if len(b):
