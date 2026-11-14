@@ -12,6 +12,8 @@ run_id format (SCALE_MLOPS_PLAN.md §2):
     {organism}__{antibiotic}__{UTC:%Y%m%dT%H%M}__{git7}
 """
 
+from __future__ import annotations
+
 import datetime
 import hashlib
 import json
@@ -50,21 +52,34 @@ def git_is_dirty():
     return bool(status.strip())
 
 
-def _tool_version(cmd, flag="--version"):
-    try:
-        out = subprocess.run([cmd, flag], capture_output=True, text=True, check=False)
-        text = (out.stdout or out.stderr or "").strip().splitlines()
-        line = text[0].strip() if text else ""
-        # A wrong flag makes some tools echo an error as their first line (bcalm with
-        # --version -> "ERROR: Unknown parameter '--version'"). Storing that as the
-        # version is worse than a NULL, so reject error-shaped output and record an
-        # honest "unknown" instead.
+def version_line(text: str | None) -> str | None:
+    """The version in what a tool prints for --version: the first non-empty line that is
+    not a warning. QUAST prints "WARNING: Python locale settings can't be changed" before
+    "QUAST v5.3.0". A wrong flag makes some tools echo an error instead (bcalm with
+    --version -> "ERROR: Unknown parameter '--version'"); storing that as the version is
+    worse than a NULL, so error-shaped output gives None."""
+    for raw in (text or "").splitlines():
+        line = raw.strip()
         low = line.lower()
-        if (not line
-                or low.startswith(("error", "unknown", "unrecognized", "invalid", "usage"))
+        if not line or low.startswith("warning"):
+            continue
+        if (low.startswith(("error", "unknown", "unrecognized", "invalid", "usage"))
                 or "unknown parameter" in low):
             return None
         return line
+    return None
+
+
+def _says_more_than_warnings(text: str | None) -> bool:
+    return any(ln.strip() and not ln.strip().lower().startswith("warning")
+               for ln in (text or "").splitlines())
+
+
+def _tool_version(cmd, flag="--version"):
+    try:
+        out = subprocess.run([cmd, flag], capture_output=True, text=True, check=False)
+        # stdout, else stderr; an error on stdout is not looked past
+        return version_line(out.stdout if _says_more_than_warnings(out.stdout) else out.stderr)
     except Exception:
         return None
 

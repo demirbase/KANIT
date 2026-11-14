@@ -112,3 +112,10 @@ def test_prep_links_only_the_snapshot_genomes(mod, tmp_path):
     (genomes / "562.2.fna").unlink()
     with pytest.raises(FileNotFoundError):
         panel.snapshot_genomes("ecoli", config)
+
+
+def test_the_quast_version_is_not_its_locale_warning(mod, tmp_path):
+    """QUAST prints a locale warning before its version (seen on TRUBA, 14.11.2026)."""
+    (tmp_path / "version.txt").write_text(
+        "WARNING: Python locale settings can't be changed\nQUAST v5.3.0\n")
+    assert mod._version(tmp_path) == "QUAST v5.3.0"

@@ -51,6 +51,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from lib import panel  # noqa: E402
 from lib.config import load_config, resolve_path  # noqa: E402
 from lib.logging_utils import get_logger  # noqa: E402
+from lib.run_metadata import version_line  # noqa: E402
 
 logger = get_logger("m15-genome-qc")
 
@@ -134,12 +135,12 @@ def _read_quast(quast_out):
 
 
 def _version(tool_out):
-    """First line of the version file the workflow writes next to a tool's report."""
+    """The version in the file the workflow writes next to a tool's report (QUAST puts a
+    locale warning before it)."""
     f = Path(tool_out) / "version.txt"
     if not f.exists():
         return None
-    lines = [ln.strip() for ln in f.read_text().splitlines() if ln.strip()]
-    return lines[0] if lines else None
+    return version_line(f.read_text())
 
 
 def classify_row(gid, comp, cont, n50, nctg, tlen, thr):

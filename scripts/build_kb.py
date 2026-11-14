@@ -30,7 +30,7 @@ from lib import panel, pattern_sets, registry  # noqa: E402
 from lib.card_layer import MODES  # noqa: E402
 from lib.config import CONFIG_FILE, load_config, resolve_path  # noqa: E402
 from lib.matrix_store import ModelMatrix, sha256_file  # noqa: E402
-from lib.run_metadata import git_commit_hash, git_is_dirty  # noqa: E402
+from lib.run_metadata import git_commit_hash, git_is_dirty, version_line  # noqa: E402
 
 
 class Sources:
@@ -59,9 +59,24 @@ class Sources:
     def json(self, path) -> dict:
         return json.loads(self._record(path).read_text())
 
+    def text(self, path) -> str:
+        return self._record(path).read_text()
+
     def table(self) -> pd.DataFrame:
         return pd.DataFrame([(k, s, b) for k, (s, b) in sorted(self.files.items())],
                             columns=["path", "sha256", "bytes"])
+
+
+def qc_versions(qc_dir: Path, src: Sources) -> dict:
+    """CheckM2 and QUAST versions of an organism's genome QC. The version files the
+    workflow writes beside the reports are read where they exist: versions.json kept the
+    first line of each, which for QUAST is a locale warning, not the version."""
+    out = dict(src.json(qc_dir / "versions.json"))
+    for tool in ("checkm2", "quast"):
+        f = qc_dir / tool / "version.txt"
+        if f.exists():
+            out[tool] = version_line(src.text(f))
+    return out
 
 
 def _bool(series) -> pd.Series:
@@ -395,8 +410,8 @@ def build(config: dict, out_file: Path, *, kb_version: str, allow_missing_contex
         ext_versions.append(src.json(ext / "versions.json"))
         ext_versions.append(src.json(resolve_path("lineage_dir", organism=org, config=config)
                                      / "versions.json"))
-        ext_versions.append(src.json(resolve_path("genome_qc_dir", organism=org, config=config)
-                                     / "versions.json"))
+        ext_versions.append(qc_versions(resolve_path("genome_qc_dir", organism=org,
+                                                     config=config), src))
         ext_versions.append(src.json(resolve_path("unitig_store_dir", organism=org,
                                                   config=config) / "store_summary.json"
                                      ).get("tools", {}))

@@ -224,3 +224,11 @@ def test_the_package_validates_as_a_data_package(tmp_path):
         z.extractall(unpacked)
     report = frictionless.validate(str(unpacked / "datapackage.json"))
     assert report.valid, report.flatten(["rowNumber", "fieldName", "type", "note"])
+
+
+def test_the_readme_does_not_repeat_the_tool_name():
+    assert m._bare_version("poppunk", "poppunk 2.7.8") == "2.7.8"
+    assert m._bare_version("unitig_caller", "unitig-caller 1.3.2") == "1.3.2"
+    assert m._bare_version("quast", "QUAST v5.3.0") == "v5.3.0"
+    assert m._bare_version("checkm2", "1.1.0") == "1.1.0"
+    assert m._bare_version("graph_tool", "3.0 (commit 1a3c1a29)") == "3.0 (commit 1a3c1a29)"

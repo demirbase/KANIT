@@ -296,3 +296,13 @@ def test_populate_run_writes_versions_including_pyseer_from_step14(tmp_path):
                               pyseer_version FROM pipeline_runs WHERE run_id='R1'""").fetchone()
     assert row == ("poppunk 2.7.8", "3.0", "unitig-caller 1.3.2", "pyseer 1.4.1")
     c.close()
+
+
+def test_version_line_passes_over_warnings_and_refuses_errors():
+    from lib.run_metadata import version_line
+    assert version_line("WARNING: Python locale settings can't be changed\nQUAST v5.3.0\n") \
+        == "QUAST v5.3.0"
+    assert version_line("\n  1.1.0  \n") == "1.1.0"
+    assert version_line("ERROR: Unknown parameter '--version'") is None
+    assert version_line("WARNING: x\nusage: tool [-h]") is None
+    assert version_line("") is None and version_line(None) is None

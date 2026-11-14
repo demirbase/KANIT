@@ -526,3 +526,17 @@ def test_the_built_knowledge_base_packages(built, tmp_path):
         grade = pd.read_csv(z.open("tables/grade.csv"), keep_default_na=False)
     assert len(dp["resources"]) == len(built[4]["tables"])
     assert set(grade["grade"]) <= {"confirmed", "strong_novel", "candidate", "weak", "none"}
+
+
+def test_the_qc_versions_come_from_the_version_files(tmp_path):
+    """versions.json kept the first line of QUAST's version file, a locale warning; the
+    build reads the version files beside it, and records them as inputs."""
+    bk = _script("build_kb.py")
+    (tmp_path / "quast").mkdir()
+    (tmp_path / "versions.json").write_text(
+        json.dumps({"checkm2": "1.1.0", "quast": "WARNING: Python locale settings can't be changed"}))
+    (tmp_path / "quast" / "version.txt").write_text(
+        "WARNING: Python locale settings can't be changed\nQUAST v5.3.0\n")
+    src = bk.Sources()
+    assert bk.qc_versions(tmp_path, src) == {"checkm2": "1.1.0", "quast": "QUAST v5.3.0"}
+    assert len(src.files) == 2           # versions.json and quast/version.txt

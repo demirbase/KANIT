@@ -319,6 +319,17 @@ def data_dictionary(rel: dict, tables: list[dict], views: list[dict], stats: dic
     return "\n".join(out)
 
 
+def _bare_version(tool: str, version) -> str:
+    """A recorded version without the tool's own name in front of it, which most tools
+    print ("poppunk 2.7.8", "unitig-caller 1.3.2", "QUAST v5.3.0"): the README already
+    names the tool. The release record keeps what the tool printed."""
+    text = str(version)
+    for name in {tool, tool.replace("_", "-"), tool.replace("_", " ")}:
+        if text.lower().startswith(name.lower() + " "):
+            return text[len(name) + 1:].strip()
+    return text
+
+
 def readme(rel: dict, cite: dict, tables: list[dict]) -> str:
     tools = json.loads(rel["tools"] or "{}")
     authors = "; ".join(_author_name(a) for a in cite.get("authors", []))
@@ -350,7 +361,8 @@ def readme(rel: dict, cite: dict, tables: list[dict]) -> str:
             f"- Code commit `{rel['code_commit'] or 'unknown'}`"
             + (" (with uncommitted changes)" if rel["code_dirty"] else ""),
             f"- CARD {rel['card_version'] or 'not recorded'}",
-            "- Tools: " + (", ".join(f"{k} {v}" for k, v in sorted(tools.items())) or "none recorded"),
+            "- Tools: " + (", ".join(f"{k} {_bare_version(k, v)}" for k, v in sorted(tools.items()))
+                           or "none recorded"),
             "- Every input file the build read, with its checksum: table `source_file`; the "
             "reference databases: `reference_database`; the data snapshots: `data_snapshot`; "
             "every threshold: `parameter`.\n",

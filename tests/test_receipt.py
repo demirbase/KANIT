@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """The receipt of a workflow task, which is also its step manifest (scripts/receipt.py)."""
 import hashlib
+import importlib.util
 import json
 import os
 import subprocess
@@ -44,3 +45,12 @@ def test_receipt_without_nextflow(tmp_path):
                          text=True, check=True).stdout
     r = json.loads(out)
     assert r["stub"] and r["started_at"] is None and r["inputs"] == [] and r["tools"] == {}
+
+
+def test_a_warning_before_the_version_is_passed_over():
+    spec = importlib.util.spec_from_file_location("amrtest_receipt",
+                                                  PROJECT_ROOT / "scripts" / "receipt.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    assert m.tool_version("printf 'WARNING: locale\\nQUAST v5.3.0\\n'") == "QUAST v5.3.0"
+    assert m.tool_version("printf 'WARNING: only a warning\\n'") is None

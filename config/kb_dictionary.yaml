@@ -216,8 +216,8 @@ tables:
       pattern_id: "Pattern"
       route: "model: a candidate of the model, whose grade is a primary result; association: nominated by pyseer association, graded with its own layers, reported apart and entering no hypothesis test"
       source: "Why the pattern is graded: gain (among the top patterns by total gain), cpss (stable in CPSS), both, or pyseer (the association route)"
-      gain_rank: "Rank by total gain in the final model; empty for the association route"
-      total_gain: "Total gain in the final model; empty for the association route"
+      gain_rank: "Rank among the top patterns by total gain in the final model; empty for a pattern outside them (source cpss) and for the association route"
+      total_gain: "Total gain in the final model, recorded for the top patterns by total gain only; empty for a pattern outside them (source cpss) and for the association route"
 
   # ---- evidence layers (measurements) ----------------------------------------
   prevalence_result:

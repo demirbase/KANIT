@@ -74,8 +74,9 @@ def _packages() -> dict:
 
 
 def tool_version(command: str) -> Optional[str]:
-    """First non-empty line a version command prints (stdout, else stderr); None when
-    the command fails."""
+    """First non-empty line a version command prints (stdout, else stderr), passing over
+    warnings (QUAST prints a locale warning before its version); None when the command
+    fails. Standalone: this runs in every container, the Python 3.8 one too."""
     try:
         r = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                            universal_newlines=True, timeout=300)
@@ -84,7 +85,8 @@ def tool_version(command: str) -> Optional[str]:
     if r.returncode != 0:
         return None
     for text in (r.stdout, r.stderr):
-        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        lines = [ln.strip() for ln in text.splitlines()
+                 if ln.strip() and not ln.strip().lower().startswith("warning")]
         if lines:
             return lines[0]
     return None

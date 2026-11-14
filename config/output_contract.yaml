@@ -327,8 +327,8 @@ tables:
     primary_key: [pattern_id]
     fields:
       - {name: pattern_id, type: integer, required: true, description: "Pattern index"}
-      - {name: gain_rank, type: integer, description: "Rank by total gain in the final model"}
-      - {name: total_gain, type: number, description: "Total gain in the final model"}
+      - {name: gain_rank, type: integer, description: "Rank among the top patterns by total gain in the final model; empty for a stable pattern outside them"}
+      - {name: total_gain, type: number, description: "Total gain in the final model, recorded for the top patterns by total gain only; empty for a stable pattern outside them"}
       - {name: cpss_stable, type: boolean, description: "Stable in CPSS"}
       - {name: source, type: string, enum: [gain, cpss, both], description: "Why the pattern is a candidate"}
       - {name: cpss_pi, type: number, description: "CPSS selection frequency"}
