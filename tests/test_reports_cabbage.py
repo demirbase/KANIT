@@ -66,11 +66,13 @@ class CabbageTables:
         if file == "cabbage_prepare.json" and organism in ORGS:
             return {"n_fetched": 8 if organism == "ecoli" else 4, "n_qc_passed": 7}
         if file == "cabbage_lookup_metrics.json" and organism in LOOKUP:
-            return {"pairs": {ab: {rule: {"all": _assessed(ba),
+            return {"pairs": {ab: {"score": {"all": {"assessed": ab != "gen",
+                                                     "roc_auc": {"amp": 0.9, "cip": 0.7, "mer": 0.8}.get(ab)}},
+                                   **{rule: {"all": _assessed(ba),
                                           "lineage_seen": _assessed(ba),
                                           "lineage_unseen": _assessed(None if ba is None
                                                                       else ba - 0.1)}
-                                   for rule, ba in rules.items()}
+                                   for rule, ba in rules.items()}}
                               for ab, rules in LOOKUP[organism].items()}}
         if file == "cabbage_metrics.json" and organism == "ecoli":
             return {"pairs": {
@@ -132,3 +134,10 @@ def test_auc_and_lineages(keys):
     assert keys["cabbage.lineage.model.n_pairs"] == 1          # amp has no unseen isolates
     assert keys["cabbage.lineage.model.median_diff"] == pytest.approx(-0.12)
     assert keys["cabbage.lineage.lookup.n_pairs"] == 3
+
+
+def test_the_score_enters_as_its_roc_auc(keys):
+    assert keys["cabbage.lookup_score.n_pairs"] == 3          # gentamicin is not assessed
+    assert keys["cabbage.lookup_score.median_roc_auc"] == pytest.approx(0.8)
+    assert keys["cabbage.lookup_score.min_roc_auc"] == pytest.approx(0.7)
+    assert "cabbage.lookup_score.median_ba" not in keys

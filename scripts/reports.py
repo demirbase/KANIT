@@ -889,8 +889,8 @@ def _kb_case_numbers(con: sqlite3.Connection, ctx: pd.DataFrame, put) -> None:
 # on a pair it can assess (a tool covers the antibiotic) that has at least min_per_class
 # resistant and susceptible isolates. Pairs are compared as in the training set: median paired
 # difference in balanced accuracy, organism-clustered bootstrap, and a sign test.
-# The score rule is left out until the lookup step is rerun with 86dde3c: its counts were
-# unsigned, and a genome with more S than R markers scored about 2^64.
+# The secondary score (R markers present minus S markers present, up to weak) enters as its
+# ROC-AUC only (cabbage.lookup_score.*): it ranks isolates, and its cut at > 0 is not a rule.
 CABBAGE_LOOKUP_RULES = ("upto_confirmed", "upto_strong_novel", "upto_candidate", "upto_weak",
                         "b1")
 CABBAGE_TOOLS = ("amrfinderplus", "resfinder", "rgi_all", "rgi_without_near_universal")
@@ -1010,11 +1010,31 @@ def _cabbage_compare(scores: pd.DataFrame, a: str, b: str, put, n_boot: int) -> 
             f"Two-sided sign test, {a} vs {b}, ties dropped", digits=None)
 
 
+def _cabbage_score_numbers(t: Tables, organisms: list[str], put) -> None:
+    auc = []
+    for org in organisms:
+        look = _cabbage_json(t, "cabbage_organism_dir", "cabbage_lookup_metrics.json", org) or {}
+        for p in look.get("pairs", {}).values():
+            x = p.get("score", {}).get("all", {})
+            if x.get("assessed") and x.get("roc_auc") is not None:
+                auc.append(float(x["roc_auc"]))
+    if not auc:
+        return
+    s, src = pd.Series(auc), "cabbage_lookup_metrics"
+    put("cabbage.lookup_score.n_pairs", len(s), src, "roc_auc",
+        "Pairs the secondary lookup score (R minus S markers present, up to weak) is scored on")
+    put("cabbage.lookup_score.median_roc_auc", float(s.median()), src, "roc_auc",
+        "Median external ROC-AUC of the secondary lookup score")
+    put("cabbage.lookup_score.min_roc_auc", float(s.min()), src, "roc_auc", "Lowest, secondary score")
+    put("cabbage.lookup_score.max_roc_auc", float(s.max()), src, "roc_auc", "Highest, secondary score")
+
+
 def _cabbage_numbers(t: Tables, organisms: list[str], put) -> None:
     min_per_class = int(t.config.get("cabbage", {}).get("min_per_class", 10))
     n_boot = int(t.config["cv"]["n_bootstrap"])
     scores, split, primary, sel = _cabbage_scores(t, organisms, min_per_class)
     _cabbage_flow_numbers(t, organisms, sel, put)
+    _cabbage_score_numbers(t, organisms, put)
     if scores.empty:
         return
     if primary:
