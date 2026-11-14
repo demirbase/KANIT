@@ -49,3 +49,26 @@ def test_receipts_trace_and_sacct_are_joined(tmp_path):
     assert cv["max_trace_peak_rss_gib"] == round(70e9 / 1024 ** 3, 2)
     assert summary["by_process"]["MODELS:PANEL"]["core_hours"] == 0
     assert summary["jobs_without_accounting"] == 0 and len(table) == 3
+
+
+def test_a_receipt_without_a_job_id_takes_it_from_the_trace(tmp_path):
+    """SLURM_JOB_ID did not reach the tasks of the M3 and CABBAGE runs (14.11.2026): the job
+    is found through the task's work directory, whose short form is the trace's hash."""
+    m = _script()
+    d = tmp_path / "tasks" / "CV_UNIT" / "a"
+    d.mkdir(parents=True)
+    (d / "receipt.json").write_text(json.dumps({
+        "process": "MODELS:CV_UNIT", "key": "a", "attempt": 2, "cpus": 20,
+        "slurm": {"job_id": None, "node": None},
+        "work_dir": "/scratch/nf-work/53/e32f57abcdef0123456789"}))
+    (tmp_path / "sacct.tsv").write_text(
+        "JobID|JobName|Partition|State|ExitCode|Elapsed|Start|End|AllocCPUS|ReqMem|MaxRSS|TotalCPU|NodeList\n"
+        "202|kanit_CV_UNIT_a|barbun|COMPLETED|0:0|01:00:00|s|e|20|190G||10:00:00|barbun2\n")
+    # the first attempt failed in another work directory
+    (tmp_path / "trace.tsv").write_text("task_id\thash\tnative_id\tprocess\trealtime\t%cpu\tpeak_rss\n"
+                                        "1\t11/aaaaaa\t201\tMODELS:CV_UNIT\t60000\t100\t1000\n"
+                                        "2\t53/e32f57\t202\tMODELS:CV_UNIT\t3600000\t1000\t2000\n")
+    table, summary = m.resources(tmp_path)
+    assert table.loc[0, "job_id"] == "202"
+    assert summary["by_process"]["MODELS:CV_UNIT"]["core_hours"] == 20.0
+    assert table.loc[0, "trace_realtime_s"] == 3600

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Resources of every task of a workflow run (plan F3.5).
 
-Joins, on the SLURM job, three records of each task:
+Joins, on the SLURM job, three records of each task (a receipt without the job's id, which
+happens when SLURM_JOB_ID does not reach the task, takes it from the trace through the task's work
+directory: the trace's hash is its last two path parts, the second cut to six characters):
 - its receipt: process, step, key, attempt, cores and memory asked for, start, end;
 - Nextflow's trace (raw values): real time, %CPU, peak RSS;
 - SLURM's accounting (sacct.tsv, which the SACCT_DUMP task writes): state, elapsed
@@ -84,13 +86,21 @@ def read_receipts(run_dir: Path) -> pd.DataFrame:
                      "key": r.get("key"), "attempt": r.get("attempt"), "cpus": r.get("cpus"),
                      "memory": r.get("memory"), "started_at": r.get("started_at"),
                      "finished_at": r.get("finished_at"), "seconds": r.get("seconds"),
-                     "job_id": (r.get("slurm") or {}).get("job_id"), "stub": r.get("stub")})
+                     "job_id": (r.get("slurm") or {}).get("job_id"), "stub": r.get("stub"),
+                     "hash": _hash(r.get("work_dir"))})
     return pd.DataFrame(rows, columns=["process", "step", "key", "attempt", "cpus", "memory",
-                                       "started_at", "finished_at", "seconds", "job_id", "stub"])
+                                       "started_at", "finished_at", "seconds", "job_id", "stub",
+                                       "hash"])
+
+
+def _hash(work_dir) -> str | None:
+    """Nextflow's short hash of a task work directory: '.../nf-work/53/e32f57abc…' → '53/e32f57'."""
+    parts = Path(str(work_dir)).parts if work_dir else ()
+    return f"{parts[-2]}/{parts[-1][:6]}" if len(parts) >= 2 else None
 
 
 def read_trace(run_dir: Path) -> pd.DataFrame:
-    cols = ["job_id", "trace_realtime_s", "trace_cpu_percent", "trace_peak_rss_bytes"]
+    cols = ["job_id", "hash", "trace_realtime_s", "trace_cpu_percent", "trace_peak_rss_bytes"]
     f = run_dir / "trace.tsv"
     if not f.exists():
         return pd.DataFrame(columns=cols)
@@ -98,6 +108,7 @@ def read_trace(run_dir: Path) -> pd.DataFrame:
     num = {c: pd.to_numeric(t[c].str.rstrip("%"), errors="coerce")
            for c in ("realtime", "%cpu", "peak_rss") if c in t}
     return pd.DataFrame({"job_id": t["native_id"],
+                         "hash": t["hash"] if "hash" in t else None,
                          "trace_realtime_s": num.get("realtime", pd.Series(dtype=float)) / 1000,
                          "trace_cpu_percent": num.get("%cpu"),
                          "trace_peak_rss_bytes": num.get("peak_rss")})
@@ -105,8 +116,14 @@ def read_trace(run_dir: Path) -> pd.DataFrame:
 
 def resources(run_dir: Path) -> tuple[pd.DataFrame, dict]:
     r = read_receipts(run_dir)
-    table = (r.merge(read_sacct(run_dir / "sacct.tsv"), on="job_id", how="left")
-              .merge(read_trace(run_dir).drop_duplicates("job_id"), on="job_id", how="left"))
+    trace = read_trace(run_dir)
+    by_hash = trace.dropna(subset=["hash"]).drop_duplicates("hash").set_index("hash")["job_id"]
+    r["job_id"] = r["job_id"].astype(object)
+    missing = r["job_id"].isna() | (r["job_id"].astype(str).str.strip() == "")
+    found = r.loc[missing, "hash"].map(by_hash).astype(object)
+    r.loc[missing, "job_id"] = found.where(found.notna(), None)
+    table = (r.drop(columns="hash").merge(read_sacct(run_dir / "sacct.tsv"), on="job_id", how="left")
+              .merge(trace.drop(columns="hash").drop_duplicates("job_id"), on="job_id", how="left"))
     table["core_hours"] = table["alloc_cpus"] * table["elapsed_s"] / 3600
     table["cpu_hours"] = table["total_cpu_s"] / 3600
 

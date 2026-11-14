@@ -248,8 +248,12 @@ process SACCT_DUMP {
 
     script:
     """
-    ids=\$(grep -ho '"job_id": "[0-9][0-9_]*"' '${params.trace_dir}'/tasks/*/*/receipt.json 2>/dev/null \\
-          | grep -o '[0-9][0-9_]*' | sort -u | paste -sd, - || true)
+    # the jobs: the receipts' ids and, where SLURM_JOB_ID does not reach a task, the trace's native_id
+    ids=\$( { grep -ho '"job_id": "[0-9][0-9_]*"' '${params.trace_dir}'/tasks/*/*/receipt.json 2>/dev/null \\
+              | grep -o '[0-9][0-9_]*'
+            awk -F'\t' 'NR == 1 { for (i = 1; i <= NF; i++) if (\$i == "native_id") c = i; next }
+                        c && \$c ~ /^[0-9]+\$/ { print \$c }' '${params.trace_dir}'/trace.tsv 2>/dev/null
+          } | sort -u | paste -sd, - || true)
     if command -v sacct >/dev/null 2>&1 && [ -n "\$ids" ]; then
         sacct -P -j "\$ids" --format=JobID,JobName,Partition,State,ExitCode,Elapsed,Start,End,AllocCPUS,ReqMem,MaxRSS,TotalCPU,NodeList \\
             > '${params.trace_dir}/sacct.tsv'
