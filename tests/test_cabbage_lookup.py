@@ -61,3 +61,12 @@ def test_the_primary_rule_has_the_highest_pooled_balanced_accuracy():
     tie = {r: {"tp": 1, "fn": 1, "tn": 1, "fp": 1} for r in cl.UPTO}
     assert cl.select(tie) == "upto_confirmed"                   # a tie goes to the stricter
     assert math.isnan(cl.balanced_accuracy({"tp": 0, "fn": 0, "tn": 3, "fp": 1}))
+
+
+def test_the_score_goes_below_zero_with_uint8_presence():
+    """pattern_presence returns uint8; a genome with more S than R markers once scored
+    about 2^64 instead of a negative number (14.11.2026)."""
+    mk = cl.markers(_grades(), _prevalence())
+    presence = pd.DataFrame({"g1": [0, 0, 0, 1, 1], "g2": [1, 1, 1, 0, 0]},
+                            index=[1, 2, 3, 4, 6]).astype("uint8")
+    assert cl.score(presence, mk).tolist() == [-2.0, 3.0]

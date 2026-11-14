@@ -64,10 +64,12 @@ def predict(presence: pd.DataFrame, mk: pd.DataFrame, rule: str) -> pd.Series:
 
 
 def score(presence: pd.DataFrame, mk: pd.DataFrame) -> pd.Series:
-    """R markers present minus S markers present, all grades up to weak."""
+    """R markers present minus S markers present, all grades up to weak. The counts are
+    signed before the subtraction: presence is uint8, whose sums are unsigned, and a genome
+    with more S than R markers wrapped round to about 2^64 (found 14.11.2026)."""
     r = presence.reindex(index=rule_patterns(mk, "upto_weak", "R"), fill_value=0).sum(axis=0)
     s = presence.reindex(index=rule_patterns(mk, "upto_weak", "S"), fill_value=0).sum(axis=0)
-    return (r - s).astype(float)
+    return (r.astype(np.int64) - s.astype(np.int64)).astype(float)
 
 
 def counts(y, pred) -> dict:
