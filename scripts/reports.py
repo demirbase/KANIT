@@ -22,6 +22,8 @@ import base64
 import html
 import json
 import math
+import re
+import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -612,6 +614,152 @@ def _card_tier_numbers(table: pd.DataFrame, put) -> None:
             "Cochran–Mantel–Haenszel p, two-sided, no continuity correction", digits=None)
 
 
+# The knowledge base (-entry KB) is read for what only it joins: the mechanisms and gene
+# families behind the curated agreement and the NCBI context of the patterns. All three
+# queries take the primary mode and the patterns of the model route, as v_biomarker does.
+_KB_FROM = """
+  FROM grade g
+  JOIN candidate c ON c.model_id = g.model_id AND c.pattern_id = g.pattern_id
+  JOIN model m ON m.model_id = g.model_id"""
+_KB_WHERE = "\n WHERE g.primary_mode = 1 AND c.route = 'model'"
+KB_GRADED = f"""
+SELECT g.model_id, g.pattern_id, g.grade, m.organism_id,
+       (SELECT pr.direction FROM prevalence_result pr
+         WHERE pr.model_id = g.model_id AND pr.pattern_id = g.pattern_id) AS direction
+{_KB_FROM}{_KB_WHERE}"""
+# the AROs of the RGI hits on a pattern's b = 1 unitigs (every hit there, as card_layer
+# lists them: an ARO beside the one that gave b counts too)
+KB_B_AROS = f"""
+SELECT DISTINCT g.model_id, g.pattern_id, m.organism_id, a.aro_accession, a.gene_family,
+       a.mechanism
+{_KB_FROM}
+  JOIN pattern_member pm ON pm.model_id = g.model_id AND pm.pattern_id = g.pattern_id
+  JOIN card_annotation ca ON ca.model_id = pm.model_id AND ca.unitig_id = pm.unitig_id
+                         AND ca.mode = g.mode AND ca.state = 'b'
+  JOIN card_hit h ON h.model_id = pm.model_id AND h.unitig_id = pm.unitig_id
+  JOIN aro a ON a.aro_accession = h.aro_accession{_KB_WHERE} AND g.card_state = 'b'"""
+# a pattern's context is that of its longest member with a context row, as in v_novel
+KB_CONTEXT = f"""
+SELECT g.model_id, g.pattern_id, x.n_hits, x.plasmid_share, x.gene
+{_KB_FROM}
+  JOIN unitig_context x ON x.organism_id = m.organism_id AND x.unitig_id = (
+       SELECT pm.unitig_id FROM pattern_member pm
+         JOIN unitig u ON u.unitig_id = pm.unitig_id
+         JOIN unitig_context y ON y.unitig_id = pm.unitig_id AND y.organism_id = m.organism_id
+        WHERE pm.model_id = g.model_id AND pm.pattern_id = g.pattern_id
+        ORDER BY u.length DESC, u.unitig_id LIMIT 1){_KB_WHERE}"""
+_PATTERN = ["model_id", "pattern_id"]
+
+
+def _terms(value) -> list[str]:
+    """A ';'-joined CARD field as its terms."""
+    return [x.strip() for x in str(value).split(";") if x.strip()] if pd.notna(value) else []
+
+
+def _slug(term: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", term.lower().removeprefix("antibiotic ")).strip("_")
+
+
+def _n_patterns(df: pd.DataFrame) -> int:
+    return len(df[_PATTERN].drop_duplicates())
+
+
+def _kb_card_numbers(b: pd.DataFrame, put) -> None:
+    src = "card_hit"
+    put("kb.card.n_patterns_b", _n_patterns(b), src, "aro_accession",
+        "Patterns of the model route with b = 1, primary mode")
+    put("kb.card.n_aros", int(b["aro_accession"].nunique()), src, "aro_accession",
+        "AROs of the RGI hits on the b = 1 unitigs of those patterns")
+    mech = b.assign(term=b["mechanism"].map(_terms)).explode("term").dropna(subset=["term"])
+    fam = b.assign(term=b["gene_family"].map(_terms)).explode("term").dropna(subset=["term"])
+    put("kb.card.n_mechanisms", int(mech["term"].nunique()), "aro", "mechanism",
+        "CARD resistance mechanisms of those AROs")
+    put("kb.card.n_gene_families", int(fam["term"].nunique()), "aro", "gene_family",
+        "CARD gene families of those AROs")
+    orgs = fam.groupby("term")["organism_id"].nunique()
+    put("kb.card.n_gene_families_multi_organism", int((orgs > 1).sum()), "aro", "gene_family",
+        "Gene families of those AROs found in more than one organism")
+    for org, s in b.groupby("organism_id"):
+        n = _n_patterns(s)
+        put(f"kb.card.{org}.n_patterns_b", n, src, "aro_accession",
+            "Patterns of the model route with b = 1, primary mode")
+        put(f"kb.card.{org}.n_gene_families", int(fam.loc[fam["organism_id"] == org, "term"]
+                                                    .nunique()), "aro", "gene_family",
+            "CARD gene families of the AROs on those patterns' b = 1 unitigs")
+        for term, sm in mech[mech["organism_id"] == org].groupby("term"):
+            k = _n_patterns(sm)
+            put(f"kb.card.{org}.n_{_slug(term)}", k, "aro", "mechanism",
+                f"Of them, patterns with an ARO of the mechanism '{term}'")
+            put(f"kb.card.{org}.share_{_slug(term)}", k / n, "aro", "mechanism",
+                f"Share (0-1) of this organism's b = 1 patterns with an ARO of the mechanism "
+                f"'{term}' (a pattern can have several)")
+
+
+def _kb_context_numbers(graded: pd.DataFrame, ctx: pd.DataFrame, put) -> None:
+    src = "unitig_context"
+    put("kb.context.n_patterns", len(graded), "grade", "pattern_id",
+        "Graded patterns of the model route, primary mode")
+    put("kb.context.n_patterns_searched", _n_patterns(ctx), src, "unitig_id",
+        "Of them, patterns with a member searched in NCBI nt")
+    c = graded.merge(ctx.drop_duplicates(_PATTERN), on=_PATTERN, how="left")
+
+    def block(pre: str, s: pd.DataFrame, what: str) -> None:
+        hit = s[pd.to_numeric(s["n_hits"], errors="coerce") > 0]
+        put(f"{pre}.n_patterns", len(s), "grade", "grade", f"Patterns {what}")
+        put(f"{pre}.n_with_hit", len(hit), src, "n_hits",
+            f"Patterns {what} whose longest searched member has a hit in nt")
+        ps = pd.to_numeric(hit["plasmid_share"], errors="coerce").dropna()
+        if len(ps):
+            put(f"{pre}.median_plasmid_share", float(ps.median()), src, "plasmid_share",
+                "Median over those patterns of the share of the hits on plasmid records")
+            put(f"{pre}.share_mostly_plasmid", float((ps >= 0.5).mean()), src, "plasmid_share",
+                "Share (0-1) of those patterns with at least half of their hits on plasmid "
+                "records")
+            put(f"{pre}.share_no_plasmid", float((ps == 0).mean()), src, "plasmid_share",
+                "Share (0-1) of those patterns with no hit on a plasmid record")
+        if len(hit):
+            named = hit["gene"].fillna("").astype(str).str.strip().ne("")
+            put(f"{pre}.share_with_gene", float(named.mean()), src, "gene",
+                "Share (0-1) of those patterns whose best hit names a gene")
+
+    for grade in F.GRADES:
+        s = c[c["grade"] == grade]
+        block(f"kb.context.{grade}", s, f"graded {grade}")
+        for d in ("R", "S"):
+            block(f"kb.context.{grade}.{d}", s[s["direction"] == d],
+                  f"graded {grade}, direction {d}")
+
+
+def _kb_numbers(db: Path, put) -> None:
+    con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        rel = con.execute("SELECT kb_version, schema_version FROM release").fetchone()
+        if rel is not None:
+            put("kb.version", rel[0], "release", "kb_version", "Version of the knowledge base",
+                digits=None)
+            put("kb.schema_version", rel[1], "release", "schema_version",
+                "Version of its schema", digits=None)
+        kinds = dict(con.execute("SELECT type, count(*) FROM sqlite_master "
+                                 "WHERE name NOT LIKE 'sqlite_%' GROUP BY type").fetchall())
+        put("kb.n_tables", int(kinds.get("table", 0)), "sqlite_master", "type",
+            "Tables of the knowledge base")
+        put("kb.n_views", int(kinds.get("view", 0)), "sqlite_master", "type",
+            "Views of the knowledge base")
+        for (name,) in con.execute("SELECT name FROM sqlite_master WHERE type = 'table' "
+                                   "AND name NOT LIKE 'sqlite_%' ORDER BY name").fetchall():
+            n = con.execute(f'SELECT count(*) FROM "{name}"').fetchone()[0]
+            put(f"kb.n_rows.{name}", int(n), name, "*", f"Rows of the table {name}")
+        graded = pd.read_sql_query(KB_GRADED, con)
+        b = pd.read_sql_query(KB_B_AROS, con)
+        ctx = pd.read_sql_query(KB_CONTEXT, con)
+    finally:
+        con.close()
+    if len(b):
+        _kb_card_numbers(b, put)
+    if len(graded):
+        _kb_context_numbers(graded, ctx, put)
+
+
 def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
     rows: list[dict] = []
 
@@ -1004,6 +1152,12 @@ def numbers(t: Tables, organisms: list[str]) -> pd.DataFrame:
             put("lp_sensitivity.hyp.n_models_excluded", len(sens["excluded_models"]),
                 "h1_models", "model_id", "Models the hypotheses are recomputed without (§14 item 9)")
             _hypothesis_numbers(sens, put, "lp_sensitivity.hyp", "Without the flagged models. ")
+    try:
+        kb: Path | None = contract.output_path("kb_dir", "kanit.sqlite", t.config)
+    except KeyError:            # a configuration without kb_dir
+        kb = None
+    if kb is not None and kb.exists():
+        _kb_numbers(kb, put)
     return pd.DataFrame(rows, columns=["key", "value", "source_table", "column", "description"])
 
 
